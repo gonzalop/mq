@@ -1,0 +1,14 @@
+# Binaries
+/bin
+/dist
+*.exe
+*.test
+*.out
+
+# IDEs
+.idea/
+.vscode/
+
+# Dependency directories
+vendor/
+
