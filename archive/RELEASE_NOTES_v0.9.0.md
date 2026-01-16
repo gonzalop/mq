@@ -27,10 +27,10 @@ This is the initial release of `mq`, a high-performance, thread-safe, and fully 
 
 ## 🔒 Security
 
-- **Enhanced Authentication**: Support for customizable authenticators, including a **SCRAM-SHA-256** implementation in the [examples](../examples/).
+- **Enhanced Authentication**: Support for customizable authenticators, including a **SCRAM-SHA-256** implementation in the [examples](https://github.com/gonzalop/mq/tree/v0.9.0/examples/).
 - **TLS Support**: Easy configuration for secure connections (`tls://`, `mqtts://`) via `WithTLS`.
 - **Zero-Dependency**: Core library has zero external dependencies, minimizing the supply chain attack surface.
-- **Security Policy**: See [SECURITY.md](../SECURITY.md) for vulnerability reporting and supported versions.
+- **Security Policy**: See [SECURITY.md](https://github.com/gonzalop/mq/blob/v0.9.0/SECURITY.md) for vulnerability reporting and supported versions.
 
 ## 🛠️ Usage Experience
 
@@ -47,11 +47,11 @@ client, err := mq.Dial("tcp://localhost:1883",
 )
 ```
 ### Comprehensive Documentation
-- **Getting Started**: Step-by-step guide for connecting, publishing, and subscribing ([`docs/getting_started.md`](../docs/getting_started.md)).
-- **Best Practices**: Production-grade configuration guide covering security, resource limits, and session management ([`docs/client_configuration_best_practices.md`](../docs/client_configuration_best_practices.md)).
-- **Troubleshooting**: Solutions for common issues ([`docs/troubleshooting.md`](../docs/troubleshooting.md)).
-- **Internals**: Detailed architectural docs ([`docs/internals/CONCURRENCY.md`](../docs/internals/CONCURRENCY.md)) explaining the threading model.
-- **Examples**: A wide range of runnable examples in [`examples/`](../examples/) covering everything from "hello world" to complex SCRAM auth, WebSockets, TLS, and persistent sessions, along with throughput tests.
+- **Getting Started**: Step-by-step guide for connecting, publishing, and subscribing ([`docs/getting_started.md`](https://github.com/gonzalop/mq/blob/v0.9.0/docs/getting_started.md)).
+- **Best Practices**: Production-grade configuration guide covering security, resource limits, and session management ([`docs/client_configuration_best_practices.md`](https://github.com/gonzalop/mq/blob/v0.9.0/docs/client_configuration_best_practices.md)).
+- **Troubleshooting**: Solutions for common issues ([`docs/troubleshooting.md`](https://github.com/gonzalop/mq/blob/v0.9.0/docs/troubleshooting.md)).
+- **Internals**: Detailed architectural docs ([`docs/internals/CONCURRENCY.md`](https://github.com/gonzalop/mq/blob/v0.9.0/docs/internals/CONCURRENCY.md)) explaining the threading model.
+- **Examples**: A wide range of runnable examples in [`examples/`](https://github.com/gonzalop/mq/tree/v0.9.0/examples/) covering everything from "hello world" to complex SCRAM auth, WebSockets, TLS, and persistent sessions, along with throughput tests.
 
 ### Context & Select Support
 Unlike older libraries that block indefinitely, all asynchronous operations return a `Token` that exposes a `Done()` channel. This allows usage with `context.Context` for timeouts or directly within `select` statements for complex control flow:
@@ -73,7 +73,7 @@ case <-shutdownChan:
 ## ✅ Testing & Quality
 
 - **Extensive Test Suite**: 61 test files with comprehensive unit tests, all run with race detector (`-race`) enabled.
-- **Integration Tests**: 22 integration tests using real MQTT servers (Mosquitto, Mochi (found a bug, patched), nanomq (lacks behind the others in compliance)) via testcontainers. You can build local images of mochi and nanomq with the Dockerfile's in the [`extras/`](../extras/) folder.
+- **Integration Tests**: 22 integration tests using real MQTT servers (Mosquitto, Mochi (found a bug, patched), nanomq (lacks behind the others in compliance)) via testcontainers. You can build local images of mochi and nanomq with the Dockerfile's in the [`extras/`](https://github.com/gonzalop/mq/tree/v0.9.0/extras/) folder.
 - **Fuzz Testing**: Packet parsing code is continuously fuzz-tested for robustness.
 - **Compliance**: Full MQTT v3.1.1 and v5.0 compliance verified through dedicated test suites.
 
