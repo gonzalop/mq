@@ -1,0 +1,97 @@
+--- a/cmd/main.go
++++ b/cmd/main.go
+@@ -5,7 +5,6 @@
+ package main
+ 
+ import (
+-	"crypto/tls"
+ 	"flag"
+ 	"log"
+ 	"os"
+@@ -19,10 +18,8 @@
+ 
+ func main() {
+ 	tcpAddr := flag.String("tcp", ":1883", "network address for TCP listener")
+-	wsAddr := flag.String("ws", ":1882", "network address for Websocket listener")
+-	infoAddr := flag.String("info", ":8080", "network address for web info dashboard listener")
+-	tlsCertFile := flag.String("tls-cert-file", "", "TLS certificate file")
+-	tlsKeyFile := flag.String("tls-key-file", "", "TLS key file")
++	maxPacketSize := flag.Uint("max-packet-size", 0, "maximum packet size")
++	maxReceive := flag.Uint("max-receive", 1024, "receive maximum")
+ 	flag.Parse()
+ 
+ 	sigs := make(chan os.Signal, 1)
+@@ -33,51 +30,26 @@
+ 		done <- true
+ 	}()
+ 
+-	var tlsConfig *tls.Config
+-
+-	if tlsCertFile != nil && tlsKeyFile != nil && *tlsCertFile != "" && *tlsKeyFile != "" {
+-		cert, err := tls.LoadX509KeyPair(*tlsCertFile, *tlsKeyFile)
+-		if err != nil {
+-			return
+-		}
+-		tlsConfig = &tls.Config{
+-			Certificates: []tls.Certificate{cert},
+-		}
++	opts := &mqtt.Options{}
++	opts.Capabilities = mqtt.NewDefaultServerCapabilities()
++	if *maxPacketSize > 0 {
++		opts.Capabilities.MaximumPacketSize = uint32(*maxPacketSize)
++	}
++	if *maxReceive > 0 {
++		opts.Capabilities.ReceiveMaximum = uint16(*maxReceive)
+ 	}
+ 
+-	server := mqtt.New(nil)
++	server := mqtt.New(opts)
+ 	_ = server.AddHook(new(auth.AllowHook), nil)
+ 
+ 	tcp := listeners.NewTCP(listeners.Config{
+-		ID:        "t1",
+-		Address:   *tcpAddr,
+-		TLSConfig: tlsConfig,
++		ID:      "t1",
++		Address: *tcpAddr,
+ 	})
+ 	err := server.AddListener(tcp)
+ 	if err != nil {
+ 		log.Fatal(err)
+ 	}
+-
+-	ws := listeners.NewWebsocket(listeners.Config{
+-		ID:      "ws1",
+-		Address: *wsAddr,
+-	})
+-	err = server.AddListener(ws)
+-	if err != nil {
+-		log.Fatal(err)
+-	}
+-
+-	stats := listeners.NewHTTPStats(
+-		listeners.Config{
+-			ID:      "info",
+-			Address: *infoAddr,
+-		},
+-		server.Info,
+-	)
+-	err = server.AddListener(stats)
+-	if err != nil {
+-		log.Fatal(err)
+-	}
+ 
+ 	go func() {
+ 		err := server.Serve()
+--- a/server.go
++++ b/server.go
+@@ -612,6 +612,9 @@
+ 	}
+ 
+ 	properties.ReceiveMaximum = s.Options.Capabilities.ReceiveMaximum // 3.2.2.3.3 Receive Maximum
++	if s.Options.Capabilities.MaximumPacketSize > 0 {
++		properties.MaximumPacketSize = s.Options.Capabilities.MaximumPacketSize
++	}
+ 	if cl.State.ServerKeepalive {                                     // You can set this dynamically using the OnConnect hook.
+ 		properties.ServerKeepAlive = cl.State.Keepalive // [MQTT-3.1.2-21]
+ 		properties.ServerKeepAliveFlag = true
