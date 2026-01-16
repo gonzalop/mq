@@ -1,4 +1,22 @@
 # Binaries
+examples/auto_reconnect/auto_reconnect
+examples/errors/errors
+examples/lwt/lwt
+examples/persistent/persistent
+examples/scram_auth/scram_auth
+examples/simple/simple
+examples/throughput/throughput
+examples/tls/tls
+examples/topic_aliases/topic_aliases
+examples/v5_properties/v5_properties
+examples/v5_request_response/v5_request_response
+examples/websocket/websocket
+examples/wildcards/wildcards
+/bin
+/dist
+*.exe
+*.test
+*.out
 /bin
 /dist
 *.exe
