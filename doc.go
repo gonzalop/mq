@@ -176,6 +176,16 @@
 //	    }
 //	}
 //
+//	// Non-blocking with select
+//	select {
+//	case <-token.Done():
+//	    if err := token.Error(); err != nil {
+//	        log.Printf("Failed: %v", err)
+//	    }
+//	case <-time.After(5 * time.Second):
+//	    log.Println("Timeout")
+//	}
+//
 //	// Connection can be closed with a specific reason code and properties (MQTT v5.0):
 //
 //	expiry := uint32(3600)
@@ -188,14 +198,4 @@
 //	)
 //
 // The client handles reconnection automatically unless configured otherwise.
-//
-//	// Non-blocking with select
-//	select {
-//	case <-token.Done():
-//	    if err := token.Error(); err != nil {
-//	        log.Printf("Failed: %v", err)
-//	    }
-//	case <-time.After(5 * time.Second):
-//	    log.Println("Timeout")
-//	}
 package mq

@@ -113,7 +113,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 ## Acknowledgements
 
-This library was developed with the assistance of [Antigravity](https://opi.google/antigravity), powered by [Gemini](https://deepmind.google/technologies/gemini/) and [Claude](https://www.anthropic.com/claude).
+This library was developed with the assistance of [Antigravity](https://antigravity.google), powered by [Gemini](https://deepmind.google/technologies/gemini/) and [Claude](https://www.anthropic.com/claude).
 
 ## License
 
