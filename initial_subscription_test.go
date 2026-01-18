@@ -15,10 +15,14 @@ func NewMockSessionStore() *MockSessionStore {
 	}
 }
 
-func (m *MockSessionStore) SavePendingPublish(packetID uint16, pub *PublishPacket) error { return nil }
-func (m *MockSessionStore) DeletePendingPublish(packetID uint16) error                   { return nil }
-func (m *MockSessionStore) LoadPendingPublishes() (map[uint16]*PublishPacket, error)     { return nil, nil }
-func (m *MockSessionStore) ClearPendingPublishes() error                                 { return nil }
+func (m *MockSessionStore) SavePendingPublish(packetID uint16, pub *PersistedPublish) error {
+	return nil
+}
+func (m *MockSessionStore) DeletePendingPublish(packetID uint16) error { return nil }
+func (m *MockSessionStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
+	return nil, nil
+}
+func (m *MockSessionStore) ClearPendingPublishes() error { return nil }
 func (m *MockSessionStore) SaveSubscription(topic string, sub *SubscriptionInfo) error {
 	m.storedSubs[topic] = sub
 	return nil

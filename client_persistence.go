@@ -25,7 +25,7 @@ func (c *Client) loadSessionState() error {
 	c.pending = make(map[uint16]*pendingOp)
 	c.inFlightCount = 0
 	for id, pub := range pending {
-		op := c.convertFromPublishPacket(pub)
+		op := c.convertFromPersistedPublish(pub)
 		if pkt, ok := op.packet.(*packets.PublishPacket); ok {
 			pkt.PacketID = id // Restore PacketID from map key
 			if pkt.QoS > 0 {
@@ -104,8 +104,8 @@ func (c *Client) checkSessionPresent(sessionPresent bool) error {
 
 // --- Conversion Helpers ---
 
-func (c *Client) convertToPublishPacket(req *publishRequest) *PublishPacket {
-	return &PublishPacket{
+func (c *Client) convertToPersistedPublish(req *publishRequest) *PersistedPublish {
+	return &PersistedPublish{
 		Topic:   req.packet.Topic,
 		Payload: req.packet.Payload,
 		QoS:     req.packet.QoS,
@@ -113,7 +113,7 @@ func (c *Client) convertToPublishPacket(req *publishRequest) *PublishPacket {
 	}
 }
 
-func (c *Client) convertFromPublishPacket(p *PublishPacket) *pendingOp {
+func (c *Client) convertFromPersistedPublish(p *PersistedPublish) *pendingOp {
 	// Reconstruct the pending operation
 	pkt := &packets.PublishPacket{
 		Topic:    p.Topic,

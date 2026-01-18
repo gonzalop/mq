@@ -44,7 +44,7 @@ type SessionStore interface {
 	// SavePendingPublish stores an outgoing publish that hasn't been acknowledged.
 	// Called when a QoS 1/2 publish is sent.
 	// MAY return immediately and persist asynchronously.
-	SavePendingPublish(packetID uint16, pub *PublishPacket) error
+	SavePendingPublish(packetID uint16, pub *PersistedPublish) error
 
 	// DeletePendingPublish removes a publish after it's been acknowledged.
 	// Called when PUBACK (QoS 1) or PUBCOMP (QoS 2) is received.
@@ -54,7 +54,7 @@ type SessionStore interface {
 	// LoadPendingPublishes retrieves all pending publishes on reconnect.
 	// Called once during connection establishment.
 	// MUST complete synchronously and return actual data.
-	LoadPendingPublishes() (map[uint16]*PublishPacket, error)
+	LoadPendingPublishes() (map[uint16]*PersistedPublish, error)
 
 	// ClearPendingPublishes removes all pending publishes.
 	// Called when SessionPresent=false (server lost our session).
@@ -105,10 +105,10 @@ type SessionStore interface {
 	Clear() error
 }
 
-// PublishPacket represents a publish for persistence.
+// PersistedPublish represents a publish for persistence.
 // This is a simplified representation containing only the data needed
 // to restore a pending publish after reconnection.
-type PublishPacket struct {
+type PersistedPublish struct {
 	Topic      string
 	Payload    []byte
 	QoS        uint8

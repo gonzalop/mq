@@ -6,16 +6,16 @@ import (
 
 // MockSessionStoreForRestore implements SessionStore interface for testing restoration
 type MockSessionStoreForRestore struct {
-	pendingPublishes map[uint16]*PublishPacket
+	pendingPublishes map[uint16]*PersistedPublish
 }
 
-func (m *MockSessionStoreForRestore) SavePendingPublish(packetID uint16, pub *PublishPacket) error {
+func (m *MockSessionStoreForRestore) SavePendingPublish(packetID uint16, pub *PersistedPublish) error {
 	return nil
 }
 func (m *MockSessionStoreForRestore) DeletePendingPublish(packetID uint16) error { return nil }
-func (m *MockSessionStoreForRestore) LoadPendingPublishes() (map[uint16]*PublishPacket, error) {
+func (m *MockSessionStoreForRestore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
 	// Return copy to avoid races in test
-	result := make(map[uint16]*PublishPacket)
+	result := make(map[uint16]*PersistedPublish)
 	for k, v := range m.pendingPublishes {
 		result[k] = v
 	}
@@ -38,7 +38,7 @@ func (m *MockSessionStoreForRestore) Clear() error                              
 func TestLoadSessionState_InFlightCount(t *testing.T) {
 	// Create mock store with specific pending publishes
 	store := &MockSessionStoreForRestore{
-		pendingPublishes: map[uint16]*PublishPacket{
+		pendingPublishes: map[uint16]*PersistedPublish{
 			1: {Topic: "t1", QoS: 0, Payload: []byte("q0")}, // Should NOT count (QoS 0 is typically not persisted, but if it were, it shouldn't count towards inFlight)
 			2: {Topic: "t2", QoS: 1, Payload: []byte("q1")}, // Should count
 			3: {Topic: "t3", QoS: 2, Payload: []byte("q2")}, // Should count

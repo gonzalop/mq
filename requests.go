@@ -74,7 +74,7 @@ func (c *Client) internalPublish(req *publishRequest) {
 	}
 
 	if c.opts.SessionStore != nil && pkt.QoS > 0 {
-		pub := c.convertToPublishPacket(req)
+		pub := c.convertToPersistedPublish(req)
 		if err := c.opts.SessionStore.SavePendingPublish(pkt.PacketID, pub); err != nil {
 			c.opts.Logger.Warn("failed to persist publish", "packet_id", pkt.PacketID, "error", err)
 		}
@@ -109,7 +109,7 @@ func (c *Client) sendPublishLocked(req *publishRequest) bool {
 		}
 
 		if c.opts.SessionStore != nil && pkt.QoS > 0 {
-			pub := c.convertToPublishPacket(req)
+			pub := c.convertToPersistedPublish(req)
 			if err := c.opts.SessionStore.SavePendingPublish(pkt.PacketID, pub); err != nil {
 				c.opts.Logger.Warn("failed to persist publish", "packet_id", pkt.PacketID, "error", err)
 			}

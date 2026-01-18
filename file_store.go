@@ -104,7 +104,7 @@ func (f *FileStore) ClientID() string {
 }
 
 // SavePendingPublish stores a pending publish to disk.
-func (f *FileStore) SavePendingPublish(packetID uint16, pub *PublishPacket) error {
+func (f *FileStore) SavePendingPublish(packetID uint16, pub *PersistedPublish) error {
 	data, err := json.Marshal(pub)
 	if err != nil {
 		return fmt.Errorf("failed to marshal publish: %w", err)
@@ -132,8 +132,8 @@ func (f *FileStore) DeletePendingPublish(packetID uint16) error {
 }
 
 // LoadPendingPublishes loads all pending publishes from disk.
-func (f *FileStore) LoadPendingPublishes() (map[uint16]*PublishPacket, error) {
-	result := make(map[uint16]*PublishPacket)
+func (f *FileStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
+	result := make(map[uint16]*PersistedPublish)
 
 	files, err := filepath.Glob(filepath.Join(f.dir, "pending_*.json"))
 	if err != nil {
@@ -152,7 +152,7 @@ func (f *FileStore) LoadPendingPublishes() (map[uint16]*PublishPacket, error) {
 			continue // Skip unreadable files
 		}
 
-		var pub PublishPacket
+		var pub PersistedPublish
 		if err := json.Unmarshal(data, &pub); err != nil {
 			continue // Skip corrupted files
 		}

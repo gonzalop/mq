@@ -112,4 +112,4 @@ integration:
 
 clean:
 	@echo "🧹 Cleaning up..."
-	@rm -fv coverage.out cpu.out mem.out mq.test packets.test coverage.html ${EXAMPLES}
+	@rm -fv coverage.html coverage.out coverage.txt cpu.out mem.out mq.test packets.test ${EXAMPLES}

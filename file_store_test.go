@@ -39,7 +39,7 @@ func TestFileStore_NewFileStore(t *testing.T) {
 		}
 
 		// Save a publish to test permissions
-		pub := &PublishPacket{
+		pub := &PersistedPublish{
 			Topic:   "test/topic",
 			Payload: []byte("test"),
 			QoS:     1,
@@ -69,7 +69,7 @@ func TestFileStore_PendingPublishes(t *testing.T) {
 	}
 
 	t.Run("save and load", func(t *testing.T) {
-		pub := &PublishPacket{
+		pub := &PersistedPublish{
 			Topic:   "test/topic",
 			Payload: []byte("hello world"),
 			QoS:     1,
@@ -131,7 +131,7 @@ func TestFileStore_PendingPublishes(t *testing.T) {
 
 	t.Run("multiple publishes", func(t *testing.T) {
 		for i := uint16(1); i <= 5; i++ {
-			pub := &PublishPacket{
+			pub := &PersistedPublish{
 				Topic:   "test/topic",
 				Payload: []byte{byte(i)},
 				QoS:     1,
@@ -328,7 +328,7 @@ func TestFileStore_Clear(t *testing.T) {
 	}
 
 	// Add some data
-	pub := &PublishPacket{Topic: "test", Payload: []byte("data"), QoS: 1}
+	pub := &PersistedPublish{Topic: "test", Payload: []byte("data"), QoS: 1}
 	if err := store.SavePendingPublish(1, pub); err != nil {
 		t.Fatalf("Failed to save pending publish: %v", err)
 	}

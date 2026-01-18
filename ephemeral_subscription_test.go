@@ -11,11 +11,11 @@ type MockPersistenceStore struct {
 	SavedSubs map[string]*SubscriptionInfo
 }
 
-func (m *MockPersistenceStore) SavePendingPublish(packetID uint16, pub *PublishPacket) error {
+func (m *MockPersistenceStore) SavePendingPublish(packetID uint16, pub *PersistedPublish) error {
 	return nil
 }
 func (m *MockPersistenceStore) DeletePendingPublish(packetID uint16) error { return nil }
-func (m *MockPersistenceStore) LoadPendingPublishes() (map[uint16]*PublishPacket, error) {
+func (m *MockPersistenceStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
 	return nil, nil
 }
 func (m *MockPersistenceStore) ClearPendingPublishes() error { return nil }
