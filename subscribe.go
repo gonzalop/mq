@@ -104,6 +104,27 @@ func WithSubscriptionIdentifier(id int) SubscribeOption {
 	}
 }
 
+// UnsubscribeOptions holds configuration for an unsubscription.
+type UnsubscribeOptions struct {
+	UserProperties map[string]string // MQTT v5.0: User properties
+}
+
+// UnsubscribeOption is a functional option for configuring an unsubscription.
+type UnsubscribeOption func(*UnsubscribeOptions)
+
+// WithUnsubscribeUserProperty (MQTT v5.0) adds a user property to the unsubscribe packet.
+// User properties are key-value pairs that can be used to send metadata to the server.
+//
+// This option is ignored when using MQTT v3.1.1.
+func WithUnsubscribeUserProperty(key, value string) UnsubscribeOption {
+	return func(o *UnsubscribeOptions) {
+		if o.UserProperties == nil {
+			o.UserProperties = make(map[string]string)
+		}
+		o.UserProperties[key] = value
+	}
+}
+
 // Subscribe subscribes to a topic with the specified QoS level.
 //
 // The handler function is called for each message received on topics matching
@@ -216,40 +237,58 @@ func (c *Client) Subscribe(topic string, qos QoS, handler MessageHandler, opts .
 	return tok
 }
 
-// Unsubscribe unsubscribes from one or more topics.
+// Unsubscribe unsubscribes from a single topic.
 //
 // After unsubscribing, the client will no longer receive messages on the
-// specified topics. The function returns a Token that completes when the
+// specified topic. The function returns a Token that completes when the
 // unsubscription is acknowledged by the server.
 //
-// Example (single topic):
+// This method supports options for MQTT v5.0 features like User Properties.
+//
+// Example:
 //
 //	token := client.Unsubscribe("sensors/temperature")
 //	token.Wait(context.Background())
 //
-// Example (multiple topics):
+// Example with options (MQTT v5.0):
 //
-//	token := client.Unsubscribe("sensors/temp", "sensors/humidity", "sensors/pressure")
-//	if err := token.Wait(context.Background()); err != nil {
-//	    log.Printf("Unsubscribe failed: %v", err)
-//	}
-func (c *Client) Unsubscribe(topics ...string) Token {
-	c.opts.Logger.Debug("unsubscribing from topics", "topics", topics)
+//	client.Unsubscribe("logs", mq.WithUnsubscribeUserProperty("reason", "done"))
+func (c *Client) Unsubscribe(topic string, opts ...UnsubscribeOption) Token {
+	c.opts.Logger.Debug("unsubscribing from topic", "topic", topic)
 
-	if len(topics) == 0 {
-		tok := newToken()
-		tok.complete(nil)
-		return tok
+	unsubOpts := &UnsubscribeOptions{}
+	for _, opt := range opts {
+		opt(unsubOpts)
 	}
 
 	pkt := &packets.UnsubscribePacket{
-		Topics:  topics,
+		Topics:  []string{topic},
 		Version: c.opts.ProtocolVersion,
 	}
+
+	if c.opts.ProtocolVersion >= ProtocolV50 {
+		props := &packets.Properties{}
+		hasProps := false
+
+		if len(unsubOpts.UserProperties) > 0 {
+			for k, v := range unsubOpts.UserProperties {
+				props.UserProperties = append(props.UserProperties, packets.UserProperty{
+					Key:   k,
+					Value: v,
+				})
+			}
+			hasProps = true
+		}
+
+		if hasProps {
+			pkt.Properties = props
+		}
+	}
+
 	tok := newToken()
 	req := &unsubscribeRequest{
 		packet: pkt,
-		topics: topics,
+		topics: []string{topic},
 		token:  tok,
 	}
 	c.internalUnsubscribe(req)

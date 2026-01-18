@@ -105,11 +105,29 @@ func main() {
 			messageCount++
 			if messageCount >= 3 {
 				fmt.Printf("\n✓ Received %d messages\n", messageCount)
+
+				// Unsubscribe before exiting
+				fmt.Println("\nUnsubscribing from 'test/topic'...")
+				if token := client.Unsubscribe("test/topic"); token.Wait(context.Background()) != nil {
+					log.Printf("Unsubscribe failed: %v", token.Error())
+				} else {
+					fmt.Println("✓ Unsubscribed successfully!")
+				}
+
 				fmt.Println("\nTest completed successfully! 🎉")
 				return
 			}
 		case <-timeout:
 			fmt.Printf("\n✓ Received %d messages (timed out waiting for more)\n", messageCount)
+
+			// Unsubscribe before exiting
+			fmt.Println("\nUnsubscribing from 'test/topic'...")
+			if token := client.Unsubscribe("test/topic"); token.Wait(context.Background()) != nil {
+				log.Printf("Unsubscribe failed: %v", token.Error())
+			} else {
+				fmt.Println("✓ Unsubscribed successfully!")
+			}
+
 			fmt.Println("\nTest completed successfully! 🎉")
 			return
 		}

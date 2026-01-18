@@ -169,7 +169,7 @@ client.Subscribe("status/+", 1, handler, mq.WithNoLocal(false), mq.WithRetainHan
 ## Unsubscribing
 
 ```go
-token := client.Unsubscribe(topics...)
+token := client.Unsubscribe("sensors/temperature")
 token.Wait(context.Background())
 ```
 

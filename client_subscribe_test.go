@@ -95,16 +95,6 @@ func TestUnsubscribe(t *testing.T) {
 		t.Error("Timeout waiting for unsubscribe packet")
 	}
 
-	// Test empty topics
-	token = c.Unsubscribe()
-	select {
-	case <-token.Done():
-		if token.Error() != nil {
-			t.Errorf("Unexpected error for empty topics: %v", token.Error())
-		}
-	case <-time.After(time.Second):
-		t.Error("Timeout waiting for empty topics token completion")
-	}
 }
 
 func TestResubscribeAll(t *testing.T) {
