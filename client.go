@@ -367,7 +367,7 @@ func (c *Client) connect(ctx context.Context) error {
 
 		if c.opts.ProtocolVersion >= ProtocolV50 {
 			err := &MqttError{
-				ReasonCode: connack.ReturnCode,
+				ReasonCode: ReasonCode(connack.ReturnCode),
 				Parent:     ErrConnectionRefused,
 			}
 			if connack.Properties != nil && connack.Properties.Presence&packets.PresReasonString != 0 {
@@ -789,7 +789,7 @@ func (c *Client) Disconnect(ctx context.Context, opts ...DisconnectOption) error
 	for _, opt := range opts {
 		opt(options)
 	}
-	return c.disconnectWithReason(ctx, options.ReasonCode, options.Properties)
+	return c.disconnectWithReason(ctx, uint8(options.ReasonCode), options.Properties)
 }
 
 // disconnectWithReason is an internal helper that sends a DISCONNECT packet

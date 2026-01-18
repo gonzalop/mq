@@ -29,10 +29,11 @@ func TestCompliance_Topic_Validation(t *testing.T) {
 	})
 
 	t.Run("Case Sensitivity", func(t *testing.T) {
-		matched := matchTopic("Topic/A", "topic/a")
+		matched := MatchTopic("Topic/A", "topic/a")
 		if matched {
-			t.Errorf("matchTopic MATCHED 'Topic/A' vs 'topic/a', expected NO match (case sensitive)")
+			t.Errorf("MatchTopic MATCHED 'Topic/A' vs 'topic/a', expected NO match (case sensitive)")
 		}
+
 	})
 
 	t.Run("Invalid Wildcard Placement", func(t *testing.T) {
@@ -257,7 +258,7 @@ func TestCompliance_Disconnect_ReasonCode(t *testing.T) {
 
 	pkt := &packets.DisconnectPacket{
 		Version:    ProtocolV50,
-		ReasonCode: ReasonCodeDisconnectWithWill,
+		ReasonCode: uint8(ReasonCodeDisconnectWithWill),
 	}
 
 	var buf bytes.Buffer
@@ -269,7 +270,7 @@ func TestCompliance_Disconnect_ReasonCode(t *testing.T) {
 	if len(encoded) < 3 {
 		t.Fatalf("Encoded DISCONNECT packet too short: %d", len(encoded))
 	}
-	if encoded[2] != ReasonCodeDisconnectWithWill {
+	if encoded[2] != uint8(ReasonCodeDisconnectWithWill) {
 		t.Errorf("Expected reason code 0x04 at offset 2, got 0x%02x", encoded[2])
 	}
 }

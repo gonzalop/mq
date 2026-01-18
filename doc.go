@@ -171,9 +171,8 @@
 //	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 //	defer cancel()
 //	if err := token.Wait(ctx); err != nil {
-//	    // Check for specific reason codes (v5.0)
-//		// You can also use mq.ReasonCodeUnspecifiedError for 0x80
-//	    if mq.IsReasonCode(err, 0x80) { // e.g. Unspecified Error
+//	    // Check for specific reason codes (v5.0) using errors.Is
+//	    if errors.Is(err, mq.ReasonCodeUnspecifiedError) {
 //	        log.Printf("Server rejected operation: %v", err)
 //	    }
 //	}

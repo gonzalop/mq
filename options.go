@@ -579,7 +579,7 @@ func WithAuthenticator(auth Authenticator) Option {
 
 // DisconnectOptions holds configuration for a disconnection.
 type DisconnectOptions struct {
-	ReasonCode uint8
+	ReasonCode ReasonCode
 	Properties *Properties
 }
 
@@ -592,7 +592,7 @@ type DisconnectOption func(*DisconnectOptions)
 //   - 0x04: Disconnect with Will Message
 //
 // This option is ignored when using MQTT v3.1.1.
-func WithReason(code uint8) DisconnectOption {
+func WithReason(code ReasonCode) DisconnectOption {
 	return func(o *DisconnectOptions) {
 		o.ReasonCode = code
 	}

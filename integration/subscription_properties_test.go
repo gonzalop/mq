@@ -31,9 +31,9 @@ func TestSubscriptionProperties_Integration(t *testing.T) {
 	// Subscribe with Subscription Identifier and User Properties
 	subID := 42
 
-token := client.Subscribe(topic, mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe(topic, mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
 		received <- msg
-	}, 
+	},
 		mq.WithSubscriptionIdentifier(subID),
 		mq.WithSubscribeUserProperty("test-key", "test-value"),
 	)
@@ -57,7 +57,7 @@ token := client.Subscribe(topic, mq.AtLeastOnce, func(c *mq.Client, msg mq.Messa
 		if msg.Properties == nil {
 			t.Fatal("Properties in received message is nil")
 		}
-		
+
 		foundID := false
 		for _, id := range msg.Properties.SubscriptionIdentifier {
 			if id == subID {
@@ -65,11 +65,11 @@ token := client.Subscribe(topic, mq.AtLeastOnce, func(c *mq.Client, msg mq.Messa
 				break
 			}
 		}
-		
+
 		if !foundID {
 			t.Errorf("Subscription Identifier %d not found in received message, got %v", subID, msg.Properties.SubscriptionIdentifier)
 		}
-		
+
 	case <-time.After(2 * time.Second):
 		t.Fatal("Timeout waiting for message")
 	}
@@ -77,10 +77,10 @@ token := client.Subscribe(topic, mq.AtLeastOnce, func(c *mq.Client, msg mq.Messa
 
 func TestSubscriptionProperties_Persistence(t *testing.T) {
 	t.Parallel()
-	
+
 	// Start server (Isolated)
 	server, cleanup := startMosquitto(t, "persistence false\n# Dedicated for sub-props persistence test")
-	
+
 	// Extract port to reuse on restart
 	parts := strings.Split(server, ":")
 	port := parts[len(parts)-1]
@@ -114,7 +114,7 @@ func TestSubscriptionProperties_Persistence(t *testing.T) {
 	}
 
 	// Subscribe with ID and User Properties
-	subToken := client1.Subscribe(topic, 1, nil, 
+	subToken := client1.Subscribe(topic, 1, nil,
 		mq.WithSubscriptionIdentifier(subID),
 		mq.WithSubscribeUserProperty("persist-key", "persist-value"),
 	)
@@ -169,7 +169,7 @@ func TestSubscriptionProperties_Persistence(t *testing.T) {
 		if msg.Properties == nil {
 			t.Fatal("Properties in received message is nil after restoration")
 		}
-		
+
 		foundID := false
 		for _, id := range msg.Properties.SubscriptionIdentifier {
 			if id == subID {
@@ -177,11 +177,11 @@ func TestSubscriptionProperties_Persistence(t *testing.T) {
 				break
 			}
 		}
-		
+
 		if !foundID {
 			t.Errorf("Subscription Identifier %d not restored from disk! Got %v", subID, msg.Properties.SubscriptionIdentifier)
 		}
-		
+
 	case <-time.After(5 * time.Second):
 		t.Fatal("Timeout waiting for message after restoration")
 	}

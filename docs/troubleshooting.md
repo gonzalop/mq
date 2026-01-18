@@ -23,7 +23,7 @@ clientID := fmt.Sprintf("myapp-%s", uuid.New().String())
 client, _ := mq.Dial("tcp://broker:1883",
     mq.WithClientID(clientID),
     mq.WithOnConnectionLost(func(c *mq.Client, err error) {
-        if mq.IsReasonCode(err, mq.ReasonCodeSessionTakenOver) {
+        if errors.Is(err, mq.ReasonCodeSessionTakenOver) {
             slog.Error("Another client is using our ClientID!")
         }
     }),

@@ -6,11 +6,13 @@ import (
 	"unicode/utf8"
 )
 
-// matchTopic checks if a topic matches a topic filter with MQTT wildcards.
+// MatchTopic checks if a topic matches a topic filter with MQTT wildcards.
+// It follows MQTT-4.7 rules for wildcard matching.
+//
 // Supports:
-// - '+' matches a single level
-// - '#' matches multiple levels (must be last character)
-func matchTopic(filter, topic string) bool {
+// - '+' matches exactly one topic level
+// - '#' matches multiple topic levels (must be the last character in the filter)
+func MatchTopic(filter, topic string) bool {
 	// Following MQTT-4.7.2-1 (even though the spec mentions "Server", this client
 	// library enforces it for local message dispatching):
 	// "The Server MUST NOT match Topic Filters starting with a wildcard

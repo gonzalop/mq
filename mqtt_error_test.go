@@ -8,27 +8,27 @@ import (
 )
 
 func TestMqttError(t *testing.T) {
-	t.Run("IsReasonCode", func(t *testing.T) {
-		err := &MqttError{ReasonCode: 0x80}
-		if !IsReasonCode(err, 0x80) {
-			t.Error("IsReasonCode should return true for matching code")
+	t.Run("errors.Is", func(t *testing.T) {
+		err := &MqttError{ReasonCode: ReasonCodeUnspecifiedError}
+		if !errors.Is(err, ReasonCodeUnspecifiedError) {
+			t.Error("errors.Is should return true for matching code")
 		}
-		if IsReasonCode(err, 0x81) {
-			t.Error("IsReasonCode should return false for different code")
+		if errors.Is(err, ReasonCodeMalformedPacket) {
+			t.Error("errors.Is should return false for different code")
 		}
-		if IsReasonCode(errors.New("other"), 0x80) {
-			t.Error("IsReasonCode should return false for non-MqttError")
+		if errors.Is(errors.New("other"), ReasonCodeUnspecifiedError) {
+			t.Error("errors.Is should return false for non-MqttError")
 		}
 	})
 
 	t.Run("Error formatting", func(t *testing.T) {
-		err := &MqttError{ReasonCode: 0x80, Message: "failed"}
+		err := &MqttError{ReasonCode: ReasonCodeUnspecifiedError, Message: "failed"}
 		expected := "mqtt error (0x80): failed"
 		if err.Error() != expected {
 			t.Errorf("Expected %q, got %q", expected, err.Error())
 		}
 
-		errNoMsg := &MqttError{ReasonCode: 0x81}
+		errNoMsg := &MqttError{ReasonCode: ReasonCodeMalformedPacket}
 		expectedNoMsg := "mqtt error (0x81)"
 		if errNoMsg.Error() != expectedNoMsg {
 			t.Errorf("Expected %q, got %q", expectedNoMsg, errNoMsg.Error())
@@ -60,8 +60,8 @@ func TestMqttError_v5_v3_Compatibility(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected error for v5 PUBACK with reason code 0x80, got nil")
 		}
-		if !IsReasonCode(err, 0x80) {
-			t.Errorf("Expected MqttError with reason code 0x80, got %v", err)
+		if !errors.Is(err, ReasonCodeUnspecifiedError) {
+			t.Errorf("Expected ReasonCodeUnspecifiedError, got %v", err)
 		}
 	})
 
@@ -96,8 +96,8 @@ func TestMqttError_v5_v3_Compatibility(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected error for v5 SUBACK with 0x80")
 		}
-		if !IsReasonCode(err, 0x80) {
-			t.Errorf("Expected MqttError 0x80, got %v", err)
+		if !errors.Is(err, ReasonCodeUnspecifiedError) {
+			t.Errorf("Expected ReasonCodeUnspecifiedError, got %v", err)
 		}
 		if !errors.Is(err, ErrSubscriptionFailed) {
 			t.Errorf("Expected error to wrap ErrSubscriptionFailed, got %v", err)
@@ -120,7 +120,7 @@ func TestMqttError_v5_v3_Compatibility(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected error")
 		}
-		if IsReasonCode(err, 0x80) {
+		if errors.Is(err, ReasonCodeUnspecifiedError) {
 			t.Error("Should NOT be MqttError for v3.1.1")
 		}
 		if err != ErrSubscriptionFailed {
@@ -144,15 +144,15 @@ func TestMqttError_v5_v3_Compatibility(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected error")
 		}
-		if !IsReasonCode(err, 0x80) {
-			t.Errorf("Expected MqttError 0x80, got %v", err)
+		if !errors.Is(err, ReasonCodeUnspecifiedError) {
+			t.Errorf("Expected ReasonCodeUnspecifiedError, got %v", err)
 		}
 	})
 
 	t.Run("MqttError with ReasonString", func(t *testing.T) {
 		// This simulates the logic in client.go for CONNACK
 		err := &MqttError{
-			ReasonCode: 0x80,
+			ReasonCode: ReasonCodeUnspecifiedError,
 			Message:    "server busy",
 			Parent:     ErrConnectionRefused,
 		}

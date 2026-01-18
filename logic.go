@@ -99,7 +99,7 @@ func (c *Client) handlePublish(p *packets.PublishPacket) {
 			c.opts.Logger.Error("server sent invalid topic alias 0")
 			// Protocol error - disconnect
 			if c.opts.ProtocolVersion >= ProtocolV50 {
-				_ = c.disconnectWithReason(context.Background(), ReasonCodeTopicAliasInvalid, nil)
+				_ = c.disconnectWithReason(context.Background(), uint8(ReasonCodeTopicAliasInvalid), nil)
 			} else {
 				_ = c.Disconnect(context.Background())
 			}
@@ -113,7 +113,7 @@ func (c *Client) handlePublish(p *packets.PublishPacket) {
 				"max", c.opts.TopicAliasMaximum)
 			// Protocol error - disconnect
 			if c.opts.ProtocolVersion >= ProtocolV50 {
-				_ = c.disconnectWithReason(context.Background(), ReasonCodeTopicAliasInvalid, nil)
+				_ = c.disconnectWithReason(context.Background(), uint8(ReasonCodeTopicAliasInvalid), nil)
 			} else {
 				_ = c.Disconnect(context.Background())
 			}
@@ -130,7 +130,7 @@ func (c *Client) handlePublish(p *packets.PublishPacket) {
 				c.opts.Logger.Error("server sent unknown topic alias", "alias", aliasID)
 				// Protocol error - disconnect
 				if c.opts.ProtocolVersion >= ProtocolV50 {
-					if err := c.disconnectWithReason(context.Background(), ReasonCodeMalformedPacket, nil); err != nil {
+					if err := c.disconnectWithReason(context.Background(), uint8(ReasonCodeMalformedPacket), nil); err != nil {
 						c.opts.Logger.Error("failed to disconnect client", "error", err)
 					}
 				} else {
@@ -174,7 +174,7 @@ func (c *Client) handlePublish(p *packets.PublishPacket) {
 	// Find matching handlers
 	var handlers []MessageHandler
 	for filter, entry := range c.subscriptions {
-		if matchTopic(filter, p.Topic) {
+		if MatchTopic(filter, p.Topic) {
 			if entry.handler != nil {
 				handlers = append(handlers, entry.handler)
 			}
@@ -223,7 +223,7 @@ func (c *Client) handlePuback(p *packets.PubackPacket) {
 		var err error
 		if c.opts.ProtocolVersion >= ProtocolV50 && p.ReasonCode >= 0x80 {
 			err = &MqttError{
-				ReasonCode: p.ReasonCode,
+				ReasonCode: ReasonCode(p.ReasonCode),
 			}
 		}
 		op.token.complete(err)
@@ -245,7 +245,7 @@ func (c *Client) handlePubrec(p *packets.PubrecPacket) {
 	if op, ok := c.pending[p.PacketID]; ok {
 		// MQTT v5.0: check for error reason codes
 		if c.opts.ProtocolVersion >= ProtocolV50 && p.ReasonCode >= 0x80 {
-			op.token.complete(&MqttError{ReasonCode: p.ReasonCode})
+			op.token.complete(&MqttError{ReasonCode: ReasonCode(p.ReasonCode)})
 			delete(c.pending, p.PacketID)
 			c.processPublishQueue()
 			return
@@ -286,7 +286,7 @@ func (c *Client) handlePubcomp(p *packets.PubcompPacket) {
 		var err error
 		if c.opts.ProtocolVersion >= ProtocolV50 && p.ReasonCode >= 0x80 {
 			err = &MqttError{
-				ReasonCode: p.ReasonCode,
+				ReasonCode: ReasonCode(p.ReasonCode),
 			}
 		}
 		op.token.complete(err)
@@ -312,7 +312,7 @@ func (c *Client) handleSuback(p *packets.SubackPacket) {
 			if code >= 0x80 {
 				if c.opts.ProtocolVersion >= ProtocolV50 {
 					err = &MqttError{
-						ReasonCode: code,
+						ReasonCode: ReasonCode(code),
 						Parent:     ErrSubscriptionFailed,
 					}
 				} else {
@@ -360,7 +360,7 @@ func (c *Client) handleUnsuback(p *packets.UnsubackPacket) {
 			for _, code := range p.ReasonCodes {
 				if code >= 0x80 {
 					err = &MqttError{
-						ReasonCode: code,
+						ReasonCode: ReasonCode(code),
 					}
 					break
 				}
@@ -427,7 +427,7 @@ func (c *Client) nextID() uint16 {
 // handleDisconnectPacket processes a DISCONNECT packet from the server.
 func (c *Client) handleDisconnectPacket(p *packets.DisconnectPacket) {
 	reason := "Unknown"
-	if name, ok := disconnectReasonCodeNames[p.ReasonCode]; ok {
+	if name, ok := disconnectReasonCodeNames[ReasonCode(p.ReasonCode)]; ok {
 		reason = name
 	}
 
@@ -443,7 +443,7 @@ func (c *Client) handleDisconnectPacket(p *packets.DisconnectPacket) {
 	c.opts.Logger.Warn("received DISCONNECT from server", attrs...)
 
 	err := &MqttError{
-		ReasonCode: p.ReasonCode,
+		ReasonCode: ReasonCode(p.ReasonCode),
 	}
 
 	if p.Properties != nil && p.Properties.Presence&packets.PresReasonString != 0 {
@@ -457,7 +457,7 @@ func (c *Client) handleDisconnectPacket(p *packets.DisconnectPacket) {
 }
 
 // disconnectReasonCodeNames maps MQTT v5.0 reason codes to human-readable strings for DISCONNECT packets.
-var disconnectReasonCodeNames = map[uint8]string{
+var disconnectReasonCodeNames = map[ReasonCode]string{
 	ReasonCodeNormalDisconnect:      "Normal disconnect",
 	ReasonCodeDisconnectWithWill:    "Disconnect with Will Message",
 	ReasonCodeUnspecifiedError:      "Unspecified error",

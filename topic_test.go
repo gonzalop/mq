@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -44,12 +45,30 @@ func TestMatchTopic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.filter+"_vs_"+tt.topic, func(t *testing.T) {
-			result := matchTopic(tt.filter, tt.topic)
+			result := MatchTopic(tt.filter, tt.topic)
 			if result != tt.match {
-				t.Errorf("matchTopic(%q, %q) = %v, want %v", tt.filter, tt.topic, result, tt.match)
+				t.Errorf("MatchTopic(%q, %q) = %v, want %v", tt.filter, tt.topic, result, tt.match)
 			}
 		})
 	}
+}
+
+func ExampleMatchTopic() {
+	filter := "sensors/+/temperature"
+	topic1 := "sensors/living-room/temperature"
+	topic2 := "sensors/kitchen/humidity"
+
+	fmt.Printf("%s matches %s: %v\n", topic1, filter, MatchTopic(filter, topic1))
+	fmt.Printf("%s matches %s: %v\n", topic2, filter, MatchTopic(filter, topic2))
+
+	filterHash := "sensors/#"
+	topic3 := "sensors/basement/temperature/current"
+	fmt.Printf("%s matches %s: %v\n", topic3, filterHash, MatchTopic(filterHash, topic3))
+
+	// Output:
+	// sensors/living-room/temperature matches sensors/+/temperature: true
+	// sensors/kitchen/humidity matches sensors/+/temperature: false
+	// sensors/basement/temperature/current matches sensors/#: true
 }
 
 func TestValidatePublishTopic(t *testing.T) {
@@ -279,7 +298,7 @@ func FuzzMatchTopic(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, filter, topic string) {
 		// Should never panic, just return true or false
-		_ = matchTopic(filter, topic)
+		_ = MatchTopic(filter, topic)
 	})
 }
 
@@ -311,9 +330,9 @@ func TestTopicMatch_WildcardStartingWithDollar_Compliance(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.filter+"_vs_"+tt.topic, func(t *testing.T) {
-			result := matchTopic(tt.filter, tt.topic)
+			result := MatchTopic(tt.filter, tt.topic)
 			if result != tt.match {
-				t.Errorf("matchTopic(%q, %q) = %v, want %v", tt.filter, tt.topic, result, tt.match)
+				t.Errorf("MatchTopic(%q, %q) = %v, want %v", tt.filter, tt.topic, result, tt.match)
 			}
 		})
 	}

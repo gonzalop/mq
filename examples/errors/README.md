@@ -7,7 +7,7 @@ Demonstrates proper error handling patterns for MQTT operations.
 - Checking for connection errors
 - Handling publish failures
 - Subscribe error handling
-- Using `IsReasonCode` for MQTT v5.0 error introspection
+- Using `errors.Is` for MQTT v5.0 reason code introspection
 - Timeout handling with contexts
 - Graceful error recovery
 
@@ -27,7 +27,7 @@ go run main.go tcp://localhost:1883
 1. **Connection Error Handling**: Shows how to handle connection failures
 2. **Publish Errors**: Demonstrates checking publish token errors
 3. **Subscribe Errors**: Shows subscription error handling
-4. **MQTT v5 Reason Codes**: Uses `IsReasonCode` to check specific error types
+4. **MQTT v5 Reason Codes**: Uses `errors.Is` to check specific reason codes
 5. **Context Timeouts**: Shows timeout handling with contexts
 6. **Error Recovery**: Demonstrates recovering from errors
 
@@ -93,9 +93,9 @@ if err := token.Wait(ctx); err != nil {
 ```go
 err := token.Wait(ctx)
 if err != nil {
-    if mq.IsReasonCode(err, mq.ReasonCodeNotAuthorized) {
+    if errors.Is(err, mq.ReasonCodeNotAuthorized) {
         log.Println("Not authorized - check credentials")
-    } else if mq.IsReasonCode(err, mq.ReasonCodeQuotaExceeded) {
+    } else if errors.Is(err, mq.ReasonCodeQuotaExceeded) {
         log.Println("Quota exceeded - slow down publishing")
     } else {
         log.Printf("Other error: %v", err)

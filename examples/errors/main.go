@@ -89,6 +89,11 @@ func main() {
 	if err := token.Wait(context.Background()); err != nil {
 		if errors.Is(err, mq.ErrSubscriptionFailed) {
 			fmt.Println("✓ Caught expected error: Subscription Failed")
+
+			// MQTT v5.0: Introspect specific reason code
+			if errors.Is(err, mq.ReasonCodeNotAuthorized) {
+				fmt.Println("  Detail: Server reported 'Not Authorized' (0x87)")
+			}
 		} else {
 			fmt.Printf("Subscription failed with: %v\n", err)
 		}

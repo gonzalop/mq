@@ -2,6 +2,7 @@ package mq_test
 
 import (
 	"context"
+	"errors"
 	"net"
 	"sync"
 	"testing"
@@ -44,7 +45,7 @@ func TestDisconnectReasonPropagation(t *testing.T) {
 
 		disconnect := &packets.DisconnectPacket{
 			Version:    5,
-			ReasonCode: mq.ReasonCodeSessionTakenOver,
+			ReasonCode: uint8(mq.ReasonCodeSessionTakenOver),
 			Properties: &packets.Properties{
 				ReasonString: "You are being replaced",
 				Presence:     packets.PresReasonString,
@@ -99,16 +100,17 @@ func TestDisconnectReasonPropagation(t *testing.T) {
 	}
 
 	// Check if it's an MqttError with the right code
-	if !mq.IsReasonCode(disconnectErr, mq.ReasonCodeSessionTakenOver) {
+	if !errors.Is(disconnectErr, mq.ReasonCodeSessionTakenOver) {
 		t.Errorf("expected ReasonCodeSessionTakenOver (0x8E), got error: %v", disconnectErr)
 	}
 
 	// Check if message is preserved
-	mErr, ok := disconnectErr.(*mq.MqttError)
-	if !ok {
+	var mErr *mq.MqttError
+	if errors.As(disconnectErr, &mErr) {
+		if mErr.Message != "You are being replaced" {
+			t.Errorf("expected reason string 'You are being replaced', got '%s'", mErr.Message)
+		}
+	} else {
 		t.Fatalf("expected *MqttError, got %T", disconnectErr)
-	}
-	if mErr.Message != "You are being replaced" {
-		t.Errorf("expected reason string 'You are being replaced', got '%s'", mErr.Message)
 	}
 }

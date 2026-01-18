@@ -12,7 +12,7 @@ func BenchmarkMatchTopic_Exact(b *testing.B) {
 	topic := "sensors/building-a/floor-3/room-42/temperature"
 
 	for b.Loop() {
-		matchTopic(filter, topic)
+		MatchTopic(filter, topic)
 	}
 }
 
@@ -21,7 +21,7 @@ func BenchmarkMatchTopic_WildcardPlus(b *testing.B) {
 	topic := "sensors/building-a/floor-3/room-42/temperature"
 
 	for b.Loop() {
-		matchTopic(filter, topic)
+		MatchTopic(filter, topic)
 	}
 }
 
@@ -30,7 +30,7 @@ func BenchmarkMatchTopic_WildcardHash(b *testing.B) {
 	topic := "sensors/building-a/floor-3/room-42/temperature"
 
 	for b.Loop() {
-		matchTopic(filter, topic)
+		MatchTopic(filter, topic)
 	}
 }
 
@@ -39,7 +39,7 @@ func BenchmarkMatchTopic_WildcardHash_Root(b *testing.B) {
 	topic := "sensors/building-a/floor-3/room-42/temperature"
 
 	for b.Loop() {
-		matchTopic(filter, topic)
+		MatchTopic(filter, topic)
 	}
 }
 
@@ -48,7 +48,7 @@ func BenchmarkMatchTopic_NoMatch_Early(b *testing.B) {
 	topic := "sensors/building-a/floor-3/room-42/temperature"
 
 	for b.Loop() {
-		matchTopic(filter, topic)
+		MatchTopic(filter, topic)
 	}
 }
 
@@ -57,6 +57,6 @@ func BenchmarkMatchTopic_NoMatch_Late(b *testing.B) {
 	topic := "sensors/building-a/floor-3/room-42/temperature"
 
 	for b.Loop() {
-		matchTopic(filter, topic)
+		MatchTopic(filter, topic)
 	}
 }
