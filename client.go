@@ -174,7 +174,78 @@ type pendingOp struct {
 // MessageHandler is called when a message is received on a subscribed topic.
 type MessageHandler func(*Client, Message)
 
+// DialContext establishes a connection to an MQTT server with a context.
+//
+// The context is used to control the initial connection establishment (handshake).
+// If the context is cancelled or expires before the connection is established,
+// DialContext returns an error.
+//
+// Once connected, the context's expiration has no effect on the ongoing connection
+// or background reconnection attempts.
+//
+// Example:
+//
+//	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+//	defer cancel()
+//
+//	client, err := mq.DialContext(ctx, "tcp://localhost:1883",
+//	    mq.WithClientID("my-client"))
+func DialContext(ctx context.Context, server string, opts ...Option) (*Client, error) {
+	options := defaultOptions(server)
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	if options.Logger != nil {
+		options.Logger = options.Logger.With("lib", "mq")
+	}
+
+	c := &Client{
+		opts:     options,
+		outgoing: make(chan packets.Packet, 1000),
+		incoming: make(chan packets.Packet, 100),
+
+		packetReceived: make(chan struct{}, 1),
+		pingPendingCh:  make(chan struct{}, 1),
+		stop:           make(chan struct{}),
+		pending:        make(map[uint16]*pendingOp),
+		subscriptions:  make(map[string]subscriptionEntry),
+		receivedQoS2:   make(map[uint16]struct{}),
+		disconnected:   make(chan struct{}, 1),
+	}
+
+	for topic, handler := range options.InitialSubscriptions {
+		c.subscriptions[topic] = subscriptionEntry{
+			handler: handler,
+			qos:     0,
+		}
+	}
+
+	if !c.opts.CleanSession {
+		if err := c.loadSessionState(); err != nil {
+			c.opts.Logger.Warn("failed to load session state", "error", err)
+		}
+	}
+
+	if err := c.connect(ctx); err != nil {
+		return nil, err
+	}
+
+	c.wg.Add(1)
+	go c.logicLoop()
+
+	if options.AutoReconnect {
+		c.wg.Add(1)
+		go c.reconnectLoop()
+	}
+
+	return c, nil
+}
+
 // Dial establishes a connection to an MQTT server and returns a Client.
+//
+// It is a wrapper around DialContext that uses the configured connection
+// timeout (see WithConnectTimeout) to control the initial handshake.
 //
 // The server parameter specifies the server address with scheme and port.
 // Supported schemes:
@@ -222,59 +293,20 @@ type MessageHandler func(*Client, Message)
 //	    mq.WithConnectTimeout(30*time.Second),
 //	    mq.WithWill("status/offline", []byte("disconnected"), 1, true))
 func Dial(server string, opts ...Option) (*Client, error) {
+	// Parse options purely to get the ConnectTimeout
 	options := defaultOptions(server)
 	for _, opt := range opts {
 		opt(options)
 	}
 
-	if options.Logger != nil {
-		options.Logger = options.Logger.With("lib", "mq")
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), options.ConnectTimeout)
+	defer cancel()
 
-	c := &Client{
-		opts:     options,
-		outgoing: make(chan packets.Packet, 1000),
-		incoming: make(chan packets.Packet, 100),
-
-		packetReceived: make(chan struct{}, 1),
-		pingPendingCh:  make(chan struct{}, 1),
-		stop:           make(chan struct{}),
-		pending:        make(map[uint16]*pendingOp),
-		subscriptions:  make(map[string]subscriptionEntry),
-		receivedQoS2:   make(map[uint16]struct{}),
-		disconnected:   make(chan struct{}, 1),
-	}
-
-	for topic, handler := range options.InitialSubscriptions {
-		c.subscriptions[topic] = subscriptionEntry{
-			handler: handler,
-			qos:     0,
-		}
-	}
-
-	if !c.opts.CleanSession {
-		if err := c.loadSessionState(); err != nil {
-			c.opts.Logger.Warn("failed to load session state", "error", err)
-		}
-	}
-
-	if err := c.connect(); err != nil {
-		return nil, err
-	}
-
-	c.wg.Add(1)
-	go c.logicLoop()
-
-	if options.AutoReconnect {
-		c.wg.Add(1)
-		go c.reconnectLoop()
-	}
-
-	return c, nil
+	return DialContext(ctx, server, opts...)
 }
 
 // connect establishes the TCP connection and performs MQTT handshake.
-func (c *Client) connect() error {
+func (c *Client) connect(ctx context.Context) error {
 	c.opts.Logger.Debug("connecting to MQTT server", "server", c.opts.Server)
 
 	// Validate configuration for MQTT compliance
@@ -308,7 +340,7 @@ func (c *Client) connect() error {
 	c.receivedAliases = make(map[uint16]string)
 	c.receivedAliasesLock.Unlock()
 
-	conn, err := c.dialServer()
+	conn, err := c.dialServer(ctx)
 	if err != nil {
 		return err
 	}
@@ -325,7 +357,7 @@ func (c *Client) connect() error {
 	}
 
 	// Handshake (CONNACK / AUTH)
-	connack, err := c.performHandshake(conn)
+	connack, err := c.performHandshake(ctx, conn)
 	if err != nil {
 		return err
 	}
@@ -395,13 +427,10 @@ func (c *Client) connect() error {
 }
 
 // dialServer establishes a TCP, TLS, or custom connection to the MQTT server.
-func (c *Client) dialServer() (net.Conn, error) {
+func (c *Client) dialServer(ctx context.Context) (net.Conn, error) {
 	// If a custom dialer is provided, trust it to handle the scheme and address.
 	// Pass the raw server string as the address to allow flexibility (e.g. WebSocket paths).
 	if c.opts.Dialer != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), c.opts.ConnectTimeout)
-		defer cancel()
-
 		network := "tcp"
 		if u, err := url.Parse(c.opts.Server); err == nil && u.Scheme != "" {
 			network = u.Scheme
@@ -432,9 +461,6 @@ func (c *Client) dialServer() (net.Conn, error) {
 	if !useTLS && u.Scheme != "tcp" && u.Scheme != "mqtt" {
 		return nil, fmt.Errorf("unsupported scheme: %s (supported: tcp, mqtt, tls, ssl, mqtts)", u.Scheme)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), c.opts.ConnectTimeout)
-	defer cancel()
 
 	var conn net.Conn
 	if useTLS {
@@ -834,7 +860,11 @@ func (c *Client) reconnectLoop() {
 			time.Sleep(backoff)
 
 			// Attempt to reconnect
-			if err := c.connect(); err != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), c.opts.ConnectTimeout)
+			err := c.connect(ctx)
+			cancel()
+
+			if err != nil {
 				// Exponential backoff
 				backoff = min(backoff*2, maxBackoff)
 
@@ -1122,8 +1152,11 @@ func (c *Client) ServerCapabilities() ServerCapabilities {
 	}
 }
 
-func (c *Client) performHandshake(conn net.Conn) (*packets.ConnackPacket, error) {
-	deadline := time.Now().Add(c.opts.ConnectTimeout)
+func (c *Client) performHandshake(ctx context.Context, conn net.Conn) (*packets.ConnackPacket, error) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(c.opts.ConnectTimeout)
+	}
 	_ = conn.SetReadDeadline(deadline)
 	defer func() { _ = conn.SetReadDeadline(time.Time{}) }()
 

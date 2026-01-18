@@ -51,10 +51,12 @@ func main() {
 
 ## Connecting
 
-The `Dial` function establishes a connection to the MQTT server. It returns a `Client` instance that is ready for use.
+The `Dial` and `DialContext` functions establish a connection to the MQTT server. They return a `Client` instance that is ready for use.
 
 ```go
 client, err := mq.Dial(server, options...)
+// OR
+client, err := mq.DialContext(ctx, server, options...)
 ```
 
 ### Supported URI Schemes

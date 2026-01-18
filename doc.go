@@ -51,7 +51,7 @@
 //
 // # Connection Options
 //
-// The Dial function accepts various options to configure the client:
+// The Dial and DialContext functions accept various options to configure the client:
 //
 //   - WithProtocolVersion(v) - Set MQTT version (ProtocolV50 or ProtocolV311)
 //   - WithClientID(id) - Set the MQTT client identifier
