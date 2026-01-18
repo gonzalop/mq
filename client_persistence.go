@@ -132,13 +132,21 @@ func (c *Client) convertFromPersistedPublish(p *PersistedPublish) *pendingOp {
 }
 
 func (c *Client) convertToPersistedSubscription(entry subscriptionEntry) *PersistedSubscription {
+	opts := &PersistedSubscriptionOptions{
+		NoLocal:           entry.options.NoLocal,
+		RetainAsPublished: entry.options.RetainAsPublished,
+		RetainHandling:    entry.options.RetainHandling,
+		UserProperties:    entry.options.UserProperties,
+	}
+
+	if entry.options.SubscriptionID > 0 {
+		id := uint32(entry.options.SubscriptionID)
+		opts.SubscriptionID = &id
+	}
+
 	return &PersistedSubscription{
-		QoS: entry.qos,
-		Options: &PersistedSubscriptionOptions{
-			NoLocal:           entry.options.NoLocal,
-			RetainAsPublished: entry.options.RetainAsPublished,
-			RetainHandling:    entry.options.RetainHandling,
-		},
+		QoS:     entry.qos,
+		Options: opts,
 	}
 }
 
@@ -148,6 +156,11 @@ func (c *Client) convertFromPersistedSubscription(sub *PersistedSubscription) su
 		opts.NoLocal = sub.Options.NoLocal
 		opts.RetainAsPublished = sub.Options.RetainAsPublished
 		opts.RetainHandling = sub.Options.RetainHandling
+		opts.UserProperties = sub.Options.UserProperties
+
+		if sub.Options.SubscriptionID != nil {
+			opts.SubscriptionID = int(*sub.Options.SubscriptionID)
+		}
 	}
 
 	return subscriptionEntry{

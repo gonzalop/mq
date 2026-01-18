@@ -151,6 +151,7 @@ func(c *mq.Client, msg mq.Message) {
 - `WithRetainAsPublished(bool)` - Keep Retain flag when forwarding (v5.0).
 - `WithRetainHandling(uint8)` - Control when to receive retained messages (0=Always, 1=IfNew, 2=Never) (v5.0).
 - `WithSubscriptionIdentifier(id int)` - Set numeric identifier for this subscription (v5.0).
+- `WithSubscribeUserProperty(key, value string)` - Add user property (v5.0).
 
 ### Wildcard Support
 - `+` - Single-level wildcard (e.g., `sensors/+/temperature`)

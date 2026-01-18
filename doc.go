@@ -140,6 +140,8 @@
 //   - WithNoLocal: Don't receive messages you published yourself
 //   - WithRetainAsPublished: Keep the original retain flag from the publisher
 //   - WithRetainHandling: Control when the server sends retained messages
+//   - WithSubscriptionIdentifier: Set a numeric identifier for the subscription
+//   - WithSubscribeUserProperty: Add custom metadata to the subscription
 //
 // Example:
 //

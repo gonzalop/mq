@@ -159,6 +159,18 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 			if i < len(pkt.RetainHandling) {
 				subOpts.RetainHandling = pkt.RetainHandling[i]
 			}
+
+			if pkt.Properties != nil {
+				if len(pkt.Properties.SubscriptionIdentifier) > 0 {
+					subOpts.SubscriptionID = pkt.Properties.SubscriptionIdentifier[0]
+				}
+				if len(pkt.Properties.UserProperties) > 0 {
+					subOpts.UserProperties = make(map[string]string)
+					for _, up := range pkt.Properties.UserProperties {
+						subOpts.UserProperties[up.Key] = up.Value
+					}
+				}
+			}
 		}
 
 		qos := uint8(0)

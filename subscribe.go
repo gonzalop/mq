@@ -2,6 +2,7 @@ package mq
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -13,12 +14,26 @@ type SubscribeOptions struct {
 	NoLocal           bool
 	RetainAsPublished bool
 	RetainHandling    uint8
-	Persistence       bool // Persistence enabled by default (must be manually set to true by default logic)
-	SubscriptionID    int  // MQTT v5.0: Subscription identifier (1-268435455, 0 = none).
+	Persistence       bool              // Persistence enabled by default (must be manually set to true by default logic)
+	SubscriptionID    int               // MQTT v5.0: Subscription identifier (1-268435455, 0 = none).
+	UserProperties    map[string]string // MQTT v5.0: User properties
 }
 
 // SubscribeOption is a functional option for configuring a subscription.
 type SubscribeOption func(*SubscribeOptions)
+
+// WithSubscribeUserProperty (MQTT v5.0) adds a user property to the subscription.
+// User properties are key-value pairs that can be used to send metadata to the server.
+//
+// This option is ignored when using MQTT v3.1.1.
+func WithSubscribeUserProperty(key, value string) SubscribeOption {
+	return func(o *SubscribeOptions) {
+		if o.UserProperties == nil {
+			o.UserProperties = make(map[string]string)
+		}
+		o.UserProperties[key] = value
+	}
+}
 
 // WithPersistence sets whether the subscription should be persisted to the session store.
 // If true (default), the subscription is saved and restored on process restart.
@@ -164,9 +179,26 @@ func (c *Client) Subscribe(topic string, qos QoS, handler MessageHandler, opts .
 		Version:           c.opts.ProtocolVersion,
 	}
 
-	if c.opts.ProtocolVersion >= ProtocolV50 && subOpts.SubscriptionID > 0 {
-		pkt.Properties = &packets.Properties{
-			SubscriptionIdentifier: []int{subOpts.SubscriptionID},
+	if c.opts.ProtocolVersion >= ProtocolV50 {
+		props := &packets.Properties{}
+		hasProps := false
+
+		if subOpts.SubscriptionID > 0 {
+			props.SubscriptionIdentifier = []int{subOpts.SubscriptionID}
+			hasProps = true
+		}
+		if len(subOpts.UserProperties) > 0 {
+			for k, v := range subOpts.UserProperties {
+				props.UserProperties = append(props.UserProperties, packets.UserProperty{
+					Key:   k,
+					Value: v,
+				})
+			}
+			hasProps = true
+		}
+
+		if hasProps {
+			pkt.Properties = props
 		}
 	}
 
@@ -254,20 +286,29 @@ func (c *Client) resubscribeAll() {
 		batchTopics := topics[i:end]
 		batchEntries := entries[i:end]
 
-		groups := make(map[int]struct {
+		// Group by (SubscriptionID + UserProperties) to comply with MQTT v5.0
+		// "A SUBSCRIBE packet MUST NOT contain more than one Subscription Identifier."
+		// Also User Properties apply to the whole packet.
+		groups := make(map[string]struct {
 			topics            []string
 			qos               []uint8
 			noLocal           []bool
 			retainAsPublished []bool
 			retainHandling    []uint8
+			id                int
+			userProps         map[string]string
 		})
 
-		// MQTT v5.0 Spec (Section 3.8.2.1.2) CRITICAL:
-		// "A SUBSCRIBE packet MUST NOT contain more than one Subscription Identifier."
-		// Split the batch into multiple packets if we have multiple unique subscription IDs.
 		for j, entry := range batchEntries {
-			id := entry.options.SubscriptionID
-			g := groups[id]
+			key := subGroupKey(entry.options.SubscriptionID, entry.options.UserProperties)
+			g := groups[key]
+
+			// Initialize if new group
+			if len(g.topics) == 0 {
+				g.id = entry.options.SubscriptionID
+				g.userProps = entry.options.UserProperties
+			}
+
 			g.topics = append(g.topics, batchTopics[j])
 			g.qos = append(g.qos, entry.qos)
 
@@ -276,11 +317,11 @@ func (c *Client) resubscribeAll() {
 				g.retainAsPublished = append(g.retainAsPublished, entry.options.RetainAsPublished)
 				g.retainHandling = append(g.retainHandling, entry.options.RetainHandling)
 			}
-			groups[id] = g
+			groups[key] = g
 		}
 
-		// Send one packet for each group (each group has exactly one unique ID or 0)
-		for id, g := range groups {
+		// Send one packet for each group
+		for _, g := range groups {
 			pkt := &packets.SubscribePacket{
 				PacketID:          c.nextID(),
 				Topics:            g.topics,
@@ -291,9 +332,26 @@ func (c *Client) resubscribeAll() {
 				Version:           c.opts.ProtocolVersion,
 			}
 
-			if c.opts.ProtocolVersion >= ProtocolV50 && id > 0 {
-				pkt.Properties = &packets.Properties{
-					SubscriptionIdentifier: []int{id},
+			if c.opts.ProtocolVersion >= ProtocolV50 {
+				props := &packets.Properties{}
+				hasProps := false
+
+				if g.id > 0 {
+					props.SubscriptionIdentifier = []int{g.id}
+					hasProps = true
+				}
+				if len(g.userProps) > 0 {
+					for k, v := range g.userProps {
+						props.UserProperties = append(props.UserProperties, packets.UserProperty{
+							Key:   k,
+							Value: v,
+						})
+					}
+					hasProps = true
+				}
+
+				if hasProps {
+					pkt.Properties = props
 				}
 			}
 
@@ -313,8 +371,28 @@ func (c *Client) resubscribeAll() {
 
 			c.opts.Logger.Debug("resubscribe packet sent",
 				"packet_id", pkt.PacketID,
-				"sub_id", id,
+				"sub_id", g.id,
 				"topics_count", len(g.topics))
 		}
 	}
+}
+
+// subGroupKey generates a unique key for grouping subscriptions by ID and User Properties.
+func subGroupKey(id int, props map[string]string) string {
+	if len(props) == 0 {
+		return fmt.Sprintf("%d", id)
+	}
+	// Sort keys for deterministic output
+	keys := make([]string, 0, len(props))
+	for k := range props {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%d|", id)
+	for _, k := range keys {
+		fmt.Fprintf(&sb, "%s=%s|", k, props[k])
+	}
+	return sb.String()
 }
