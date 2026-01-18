@@ -178,10 +178,10 @@ func (f *FileStore) ClearPendingPublishes() error {
 }
 
 // SaveSubscription stores a subscription to disk.
-func (f *FileStore) SaveSubscription(topic string, sub *SubscriptionInfo) error {
+func (f *FileStore) SaveSubscription(topic string, sub *PersistedSubscription) error {
 	subs, err := f.LoadSubscriptions()
 	if err != nil {
-		subs = make(map[string]*SubscriptionInfo)
+		subs = make(map[string]*PersistedSubscription)
 	}
 
 	subs[topic] = sub
@@ -228,18 +228,18 @@ func (f *FileStore) DeleteSubscription(topic string) error {
 }
 
 // LoadSubscriptions loads all subscriptions from disk.
-func (f *FileStore) LoadSubscriptions() (map[string]*SubscriptionInfo, error) {
+func (f *FileStore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {
 	path := filepath.Join(f.dir, "subscriptions.json")
 
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return make(map[string]*SubscriptionInfo), nil
+		return make(map[string]*PersistedSubscription), nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read subscriptions: %w", err)
 	}
 
-	var subs map[string]*SubscriptionInfo
+	var subs map[string]*PersistedSubscription
 	if err := json.Unmarshal(data, &subs); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal subscriptions: %w", err)
 	}

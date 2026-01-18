@@ -22,11 +22,11 @@ func (m *MockSessionStoreForRestore) LoadPendingPublishes() (map[uint16]*Persist
 	return result, nil
 }
 func (m *MockSessionStoreForRestore) ClearPendingPublishes() error { return nil }
-func (m *MockSessionStoreForRestore) SaveSubscription(topic string, sub *SubscriptionInfo) error {
+func (m *MockSessionStoreForRestore) SaveSubscription(topic string, sub *PersistedSubscription) error {
 	return nil
 }
 func (m *MockSessionStoreForRestore) DeleteSubscription(topic string) error { return nil }
-func (m *MockSessionStoreForRestore) LoadSubscriptions() (map[string]*SubscriptionInfo, error) {
+func (m *MockSessionStoreForRestore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {
 	return nil, nil
 }
 func (m *MockSessionStoreForRestore) SaveReceivedQoS2(packetID uint16) error         { return nil }

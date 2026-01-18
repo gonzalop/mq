@@ -8,7 +8,7 @@ import (
 
 // MockPersistenceStore implements SessionStore interface for testing ephemeral subs
 type MockPersistenceStore struct {
-	SavedSubs map[string]*SubscriptionInfo
+	SavedSubs map[string]*PersistedSubscription
 }
 
 func (m *MockPersistenceStore) SavePendingPublish(packetID uint16, pub *PersistedPublish) error {
@@ -19,9 +19,9 @@ func (m *MockPersistenceStore) LoadPendingPublishes() (map[uint16]*PersistedPubl
 	return nil, nil
 }
 func (m *MockPersistenceStore) ClearPendingPublishes() error { return nil }
-func (m *MockPersistenceStore) SaveSubscription(topic string, sub *SubscriptionInfo) error {
+func (m *MockPersistenceStore) SaveSubscription(topic string, sub *PersistedSubscription) error {
 	if m.SavedSubs == nil {
-		m.SavedSubs = make(map[string]*SubscriptionInfo)
+		m.SavedSubs = make(map[string]*PersistedSubscription)
 	}
 	m.SavedSubs[topic] = sub
 	return nil
@@ -30,7 +30,7 @@ func (m *MockPersistenceStore) DeleteSubscription(topic string) error {
 	delete(m.SavedSubs, topic)
 	return nil
 }
-func (m *MockPersistenceStore) LoadSubscriptions() (map[string]*SubscriptionInfo, error) {
+func (m *MockPersistenceStore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {
 	return nil, nil
 }
 func (m *MockPersistenceStore) SaveReceivedQoS2(packetID uint16) error         { return nil }

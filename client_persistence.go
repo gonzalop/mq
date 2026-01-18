@@ -48,7 +48,7 @@ func (c *Client) loadSessionState() error {
 	}
 
 	for topic, sub := range subs {
-		entry := c.convertFromSubscriptionInfo(sub)
+		entry := c.convertFromPersistedSubscription(sub)
 		if handler, ok := c.opts.InitialSubscriptions[topic]; ok {
 			entry.handler = handler
 		}
@@ -131,10 +131,10 @@ func (c *Client) convertFromPersistedPublish(p *PersistedPublish) *pendingOp {
 	}
 }
 
-func (c *Client) convertToSubscriptionInfo(entry subscriptionEntry) *SubscriptionInfo {
-	return &SubscriptionInfo{
+func (c *Client) convertToPersistedSubscription(entry subscriptionEntry) *PersistedSubscription {
+	return &PersistedSubscription{
 		QoS: entry.qos,
-		Options: &SubscriptionOptions{
+		Options: &PersistedSubscriptionOptions{
 			NoLocal:           entry.options.NoLocal,
 			RetainAsPublished: entry.options.RetainAsPublished,
 			RetainHandling:    entry.options.RetainHandling,
@@ -142,7 +142,7 @@ func (c *Client) convertToSubscriptionInfo(entry subscriptionEntry) *Subscriptio
 	}
 }
 
-func (c *Client) convertFromSubscriptionInfo(sub *SubscriptionInfo) subscriptionEntry {
+func (c *Client) convertFromPersistedSubscription(sub *PersistedSubscription) subscriptionEntry {
 	opts := SubscribeOptions{}
 	if sub.Options != nil {
 		opts.NoLocal = sub.Options.NoLocal

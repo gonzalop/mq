@@ -175,9 +175,9 @@ func TestFileStore_Subscriptions(t *testing.T) {
 	}
 
 	t.Run("save and load", func(t *testing.T) {
-		sub := &SubscriptionInfo{
+		sub := &PersistedSubscription{
 			QoS: 1,
-			Options: &SubscriptionOptions{
+			Options: &PersistedSubscriptionOptions{
 				NoLocal:           true,
 				RetainAsPublished: false,
 				RetainHandling:    2,
@@ -228,7 +228,7 @@ func TestFileStore_Subscriptions(t *testing.T) {
 	t.Run("multiple subscriptions", func(t *testing.T) {
 		topics := []string{"topic/1", "topic/2", "topic/3"}
 		for _, topic := range topics {
-			sub := &SubscriptionInfo{QoS: 1}
+			sub := &PersistedSubscription{QoS: 1}
 			if err := store.SaveSubscription(topic, sub); err != nil {
 				t.Fatalf("SaveSubscription(%q) failed: %v", topic, err)
 			}
@@ -332,7 +332,7 @@ func TestFileStore_Clear(t *testing.T) {
 	if err := store.SavePendingPublish(1, pub); err != nil {
 		t.Fatalf("Failed to save pending publish: %v", err)
 	}
-	if err := store.SaveSubscription("test/topic", &SubscriptionInfo{QoS: 1}); err != nil {
+	if err := store.SaveSubscription("test/topic", &PersistedSubscription{QoS: 1}); err != nil {
 		t.Fatalf("Failed to save subscription: %v", err)
 	}
 	if err := store.SaveReceivedQoS2(42); err != nil {

@@ -63,7 +63,7 @@ type SessionStore interface {
 	// SaveSubscription stores an active subscription.
 	// Called when SUBACK is received.
 	// MAY return immediately and persist asynchronously.
-	SaveSubscription(topic string, sub *SubscriptionInfo) error
+	SaveSubscription(topic string, sub *PersistedSubscription) error
 
 	// DeleteSubscription removes a subscription.
 	// Called when UNSUBACK is received.
@@ -79,7 +79,7 @@ type SessionStore interface {
 	// - If no handler is found, messages will fallback to the DefaultPublishHandler if set.
 	//
 	// MUST complete synchronously and return actual data.
-	LoadSubscriptions() (map[string]*SubscriptionInfo, error)
+	LoadSubscriptions() (map[string]*PersistedSubscription, error)
 
 	// SaveReceivedQoS2 marks a QoS 2 packet ID as received (prevent duplicates).
 	// Called when QoS 2 PUBLISH is received.
@@ -116,11 +116,11 @@ type PersistedPublish struct {
 	Properties *PublishProperties
 }
 
-// SubscriptionInfo represents a subscription for persistence.
+// PersistedSubscription represents a subscription for persistence.
 // This contains the data needed to restore a subscription after reconnection.
-type SubscriptionInfo struct {
+type PersistedSubscription struct {
 	QoS     uint8
-	Options *SubscriptionOptions
+	Options *PersistedSubscriptionOptions
 }
 
 // PublishProperties represents MQTT v5.0 publish properties for persistence.
@@ -135,8 +135,8 @@ type PublishProperties struct {
 	ContentType            string
 }
 
-// SubscriptionOptions represents MQTT v5.0 subscription options for persistence.
-type SubscriptionOptions struct {
+// PersistedSubscriptionOptions represents MQTT v5.0 subscription options for persistence.
+type PersistedSubscriptionOptions struct {
 	NoLocal           bool
 	RetainAsPublished bool
 	RetainHandling    uint8

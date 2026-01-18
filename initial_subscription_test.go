@@ -6,12 +6,12 @@ import (
 
 // MockSessionStore implements SessionStore interface for testing
 type MockSessionStore struct {
-	storedSubs map[string]*SubscriptionInfo
+	storedSubs map[string]*PersistedSubscription
 }
 
 func NewMockSessionStore() *MockSessionStore {
 	return &MockSessionStore{
-		storedSubs: make(map[string]*SubscriptionInfo),
+		storedSubs: make(map[string]*PersistedSubscription),
 	}
 }
 
@@ -23,7 +23,7 @@ func (m *MockSessionStore) LoadPendingPublishes() (map[uint16]*PersistedPublish,
 	return nil, nil
 }
 func (m *MockSessionStore) ClearPendingPublishes() error { return nil }
-func (m *MockSessionStore) SaveSubscription(topic string, sub *SubscriptionInfo) error {
+func (m *MockSessionStore) SaveSubscription(topic string, sub *PersistedSubscription) error {
 	m.storedSubs[topic] = sub
 	return nil
 }
@@ -31,9 +31,9 @@ func (m *MockSessionStore) DeleteSubscription(topic string) error {
 	delete(m.storedSubs, topic)
 	return nil
 }
-func (m *MockSessionStore) LoadSubscriptions() (map[string]*SubscriptionInfo, error) {
+func (m *MockSessionStore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {
 	// Return copy to avoid races in test
-	result := make(map[string]*SubscriptionInfo)
+	result := make(map[string]*PersistedSubscription)
 	for k, v := range m.storedSubs {
 		result[k] = v
 	}

@@ -336,7 +336,7 @@ func (c *Client) handleSuback(p *packets.SubackPacket) {
 						if entry, ok := c.subscriptions[topic]; ok {
 							// Only persist if enabled (default is true)
 							if entry.options.Persistence {
-								sub := c.convertToSubscriptionInfo(entry)
+								sub := c.convertToPersistedSubscription(entry)
 								if err := c.opts.SessionStore.SaveSubscription(topic, sub); err != nil {
 									c.opts.Logger.Warn("failed to persist subscription", "topic", topic, "error", err)
 								}
