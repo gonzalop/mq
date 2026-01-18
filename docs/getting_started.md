@@ -173,6 +173,14 @@ token := client.Unsubscribe("sensors/temperature")
 token.Wait(context.Background())
 ```
 
+### Options (MQTT v5.0)
+
+```go
+// Unsubscribe with User Properties
+token := client.Unsubscribe("logs", mq.WithUnsubscribeUserProperty("reason", "done"))
+token.Wait(context.Background())
+```
+
 ## Disconnecting
 
 ```go
