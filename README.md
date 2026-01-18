@@ -99,7 +99,7 @@ See the [examples](./examples) directory for various use cases:
 - [`persistent/`](./examples/persistent) - Persistent sessions and offline messaging
 - [`scram_auth/`](./examples/scram_auth) - SCRAM-SHA-256 Authentication (MQTT v5.0)
 - [`simple/`](./examples/simple) - Basic publish/subscribe
-- [`throughput/`](./examples/throughput) - High-performance throughput benchmarks
+- [`throughput/`](./examples/throughput) - High-performance throughput benchmarks. See an example of its output and analysis [here](https://gist.github.com/gonzalop/18e2d2ab28c94d32866f1a0d1668c523).
 - [`tls/`](./examples/tls) - Secure connection with optional client certs
 - [`topic_aliases/`](./examples/topic_aliases) - Bandwidth optimization using Topic Aliases
 - [`v5_properties/`](./examples/v5_properties) - MQTT v5.0 properties (ContentType, UserProperties, etc.)
