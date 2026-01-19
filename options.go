@@ -420,18 +420,23 @@ func WithLogger(logger *slog.Logger) Option {
 // If provided, the library will skip its standard scheme validation and
 // delegate the connection creation entirely to the dialer.
 //
-// The dialer function receives:
-//   - ctx: Context with the connection timeout
+// The dialer's DialContext method receives:
+//   - ctx: The context provided to DialContext (or one created from WithConnectTimeout if using Dial)
 //   - network: The scheme from the server URL (e.g. "ws", "tcp", "unix")
 //   - addr: The original server string passed to Dial
 //
-// Example (WebSockets):
+// Example (WebSockets using nhooyr.io/websocket):
 //
 //	client, _ := mq.Dial("ws://server.example.com/mqtt",
-//	    mq.WithDialer(func(ctx context.Context, network, addr string) (net.Conn, error) {
-//	        // Use a websocket library to dial
-//	        return websocket.Dial(ctx, addr, nil)
-//	    }))
+//	    mq.WithDialer(mq.DialFunc(func(ctx context.Context, network, addr string) (net.Conn, error) {
+//	        c, _, err := websocket.Dial(ctx, addr, &websocket.DialOptions{
+//	            Subprotocols: []string{"mqtt"}, // Crucial for MQTT over WebSockets
+//	        })
+//	        if err != nil {
+//	            return nil, err
+//	        }
+//	        return websocket.NetConn(ctx, c, websocket.MessageBinary), nil
+//	    })))
 func WithDialer(dialer ContextDialer) Option {
 	return func(o *clientOptions) {
 		o.Dialer = dialer

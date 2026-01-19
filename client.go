@@ -174,14 +174,18 @@ type pendingOp struct {
 // MessageHandler is called when a message is received on a subscribed topic.
 type MessageHandler func(*Client, Message)
 
-// DialContext establishes a connection to an MQTT server with a context.
+// DialContext establishes a connection to an MQTT server with a context and returns a Client.
 //
-// The context is used to control the initial connection establishment (handshake).
-// If the context is cancelled or expires before the connection is established,
-// DialContext returns an error.
+// The context is used to control the initial connection establishment, including
+// the network dial, TLS handshake, and MQTT CONNECT handshake. If the context
+// is cancelled or expires before the handshake completes, DialContext returns an error.
 //
-// Once connected, the context's expiration has no effect on the ongoing connection
-// or background reconnection attempts.
+// When using DialContext, the WithConnectTimeout option is ignored for the initial
+// connection (as the provided context takes precedence), but it is still used
+// for subsequent automatic reconnection attempts.
+//
+// Once the initial connection is established, the context's expiration has no
+// effect on the ongoing connection or background maintenance.
 //
 // Example:
 //
