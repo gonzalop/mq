@@ -25,6 +25,15 @@ A lightweight, idiomatic MQTT client library for Go with full support for v3.1.1
 
 All features are tested with an extensive unit and integration test suite.
 
+## Performance
+
+The `mq` library is built for high-performance scenarios, consistently outperforming other Go MQTT clients in throughput and resource efficiency. Key highlights from our benchmarks include:
+- **High Throughput**: Up to 2.8x faster than other popular implementations.
+- **Memory Efficient**: 10x lower memory allocation and 14x fewer GC cycles.
+- **Reliable**: 100% message delivery under extreme load where other clients may drop messages.
+
+For a detailed comparative analysis, see the **[Performance Analysis Report](docs/PERFORMANCE_ANALYSIS.md)**.
+
 ## Installation
 
 ```bash
