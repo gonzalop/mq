@@ -118,7 +118,7 @@ func TestResubscribeWithUserPropertiesGrouping(t *testing.T) {
 	seenA := false
 	seenB := false
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case p := <-c.outgoing:
 			req, ok := p.(*packets.SubscribePacket)

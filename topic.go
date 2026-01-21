@@ -184,8 +184,8 @@ func validateSubscribeTopic(topic string, opts *clientOptions) error {
 	return nil
 }
 
-// validatePayload validates message payload size.
-func validatePayload(payload []byte, opts *clientOptions) error {
+// validatePayloadSize validates message payload size.
+func validatePayloadSize(payload []byte, opts *clientOptions) error {
 	maxSize := getLimit(opts.MaxPayloadSize, DefaultMaxPayloadSize)
 	if len(payload) > maxSize {
 		return fmt.Errorf("payload size %d exceeds maximum %d", len(payload), maxSize)

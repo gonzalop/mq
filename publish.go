@@ -210,7 +210,7 @@ func (c *Client) Publish(topic string, payload []byte, opts ...PublishOption) To
 		return tok
 	}
 
-	if err := validatePayload(payload, c.opts); err != nil {
+	if err := validatePayloadSize(payload, c.opts); err != nil {
 		tok := newToken()
 		tok.complete(fmt.Errorf("invalid payload: %w", err))
 		return tok

@@ -16,9 +16,10 @@ func BenchmarkDecoding_Publish_Small(b *testing.B) {
 		PacketID: 10,
 	}
 	encoded := encodeToBytes(pkt)
+	r := bytes.NewReader(encoded)
 
 	for b.Loop() {
-		r := bytes.NewReader(encoded)
+		r.Reset(encoded)
 		_, err := packets.ReadPacket(r, 4, 0)
 		if err != nil {
 			b.Fatal(err)
@@ -35,9 +36,10 @@ func BenchmarkDecoding_Publish_Large(b *testing.B) {
 		PacketID: 10,
 	}
 	encoded := encodeToBytes(pkt)
+	r := bytes.NewReader(encoded)
 
 	for b.Loop() {
-		r := bytes.NewReader(encoded)
+		r.Reset(encoded)
 		_, err := packets.ReadPacket(r, 4, 0)
 		if err != nil {
 			b.Fatal(err)

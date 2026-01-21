@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"maps"
 	"testing"
 )
 
@@ -16,9 +17,7 @@ func (m *MockSessionStoreForRestore) DeletePendingPublish(packetID uint16) error
 func (m *MockSessionStoreForRestore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
 	// Return copy to avoid races in test
 	result := make(map[uint16]*PersistedPublish)
-	for k, v := range m.pendingPublishes {
-		result[k] = v
-	}
+	maps.Copy(result, m.pendingPublishes)
 	return result, nil
 }
 func (m *MockSessionStoreForRestore) ClearPendingPublishes() error { return nil }

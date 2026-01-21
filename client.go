@@ -655,7 +655,7 @@ func (c *Client) writeLoop() {
 
 			// Batching: try to drain channel to fill buffer
 			count := len(c.outgoing)
-			for i := 0; i < count; i++ {
+			for range count {
 				pkt := <-c.outgoing
 				c.opts.Logger.Debug("sending packet (batch)", "type", packets.PacketNames[pkt.Type()])
 				if _, err := pkt.WriteTo(bw); err != nil {
@@ -1248,10 +1248,7 @@ func (c *Client) processConnackProperties(connack *packets.ConnackPacket) {
 		if c.opts.TopicAliasMaximum > 0 && connack.Properties.Presence&packets.PresTopicAliasMaximum != 0 {
 			serverLimit := connack.Properties.TopicAliasMaximum
 			if serverLimit > 0 {
-				c.maxAliases = c.opts.TopicAliasMaximum
-				if serverLimit < c.maxAliases {
-					c.maxAliases = serverLimit
-				}
+				c.maxAliases = min(serverLimit, c.opts.TopicAliasMaximum)
 				c.topicAliases = make(map[string]uint16)
 				c.nextAliasID = 1
 				c.opts.Logger.Debug("topic aliases enabled",

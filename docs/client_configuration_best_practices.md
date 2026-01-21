@@ -63,8 +63,6 @@ client, err := mq.Dial(server,
 )
 ```
 
-For more details on resource-based vulnerabilities, see [SECURITY.md](../SECURITY.md).
-
 ---
 
 ## TLS Configuration

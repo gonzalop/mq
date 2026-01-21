@@ -40,7 +40,7 @@ type fileStoreConfig struct {
 type FileStoreOption func(*fileStoreConfig)
 
 // WithPermissions sets the file permissions for stored files.
-// Default is 0644 (owner read/write, group/others read-only).
+// Default is 0600 (owner read/write, group/others none).
 //
 // Example:
 //
@@ -78,7 +78,7 @@ func NewFileStore(baseDir, clientID string, opts ...FileStoreOption) (*FileStore
 	}
 
 	cfg := &fileStoreConfig{
-		permissions: 0644,
+		permissions: 0600,
 	}
 
 	for _, opt := range opts {

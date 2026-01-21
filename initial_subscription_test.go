@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"maps"
 	"testing"
 )
 
@@ -34,9 +35,7 @@ func (m *MockSessionStore) DeleteSubscription(topic string) error {
 func (m *MockSessionStore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {
 	// Return copy to avoid races in test
 	result := make(map[string]*PersistedSubscription)
-	for k, v := range m.storedSubs {
-		result[k] = v
-	}
+	maps.Copy(result, m.storedSubs)
 	return result, nil
 }
 func (m *MockSessionStore) SaveReceivedQoS2(packetID uint16) error         { return nil }

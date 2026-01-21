@@ -33,7 +33,8 @@ The `mq` library is built for high-performance scenarios, consistently outperfor
 - **Reliable**: 100% message delivery under extreme load where other clients may drop messages.
 
 For a detailed comparative analysis, see the **[Performance Analysis Report](docs/PERFORMANCE_ANALYSIS.md)**.
-**NOTE**: new changes after these analysis made `mq` even faster.
+
+**NOTE**: new changes after these analyses made `mq` even faster.
 
 ## Installation
 
@@ -93,7 +94,7 @@ func main() {
 ## 📚 Documentation
 
 - **[Getting Started](docs/getting_started.md)**: Detailed guide on Connecting, Publishing, Subscribing, and Options.
-- **[Best Practices](./docs/client_configuration_best_practices.md)**: Production-grade configuration guide (Security, Resource Limits, Session Management).
+- **[Best Practices](./docs/client_configuration_best_practices.md)**: Production-grade configuration guide (Security, Resource Limits, Session Management). A **MUST**-read.
 - **[Troubleshooting](./docs/troubleshooting.md)**: Solutions for common issues like client ID thrashing, zombie messages, and flow control.
 - **[Persistence](./docs/persistence.md)**: Detailed guide on configuring durable sessions across restarts.
 - **[Internals](./docs/internals/CONCURRENCY.md)**: Deep dive into the library's concurrency model.

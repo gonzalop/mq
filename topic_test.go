@@ -131,7 +131,7 @@ func TestValidateSubscribeTopic(t *testing.T) {
 	}
 }
 
-func TestValidatePayload(t *testing.T) {
+func TestValidatePayloadSize(t *testing.T) {
 	opts := defaultOptions("tcp://test:1883")
 
 	tests := []struct {
@@ -149,9 +149,9 @@ func TestValidatePayload(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			payload := make([]byte, tt.size)
-			err := validatePayload(payload, opts)
+			err := validatePayloadSize(payload, opts)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("validatePayload() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("validatePayloadSize() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -219,13 +219,13 @@ func TestCustomPayloadLimit(t *testing.T) {
 
 	// Should pass - under limit
 	smallPayload := make([]byte, 50)
-	if err := validatePayload(smallPayload, opts); err != nil {
+	if err := validatePayloadSize(smallPayload, opts); err != nil {
 		t.Errorf("Expected small payload to pass, got error: %v", err)
 	}
 
 	// Should fail - over custom limit
 	largePayload := make([]byte, 200)
-	if err := validatePayload(largePayload, opts); err == nil {
+	if err := validatePayloadSize(largePayload, opts); err == nil {
 		t.Error("Expected large payload to fail with custom limit")
 	}
 }

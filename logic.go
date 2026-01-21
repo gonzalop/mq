@@ -409,7 +409,7 @@ func (c *Client) retryPending() {
 
 // nextID generates the next packet ID (1-65535, cycling).
 func (c *Client) nextID() uint16 {
-	for i := 0; i < 65535; i++ {
+	for range 65535 {
 		c.nextPacketID++
 		if c.nextPacketID == 0 {
 			c.nextPacketID = 1
@@ -431,7 +431,7 @@ func (c *Client) handleDisconnectPacket(p *packets.DisconnectPacket) {
 		reason = name
 	}
 
-	attrs := []interface{}{
+	attrs := []any{
 		"reason_code", p.ReasonCode,
 		"reason", reason,
 	}
