@@ -103,7 +103,7 @@ func TestPublishPacketV5(t *testing.T) {
 	remaining := make([]byte, header.RemainingLength)
 	_, _ = r.Read(remaining)
 
-	decoded, err := DecodePublish(remaining, header, 5)
+	decoded, err := DecodePublish(remaining, &header, 5)
 	if err != nil {
 		t.Fatalf("failed to decode: %v", err)
 	}

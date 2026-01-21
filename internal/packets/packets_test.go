@@ -158,7 +158,7 @@ func TestPublishPacketQoS0(t *testing.T) {
 	remaining := make([]byte, header.RemainingLength)
 	_, _ = r.Read(remaining) // Safe to ignore: reading from in-memory buffer
 
-	decoded, err := DecodePublish(remaining, header, 4)
+	decoded, err := DecodePublish(remaining, &header, 4)
 	if err != nil {
 		t.Fatalf("failed to decode: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestPublishPacketQoS1(t *testing.T) {
 	remaining := make([]byte, header.RemainingLength)
 	_, _ = r.Read(remaining) // Safe to ignore: reading from in-memory buffer
 
-	decoded, err := DecodePublish(remaining, header, 4)
+	decoded, err := DecodePublish(remaining, &header, 4)
 	if err != nil {
 		t.Fatalf("failed to decode: %v", err)
 	}

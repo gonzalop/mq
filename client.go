@@ -581,16 +581,19 @@ func (c *Client) readLoop() {
 	defer c.wg.Done()
 	defer c.handleDisconnect()
 
+	c.connLock.RLock()
+	conn := c.conn
+	c.connLock.RUnlock()
+
+	if conn == nil {
+		return
+	}
+
+	// Wrap connection in buffered reader to reduce syscalls
+	br := bufio.NewReader(conn)
+
 	for {
-		c.connLock.RLock()
-		conn := c.conn
-		c.connLock.RUnlock()
-
-		if conn == nil {
-			return
-		}
-
-		pkt, err := packets.ReadPacket(conn, c.opts.ProtocolVersion, c.opts.MaxIncomingPacket)
+		pkt, err := packets.ReadPacket(br, c.opts.ProtocolVersion, c.opts.MaxIncomingPacket)
 		if err != nil {
 			c.opts.Logger.Debug("read error, disconnecting", "error", err)
 			return

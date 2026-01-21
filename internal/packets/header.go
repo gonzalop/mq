@@ -77,11 +77,11 @@ func (h *FixedHeader) WriteTo(w io.Writer) (int64, error) {
 }
 
 // DecodeFixedHeader reads and decodes a fixed header from the reader.
-func DecodeFixedHeader(r io.Reader) (*FixedHeader, error) {
+func DecodeFixedHeader(r io.Reader) (FixedHeader, error) {
 	var buf [1]byte
 
 	if _, err := io.ReadFull(r, buf[:]); err != nil {
-		return nil, err
+		return FixedHeader{}, err
 	}
 
 	firstByte := buf[0]
@@ -90,10 +90,10 @@ func DecodeFixedHeader(r io.Reader) (*FixedHeader, error) {
 
 	remainingLength, err := decodeVarInt(r)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode remaining length: %w", err)
+		return FixedHeader{}, fmt.Errorf("failed to decode remaining length: %w", err)
 	}
 
-	return &FixedHeader{
+	return FixedHeader{
 		PacketType:      packetType,
 		Flags:           flags,
 		RemainingLength: remainingLength,

@@ -74,7 +74,7 @@ func ReadPacket(r io.Reader, version uint8, maxIncomingPacket int) (Packet, erro
 		return nil, fmt.Errorf("unknown packet type: %d", header.PacketType)
 	}
 
-	pkt, err := decoder(remaining, header, version)
+	pkt, err := decoder(remaining, &header, version)
 
 	if bufPtr != nil {
 		putBuffer(bufPtr)

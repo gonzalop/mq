@@ -33,6 +33,7 @@ The `mq` library is built for high-performance scenarios, consistently outperfor
 - **Reliable**: 100% message delivery under extreme load where other clients may drop messages.
 
 For a detailed comparative analysis, see the **[Performance Analysis Report](docs/PERFORMANCE_ANALYSIS.md)**.
+**NOTE**: new changes after these analysis made `mq` even faster.
 
 ## Installation
 
