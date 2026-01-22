@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"sync"
@@ -134,6 +135,13 @@ type Client struct {
 	// Session expiry interval (MQTT v5.0)
 	requestedSessionExpiry uint32 // Original user request (preserved on reconnect)
 	sessionExpiryInterval  uint32 // Actual value from server (may override request)
+
+	// Stats (atomic)
+	packetsSent     atomic.Uint64
+	packetsReceived atomic.Uint64
+	bytesSent       atomic.Uint64
+	bytesReceived   atomic.Uint64
+	reconnectCount  atomic.Uint64
 
 	// For reconnection
 	disconnected chan struct{}
@@ -354,14 +362,18 @@ func (c *Client) connect(ctx context.Context) error {
 	c.lastDisconnectReason = nil
 	c.connLock.Unlock()
 
+	cr := &countingReader{Reader: conn, c: c}
+	cw := &countingWriter{Writer: conn, c: c}
+
 	connectPkt := c.buildConnectPacket()
-	if _, err := connectPkt.WriteTo(conn); err != nil {
+	if _, err := connectPkt.WriteTo(cw); err != nil {
 		conn.Close()
 		return fmt.Errorf("failed to send CONNECT: %w", err)
 	}
+	c.packetsSent.Add(1)
 
 	// Handshake (CONNACK / AUTH)
-	connack, err := c.performHandshake(ctx, conn)
+	connack, err := c.performHandshake(ctx, cr, cw)
 	if err != nil {
 		return err
 	}
@@ -590,7 +602,8 @@ func (c *Client) readLoop() {
 	}
 
 	// Wrap connection in buffered reader to reduce syscalls
-	br := bufio.NewReader(conn)
+	cr := &countingReader{Reader: conn, c: c}
+	br := bufio.NewReader(cr)
 
 	for {
 		pkt, err := packets.ReadPacket(br, c.opts.ProtocolVersion, c.opts.MaxIncomingPacket)
@@ -598,6 +611,7 @@ func (c *Client) readLoop() {
 			c.opts.Logger.Debug("read error, disconnecting", "error", err)
 			return
 		}
+		c.packetsReceived.Add(1)
 
 		c.opts.Logger.Debug("received packet", "type", packets.PacketNames[pkt.Type()])
 
@@ -638,7 +652,8 @@ func (c *Client) writeLoop() {
 		return
 	}
 
-	bw := bufio.NewWriter(conn)
+	cw := &countingWriter{Writer: conn, c: c}
+	bw := bufio.NewWriter(cw)
 	lastReceived := time.Now()
 	lastSent := lastReceived
 
@@ -651,6 +666,7 @@ func (c *Client) writeLoop() {
 				c.handleDisconnect()
 				return
 			}
+			c.packetsSent.Add(1)
 			lastSent = time.Now()
 
 			// Batching: try to drain channel to fill buffer
@@ -663,6 +679,7 @@ func (c *Client) writeLoop() {
 					c.handleDisconnect()
 					return
 				}
+				c.packetsSent.Add(1)
 				lastSent = time.Now()
 			}
 
@@ -865,6 +882,8 @@ func (c *Client) reconnectLoop() {
 		case <-c.disconnected:
 			// Wait before reconnecting
 			time.Sleep(backoff)
+
+			c.reconnectCount.Add(1)
 
 			// Attempt to reconnect
 			ctx, cancel := context.WithTimeout(context.Background(), c.opts.ConnectTimeout)
@@ -1159,20 +1178,47 @@ func (c *Client) ServerCapabilities() ServerCapabilities {
 	}
 }
 
-func (c *Client) performHandshake(ctx context.Context, conn net.Conn) (*packets.ConnackPacket, error) {
+// ClientStats holds connection and throughput statistics.
+type ClientStats struct {
+	PacketsSent     uint64
+	PacketsReceived uint64
+	BytesSent       uint64
+	BytesReceived   uint64
+	ReconnectCount  uint64
+	Connected       bool
+}
+
+// GetStats returns the current client statistics.
+func (c *Client) GetStats() ClientStats {
+	return ClientStats{
+		PacketsSent:     c.packetsSent.Load(),
+		PacketsReceived: c.packetsReceived.Load(),
+		BytesSent:       c.bytesSent.Load(),
+		BytesReceived:   c.bytesReceived.Load(),
+		ReconnectCount:  c.reconnectCount.Load(),
+		Connected:       c.IsConnected(),
+	}
+}
+
+func (c *Client) performHandshake(ctx context.Context, r io.Reader, w io.Writer) (*packets.ConnackPacket, error) {
 	deadline, ok := ctx.Deadline()
 	if !ok {
 		deadline = time.Now().Add(c.opts.ConnectTimeout)
 	}
+
+	c.connLock.RLock()
+	conn := c.conn
+	c.connLock.RUnlock()
 	_ = conn.SetReadDeadline(deadline)
 	defer func() { _ = conn.SetReadDeadline(time.Time{}) }()
 
 	for {
-		pkt, err := packets.ReadPacket(conn, c.opts.ProtocolVersion, c.opts.MaxIncomingPacket)
+		pkt, err := packets.ReadPacket(r, c.opts.ProtocolVersion, c.opts.MaxIncomingPacket)
 		if err != nil {
 			conn.Close()
 			return nil, fmt.Errorf("failed to read packet: %w", err)
 		}
+		c.packetsReceived.Add(1)
 
 		switch p := pkt.(type) {
 		case *packets.ConnackPacket:
@@ -1204,10 +1250,11 @@ func (c *Client) performHandshake(ctx context.Context, conn net.Conn) (*packets.
 				},
 			}
 
-			if _, err := authResp.WriteTo(conn); err != nil {
+			if _, err := authResp.WriteTo(w); err != nil {
 				conn.Close()
 				return nil, fmt.Errorf("failed to send AUTH response: %w", err)
 			}
+			c.packetsSent.Add(1)
 
 		default:
 			conn.Close()
@@ -1284,4 +1331,30 @@ func (c *Client) processConnackProperties(connack *packets.ConnackPacket) {
 		// Use default capabilities for older protocols or if no properties sent
 		c.serverCaps = extractServerCapabilities(nil)
 	}
+}
+
+type countingReader struct {
+	io.Reader
+	c *Client
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if n > 0 {
+		r.c.bytesReceived.Add(uint64(n))
+	}
+	return n, err
+}
+
+type countingWriter struct {
+	io.Writer
+	c *Client
+}
+
+func (w *countingWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	if n > 0 {
+		w.c.bytesSent.Add(uint64(n))
+	}
+	return n, err
 }

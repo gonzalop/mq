@@ -237,3 +237,16 @@ client.Subscribe("sensors/temp", mq.AtLeastOnce, handler)
 
 - **Defaults to MQTT v5.0**: To connect to a v3.1.1 server, use `mq.WithProtocolVersion(mq.ProtocolV311)`.
 - **Graceful Degradation**: v5.0 features (Reason Codes, Properties) are safely ignored when connected to a v3.1.1 server.
+
+## Monitoring & Stats
+
+The client exposes atomic statistics suitable for monitoring connection health and throughput in production.
+
+```go
+stats := client.GetStats()
+
+fmt.Printf("Connected: %v\n", stats.Connected)
+fmt.Printf("Packets: %d sent / %d received\n", stats.PacketsSent, stats.PacketsReceived)
+fmt.Printf("Bytes: %d sent / %d received\n", stats.BytesSent, stats.BytesReceived)
+fmt.Printf("Reconnects: %d\n", stats.ReconnectCount)
+```
