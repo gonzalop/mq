@@ -106,6 +106,7 @@ func main() {
 See the [examples](./examples) directory for various use cases:
 - [`auto_reconnect/`](./examples/auto_reconnect) - Automatic reconnection demonstration
 - [`errors/`](./examples/errors) - Proper error handling
+- [`local_routing/`](./examples/local_routing) - Custom client-side message routing
 - [`lwt/`](./examples/lwt) - Last Will and Testament usage
 - [`persistent/`](./examples/persistent) - Persistent sessions and offline messaging
 - [`scram_auth/`](./examples/scram_auth) - SCRAM-SHA-256 Authentication (MQTT v5.0)
