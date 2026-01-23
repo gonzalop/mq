@@ -1,125 +1,107 @@
 # MQTT Client Performance Analysis: `mq` Library
 
-This document presents a comprehensive performance analysis of the `mq` MQTT client library compared to Eclipse Paho v3 and v5 implementations. Tests were conducted against three popular MQTT brokers: Mosquitto, Mochi, and VerneMQ.
+This document presents a comprehensive performance analysis of the `mq` MQTT client library compared to Eclipse Paho v3 and v5 implementations. The analysis includes recent tests conducted against **Mosquitto v2.1rc2**, as well as previous data from Mosquitto 2.0.22, Mochi, and VerneMQ.
 
 All benchmarks were performed using the [throughput test](../examples/throughput/) example, which measures end-to-end performance by subscribing to a topic and then publishing messages of a specified payload size concurrently using a configurable number of workers.
 
-**Test Environment**: Debian Linux (sid), kernel 6.18.x, AMD Ryzen AI 9 365, 32 GiB DDR5 RAM (idle machine).
-
-**MQTT Brokers**: Mosquitto 2.0.22, Mochi (built from HEAD), VerneMQ (current official image).
+**Test Environment**: Linux.
 
 ## Executive Summary
 
-The `mq` library demonstrates **exceptional performance across all tested scenarios**, consistently outperforming both Paho v3 and v5 in critical metrics:
+The `mq` library demonstrates **exceptional performance across all tested scenarios**, consistently outperforming both Paho v3 and v5 in critical metrics. In the latest tests against **Mosquitto v2.1rc2**, `mq` achieved peak message rates exceeding **1.2 million messages per second**.
 
-- **🏆 Throughput**: Up to **2.8x faster** than Paho v5 and **1.5x faster** than Paho v3 in high-concurrency scenarios
-- **✅ Reliability**: **100% message delivery** in all QoS 0 tests, while Paho clients frequently dropped messages under load
-- **💾 Memory Efficiency**: **10x lower memory allocation** compared to Paho v5 (111 MiB vs 1,137 MiB in typical workloads)
-- **🔄 GC Overhead**: **14x fewer garbage collection cycles** than Paho v5, resulting in more predictable latencies
+- **🏆 Throughput**: Up to **3x faster** than Paho v5 and **4x faster** than Paho v3 in high-concurrency scenarios (Mosquitto v2.1rc2).
+- **✅ Reliability**: **100% message delivery** in all QoS 0 tests, while Paho clients frequently dropped messages or timed out under high load.
+- **💾 Memory Efficiency**: **10x lower memory allocation** compared to Paho v5 (109 MiB vs 1,137 MiB in 50-worker small-packet workloads).
+- **🔄 GC Overhead**: Significantly fewer garbage collection cycles (e.g., 53 vs 703 for Paho v5), resulting in more predictable latencies.
 
 ## Performance Highlights
 
 ### QoS 0 (Fire & Forget)
 
-The `mq` library dominates in raw throughput scenarios:
+The `mq` library dominates in raw throughput scenarios. The table below reflects the maximum performance observed in the latest Mosquitto v2.1rc2 tests:
 
 | Metric | mq | Paho v3 | Paho v5 |
-|--------|----|---------|---------| 
-| **Max Message Rate** | 574,344 msg/s | 379,463 msg/s | 200,781 msg/s |
-| **Max Throughput** | 847 MB/s | 693 MB/s | 312 MB/s |
-| **Message Delivery** | ✅ 100% | ⚠️ 81% | ❌ 37% |
+|--------|----|---------|---------|
+| **Max Message Rate** | **1,291,438 msg/s** | 314,750 msg/s | 412,978 msg/s |
+| **Max Throughput** | **839 MB/s** | 713 MB/s | ~232 MB/s (unstable) |
+| **Message Delivery** | ✅ 100% | ✅ 100% | ⚠️ Loss/Timeout |
 
-**Key Advantage**: `mq` scales significantly better as concurrency increases, maintaining stability where Paho clients drop messages.
+**Key Advantage**: `mq` scales effectively with concurrency, reaching peak rates at moderate worker counts (4-20) where other clients begin to saturate or fail.
 
 ### QoS 1 (At Least Once)
 
-In scenarios requiring acknowledgments, `mq` maintains its performance edge:
+In scenarios requiring acknowledgments, `mq` maintains its performance edge (data from Mosquitto v2.1rc2):
 
 | Workers | mq | Paho v3 | Paho v5 |
-|---------|----|---------|---------| 
-| **4 workers** | 70,000 msg/s | 73,000 msg/s | 51,000 msg/s |
-| **50 workers** | Superior scaling | Competitive | Significantly slower |
+|---------|----|---------|---------|
+| **4 workers (20B)** | 118,077 msg/s | 82,812 msg/s | 64,331 msg/s |
+| **50 workers (20B)** | **129,816 msg/s** | 84,120 msg/s | 56,626 msg/s |
+| **50 workers (1KB)** | **140,752 msg/s** | 77,245 msg/s | 60,093 msg/s |
 
-**Key Advantage**: `mq` handles the acknowledgment flow more efficiently at higher concurrency levels.
+**Key Advantage**: `mq` handles the acknowledgment flow roughly **2x faster** than Paho v5 at high concurrency.
 
 ### QoS 2 (Exactly Once)
 
-Even with the complex 4-way handshake, `mq` outperforms:
+Even with the complex 4-way handshake, `mq` outperforms competitors:
 
 | Configuration | mq | Paho v3 | Paho v5 |
-|---------------|----|---------|---------| 
-| **50 workers, small packets** | 68,720 msg/s | 51,637 msg/s | 43,074 msg/s |
-
-**Key Advantage**: Lower protocol overhead enables better performance even in the most demanding transactional scenarios.
+|---------------|----|---------|---------|
+| **50 workers, 20B** | **61,110 msg/s** | 42,606 msg/s | 29,403 msg/s |
+| **50 workers, 1KB** | **58,261 msg/s** | 40,894 msg/s | 32,825 msg/s |
 
 ## Resource Efficiency
 
-Memory management is where `mq` truly shines:
-
-### Memory Allocation (QoS 0, 20 Workers, 200k messages)
+Memory management is a standout feature of `mq`. In the latest tests (Mosquitto v2.1rc2, 50 workers, 20B payload, 200k messages, QoS 0):
 
 ```
-mq:       111 MiB  (47 GC cycles)
-Paho v3:  281 MiB  (92 GC cycles)  [2.5x more than mq]
-Paho v5: 1,137 MiB (681 GC cycles) [10x more than mq]
+mq:       109 MiB TotalAlloc (53 GC cycles)
+Paho v3:  282 MiB TotalAlloc (97 GC cycles)  [2.6x more than mq]
+Paho v5: 1,137 MiB TotalAlloc (703 GC cycles) [10.4x more than mq]
 ```
 
-**Impact**: Lower memory allocation and fewer GC cycles translate to:
-- More predictable latencies
-- Better performance in resource-constrained environments
-- Reduced CPU overhead from garbage collection
+**Impact**:
+- **Paho v5** exerts massive pressure on the Garbage Collector (703 cycles vs 53 for `mq`).
+- **mq** maintains a lean footprint, ideal for high-throughput or resource-constrained environments.
 
 ## Reliability & Stability
 
 ### Message Delivery Under Load
 
-`mq` is the **only client** to achieve 100% message delivery across all test scenarios:
+`mq` is the **only client** to consistently achieve stability across all test scenarios in the new suite:
 
-| Scenario | mq | Paho v3 | Paho v5 |
-|----------|----|---------|---------| 
-| **10KB payload, QoS 0** | ✅ 100% (200k/200k) | ⚠️ 81% (162k/200k) | ❌ 37% (74k/200k) |
-| **High concurrency** | ✅ No drops | ⚠️ Occasional drops | ❌ Frequent drops |
-
-### Stability Issues Observed
-
-- **Paho v5**: Deadlocked during high-concurrency, high-bandwidth tests (20 workers, 10KB QoS 0), requiring manual interruption
-- **Paho v5**: Frequent "Subscriber idle" timeouts indicating message loss
-- **Paho v3**: Moderate message loss under sustained high-throughput conditions
-- **mq**: Zero stability issues across all test scenarios
+- **Mosquitto v2.1rc2 Tests**:
+    - **Paho v5**: Frequently entered "Subscriber idle" state (likely dropped messages or deadlock) with large payloads (10KB) or high concurrency (50 workers).
+    - **Paho v3**: Generally stable but slower.
+    - **mq**: Zero stability issues; recovered quickly even in edge cases.
 
 ## Server Performance Notes
 
-### Mosquitto
+### Mosquitto v2.1rc2 (New)
+The latest release candidate of Mosquitto proved to be highly performant, enabling `mq` to reach unprecedented message rates (1.29M msg/s). It handled high connection churn and throughput well, though Paho v5 struggled to maintain stability against it under maximum load.
 
-Mosquitto demonstrated solid performance as a general-purpose broker, handling moderate to high loads effectively. The broker showed predictable behavior across all QoS levels, with saturation points clearly defined by worker count and payload size.
+### Mosquitto 2.0.22
+Demonstrated solid performance as a general-purpose broker.
 
-### Mochi
-
-Mochi (bare metal deployment) exhibited excellent raw throughput capabilities, particularly for small packet scenarios. The server maintained stability across all client libraries, making it an ideal testbed for client performance comparisons.
-
-### VerneMQ
-
-VerneMQ testing included both containerized and host networking configurations. Host networking significantly improved throughput, demonstrating the importance of deployment configuration. The broker handled high-concurrency scenarios well, though some message drops were observed at extreme loads (50 workers, QoS 2).
+### Mochi & VerneMQ
+Mochi showed excellent raw throughput for small packets. VerneMQ benefited significantly from host networking configurations.
 
 ## Detailed Test Reports
 
-For complete test data, methodology, and detailed results, see the original benchmark reports:
-
-- **[Mosquitto Server Tests](https://gist.github.com/gonzalop/a338dd8c1c1a85d5e9f42d5fd7644f11)** - Comprehensive analysis including broker saturation points and QoS overhead
-- **[Mochi Server Tests](https://gist.github.com/gonzalop/18e2d2ab28c94d32866f1a0d1668c523)** - Bare metal performance benchmarks
-- **[VerneMQ Server Tests](https://gist.github.com/gonzalop/e8e8addef4464354f674d7bab98896cf)** - Container vs host networking comparison
+- **[Mosquitto 2.1rc2 Server Tests](https://gist.github.com/gonzalop/904177a8b4ee9156fe87fcb503b222fa)**
+- **[Mosquitto 2.0.22 Server Tests](https://gist.github.com/gonzalop/a338dd8c1c1a85d5e9f42d5fd7644f11)**
+- **[Mochi Server Tests](https://gist.github.com/gonzalop/18e2d2ab28c94d32866f1a0d1668c523)**
+- **[VerneMQ Server Tests](https://gist.github.com/gonzalop/e8e8addef4464354f674d7bab98896cf)**
 
 ## Recommendations
 
 **Use `mq` when you need**:
-- High-throughput applications (>100k msg/s)
-- Reliable message delivery under load (QoS 0 scenarios)
-- Resource-constrained environments (embedded systems, cloud cost optimization)
-- Predictable, low-latency performance
+- **Extreme Throughput**: Proven to handle >1 million msg/s.
+- **Reliability**: Consistently delivers messages without timeouts under load.
+- **Efficiency**: Drastically lower memory and CPU footprint.
 
 **Use Paho v3 when**:
-- You have an existing, stable deployment with moderate throughput requirements
-- Migration cost outweighs performance benefits
-- You don't need MQTT v5 features (enhanced flow control, user properties, etc.)
+- You require a legacy implementation for compatibility reasons.
 
-**Avoid Paho v5**: Stability issues and poor resource efficiency make it unsuitable for production use in high-load scenarios.
+**Avoid Paho v5**:
+- Demonstrated significant instability and resource inefficiency in high-performance benchmarks.

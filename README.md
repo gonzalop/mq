@@ -25,12 +25,14 @@ A lightweight, idiomatic MQTT client library for Go with full support for v3.1.1
 
 All features are tested with an extensive unit and integration test suite.
 
-## Performance
+## Performance (updated with mosquitto v2.1rc2 test results)
 
 The `mq` library is built for high-performance scenarios, consistently outperforming other Go MQTT clients in throughput and resource efficiency. Key highlights from our benchmarks include:
-- **High Throughput**: Up to 2.8x faster than other popular implementations.
-- **Memory Efficient**: 10x lower memory allocation and 14x fewer GC cycles.
-- **Reliable**: 100% message delivery under extreme load where other clients may drop messages.
+
+- **Throughput**: Up to **3x faster** than Paho v5 and **4x faster** than Paho v3 in high-concurrency scenarios (Mosquitto v2.1rc2).
+- **Reliability**: **100% message delivery** in all QoS 0 tests, while Paho clients frequently dropped messages or timed out under high load.
+- **Memory Efficiency**: **10x lower memory allocation** compared to Paho v5 (109 MiB vs 1,137 MiB in 50-worker small-packet workloads).
+- **GC Overhead**: Significantly fewer garbage collection cycles (e.g., 53 vs 703 for Paho v5), resulting in more predictable latencies.
 
 For a detailed comparative analysis, see the **[Performance Analysis Report](docs/PERFORMANCE_ANALYSIS.md)**.
 
