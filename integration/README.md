@@ -37,11 +37,11 @@ TESTCONTAINERS_RYUK_DISABLED=true go test -v -timeout=5m
 DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock TESTCONTAINERS_RYUK_DISABLED=true go test -v -timeout=5m
 ```
 
-### Testing with Other Servers (Mochi, NanoMQ)
+### Testing with Other Servers (Mochi, NanoMQ, Mosquitto)
 
-By default, tests run against `eclipse-mosquitto:2`. You can test against other servers like **Mochi** or **NanoMQ** by setting the `MQTT_SERVER_IMAGE` environment variable.
+By default, tests run against `eclipse-mosquitto:2`. You can test against other servers like **Mochi**, **NanoMQ**, or a custom **Mosquitto** version by setting the `MQTT_SERVER_IMAGE` environment variable.
 
-The [`../extras/`](../extras/) folder contains Dockerfiles for building custom images of both Mochi and NanoMQ suitable for testcontainers:
+The [`../extras/`](../extras/) folder contains Dockerfiles for building custom images suitable for testcontainers:
 
 ```bash
 # Build Mochi image
@@ -50,11 +50,17 @@ cd ../extras/mochi && docker build -t localhost/minimal-mochi:latest .
 # Build NanoMQ image
 cd ../extras/nanomq && docker build -t localhost/minimal-nanomq:latest .
 
+# Build custom Mosquitto image (e.g. v2.1rc2)
+cd ../extras/mosquitto && docker build -t localhost/minimal-mosquitto:latest .
+
 # Run tests against Mochi (all tests should pass with our patch)
 MQTT_SERVER_IMAGE=localhost/minimal-mochi:latest make integration
 
 # Run tests against NanoMQ (some tests may fail due to compliance gaps on the server side)
 MQTT_SERVER_IMAGE=localhost/minimal-nanomq:latest make integration
+
+# Run tests against custom Mosquitto
+MQTT_SERVER_IMAGE=localhost/minimal-mosquitto:latest make integration
 ```
 
 *Note: Some tests requiring specific Mosquitto configurations (like `persistence false`) may skip or behave differently if the server image doesn't support `mosquitto.conf` injection. The test setup automatically detects NanoMQ and adjusts startup parameters.*
