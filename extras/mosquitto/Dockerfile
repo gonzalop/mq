@@ -21,7 +21,7 @@ WORKDIR /src
 
 RUN git clone https://github.com/eclipse-mosquitto/mosquitto.git
 
-RUN mkdir -p /install && cd mosquitto && git checkout v2.1.0rc2 && make clean && make -j10 WITH_DOCS=no DESTDIR=/install install
+RUN mkdir -p /install && cd mosquitto && git checkout v2.1.0 && make clean && make -j10 WITH_DOCS=no DESTDIR=/install install
 
 FROM alpine:latest
 
