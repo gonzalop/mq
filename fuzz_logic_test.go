@@ -22,11 +22,12 @@ func FuzzPacketSequence(f *testing.F) {
 				ProtocolVersion: ProtocolV50,
 				Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 			},
-			incoming:      make(chan packets.Packet, 100),
-			outgoing:      make(chan packets.Packet, 100),
-			pending:       make(map[uint16]*pendingOp),
-			subscriptions: make(map[string]subscriptionEntry),
-			receivedQoS2:  make(map[uint16]struct{}),
+			incoming:       make(chan packets.Packet, 100),
+			outgoing:       make(chan packets.Packet, 100),
+			pending:        make(map[uint16]*pendingOp),
+			subscriptions:  make(map[string]subscriptionEntry),
+			receivedQoS2:   make(map[uint16]struct{}),
+			inboundUnacked: make(map[uint16]struct{}),
 		}
 
 		for _, pType := range sequence {

@@ -150,6 +150,31 @@ func (c *Client) handlePublish(p *packets.PublishPacket) {
 		}
 	}
 
+	// Check receive maximum (MQTT v5.0) for QoS 1 and 2
+	if c.opts.ProtocolVersion >= ProtocolV50 && p.QoS > 0 {
+		if _, exists := c.inboundUnacked[p.PacketID]; !exists {
+			// New message. Check if we have capacity.
+			limit := c.opts.ReceiveMaximum
+			if limit == 0 {
+				limit = 65535
+			}
+			if len(c.inboundUnacked) >= int(limit) {
+				if c.opts.ReceiveMaximumPolicy == LimitPolicyStrict {
+					c.opts.Logger.Error("receive maximum exceeded", "limit", limit)
+					_ = c.disconnectWithReason(context.Background(), uint8(ReasonCodeReceiveMaximumExceed), nil)
+					return
+				}
+
+				// Ignore policy: log warning once
+				if !c.receiveMaxExceededLogged {
+					c.opts.Logger.Warn("receive maximum exceeded, ignoring (server is misbehaving)", "limit", limit)
+					c.receiveMaxExceededLogged = true
+				}
+			}
+			c.inboundUnacked[p.PacketID] = struct{}{}
+		}
+	}
+
 	// For QoS 2, check if we've already received this packet
 	if p.QoS == 2 {
 		if _, exists := c.receivedQoS2[p.PacketID]; exists {
@@ -205,6 +230,8 @@ func (c *Client) handlePublish(p *packets.PublishPacket) {
 	case 1:
 		select {
 		case c.outgoing <- &packets.PubackPacket{PacketID: p.PacketID}:
+			// Successfully queued PUBACK, remove from tracking
+			delete(c.inboundUnacked, p.PacketID)
 		case <-c.stop:
 		default:
 			// If we can't send PUBACK right now, it stays in in-flight
@@ -269,6 +296,7 @@ func (c *Client) handlePubrec(p *packets.PubrecPacket) {
 func (c *Client) handlePubrel(p *packets.PubrelPacket) {
 	select {
 	case c.outgoing <- &packets.PubcompPacket{PacketID: p.PacketID}:
+		delete(c.inboundUnacked, p.PacketID)
 	case <-c.stop:
 	default:
 	}

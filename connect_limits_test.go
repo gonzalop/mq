@@ -25,7 +25,7 @@ func TestConnectPacketLimits(t *testing.T) {
 			name: "With Receive Maximum",
 			opts: []Option{
 				WithProtocolVersion(ProtocolV50),
-				WithReceiveMaximum(100),
+				WithReceiveMaximum(100, LimitPolicyIgnore),
 			},
 			wantReceiveMax:       100,
 			wantReceiveMaxSet:    true,
@@ -45,7 +45,7 @@ func TestConnectPacketLimits(t *testing.T) {
 			name: "With Both",
 			opts: []Option{
 				WithProtocolVersion(ProtocolV50),
-				WithReceiveMaximum(50),
+				WithReceiveMaximum(50, LimitPolicyIgnore),
 				WithMaxIncomingPacket(4096),
 			},
 			wantReceiveMax:       50,

@@ -128,6 +128,10 @@ type Client struct {
 	maxAliases       uint16            // server's limit from CONNACK
 	topicAliasesLock sync.Mutex        // protect concurrent access
 
+	// Flow control (MQTT v5.0, server → client)
+	inboundUnacked           map[uint16]struct{} // Packet IDs of received QoS 1/2 messages not yet acked
+	receiveMaxExceededLogged bool                // Warn once per connection
+
 	// Receive-side topic aliases (MQTT v5.0, server → client)
 	receivedAliases     map[uint16]string // alias ID → topic
 	receivedAliasesLock sync.RWMutex      // protect concurrent access (read-heavy)
@@ -223,6 +227,7 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 		pending:        make(map[uint16]*pendingOp),
 		subscriptions:  make(map[string]subscriptionEntry),
 		receivedQoS2:   make(map[uint16]struct{}),
+		inboundUnacked: make(map[uint16]struct{}),
 		disconnected:   make(chan struct{}, 1),
 	}
 

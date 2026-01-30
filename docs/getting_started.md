@@ -82,7 +82,9 @@ client, err := mq.DialContext(ctx, server, options...)
 - `WithProtocolVersion(version uint8)` - Set MQTT protocol version (default: v5.0).
   - `mq.ProtocolV311` (4) - MQTT v3.1.1
   - `mq.ProtocolV50` (5) - MQTT v5.0
-- `WithReceiveMaximum(max uint16)` - Set maximum concurrent unacknowledged messages (Flow Control) (v5.0).
+- `WithReceiveMaximum(max uint16, policy LimitPolicy)` - Set maximum concurrent unacknowledged messages (Flow Control) (v5.0).
+  - `mq.LimitPolicyIgnore` (Default/Recommended) - Log warning on overflow.
+  - `mq.LimitPolicyStrict` - Disconnect on overflow.
 - `WithRequestProblemInformation(bool)` - Request extended error details (v5.0).
 - `WithRequestResponseInformation(bool)` - Request response topic info (v5.0).
 - `WithSessionExpiryInterval(seconds)` - Set session expiration time (v5.0).
@@ -97,8 +99,8 @@ client, err := mq.DialContext(ctx, server, options...)
 client, err := mq.Dial("tcp://localhost:1883",
     mq.WithClientID("my-client"),
     mq.WithProtocolVersion(mq.ProtocolV50),
-    mq.WithMaxPayloadSize(1024*1024),  // Limit to 1MB payloads
-    mq.WithReceiveMaximum(100),        // Limit concurrent incoming messages
+    mq.WithMaxPayloadSize(1024*1024),          // Limit to 1MB payloads
+    mq.WithReceiveMaximum(100, mq.LimitPolicyIgnore), // Limit concurrent incoming messages
 )
 ```
 

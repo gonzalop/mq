@@ -78,7 +78,8 @@ type clientOptions struct {
 	// MQTT v5.0 receive maximum (client side flow control)
 	// Maximum number of QoS 1 and QoS 2 publications the client is willing to process concurrently.
 	// 0 = 65535 (default)
-	ReceiveMaximum uint16
+	ReceiveMaximum       uint16
+	ReceiveMaximumPolicy LimitPolicy
 
 	// MQTT v5.0 session expiry interval
 	// How long the server should maintain session state after disconnect (in seconds).
@@ -313,6 +314,21 @@ func WithTopicAliasMaximum(max uint16) Option {
 	}
 }
 
+// LimitPolicy determines how the client enforces limits (like ReceiveMaximum).
+type LimitPolicy int
+
+const (
+	// LimitPolicyIgnore logs a warning once per connection but continues processing.
+	LimitPolicyIgnore LimitPolicy = iota
+
+	// LimitPolicyStrict sends a DISCONNECT with Reason Code 0x93 (Receive Maximum exceeded)
+	// when the limit is reached.
+	//
+	// Note: Auto-reconnect should be disabled or carefully managed when using this policy,
+	// as a misbehaving server could cause an infinite loop of connect -> overflow -> disconnect.
+	LimitPolicyStrict
+)
+
 // WithReceiveMaximum sets the maximum number of unacknowledged QoS 1 and QoS 2
 // messages the client is willing to process concurrently.
 //
@@ -323,10 +339,18 @@ func WithTopicAliasMaximum(max uint16) Option {
 // buffering for. If the client cannot process messages fast enough, it can
 // lower this value to apply backpressure to the server.
 //
+// The policy argument determines behavior when the limit is exceeded:
+//   - LimitPolicyIgnore (recommended): Log a warning once and continue processing.
+//     This protects the client from disconnecting due to server bugs, while still
+//     processing messages (potentially unbounded).
+//   - LimitPolicyStrict: Disconnect with Reason Code 0x93.
+//     Use this if strict flow control compliance is required.
+//
 // This option is ignored when using MQTT v3.1.1.
-func WithReceiveMaximum(max uint16) Option {
+func WithReceiveMaximum(max uint16, policy LimitPolicy) Option {
 	return func(o *clientOptions) {
 		o.ReceiveMaximum = max
+		o.ReceiveMaximumPolicy = policy
 	}
 }
 

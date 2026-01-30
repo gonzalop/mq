@@ -57,9 +57,10 @@ If your client processes messages slower than they arrive, this "in-flight" wind
 
 ```go
 // Example: Apply backpressure if we have > 50 unprocessed messages
+// Use LimitPolicyIgnore to log a warning instead of disconnecting
 client, err := mq.Dial(server,
     mq.WithProtocolVersion(mq.ProtocolV50),
-    mq.WithReceiveMaximum(50),
+    mq.WithReceiveMaximum(50, mq.LimitPolicyIgnore),
 )
 ```
 
@@ -348,7 +349,7 @@ client, err := mq.Dial("tcp://broker.local:1883",
     mq.WithMaxIncomingPacket(8192),    // Limit to 8KB
     mq.WithMaxTopicLength(64),         // Short topics only
     mq.WithTopicAliasMaximum(0),       // Disable alias memory map
-    mq.WithReceiveMaximum(20),         // Small in-flight window
+    mq.WithReceiveMaximum(20, mq.LimitPolicyIgnore), // Small in-flight window
     mq.WithCleanSession(true),         // Stateless
     mq.WithKeepAlive(300 * time.Second), // Save radio/power
 )
@@ -376,7 +377,7 @@ Optimized for processing massive throughput.
 client, err := mq.Dial("tcp://internal-broker:1883",
     mq.WithClientID("backend-service-worker-01"),
     mq.WithTopicAliasMaximum(5000),      // Maximize bandwidth savings
-    mq.WithReceiveMaximum(2000),         // Allow high concurrency
+    mq.WithReceiveMaximum(2000, mq.LimitPolicyIgnore), // Allow high concurrency
     mq.WithMaxIncomingPacket(10 * 1024 * 1024), // 10MB limit
     mq.WithDefaultPublishHandler(myLogHandler),
     mq.WithKeepAlive(10 * time.Second),  // Fast failure detection

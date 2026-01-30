@@ -1,6 +1,7 @@
 # Binaries
 examples/auto_reconnect/auto_reconnect
 examples/errors/errors
+examples/local_routing/local_routing
 examples/lwt/lwt
 examples/persistent/persistent
 examples/scram_auth/scram_auth
