@@ -158,3 +158,34 @@ func compareProperties(a, b *Properties) bool {
 	}
 	return reflect.DeepEqual(a, b)
 }
+
+func TestWillDelayIntervalEncoding(t *testing.T) {
+	props := &Properties{
+		WillDelayInterval: 2,
+		Presence:          PresWillDelayInterval,
+	}
+
+	encoded := encodeProperties(props)
+
+	// Expected: [Length] [ID] [Value]
+	// Length: 5 (1 for ID + 4 for value)
+	// ID: 0x18
+	// Value: 0x00 0x00 0x00 0x02
+	expected := []byte{0x05, 0x18, 0x00, 0x00, 0x00, 0x02}
+
+	if !reflect.DeepEqual(encoded, expected) {
+		t.Errorf("encoded bytes mismatch.\nGot:  %02x\nWant: %02x", encoded, expected)
+	}
+
+	// Verify decoding
+	decoded, _, err := decodeProperties(encoded)
+	if err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+	if decoded.WillDelayInterval != 2 {
+		t.Errorf("decoded WillDelayInterval = %d, want 2", decoded.WillDelayInterval)
+	}
+	if decoded.Presence&PresWillDelayInterval == 0 {
+		t.Error("PresWillDelayInterval not set in decoded properties")
+	}
+}

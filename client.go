@@ -85,10 +85,10 @@ type Client struct {
 
 	// State (managed by logicLoop to avoid races)
 	nextPacketID  uint16
-	pending       map[uint16]*pendingOp // In-flight packets (PUBLISH QoS 1/2, SUBSCRIBE, UNSUBSCRIBE)
+	pending       map[uint16]*pendingOp // Outgoing in-flight packets (PUBLISH QoS 1/2, SUBSCRIBE, UNSUBSCRIBE)
 	subscriptions map[string]subscriptionEntry
 	receivedQoS2  map[uint16]struct{} // Track received QoS 2 packet IDs to prevent duplicates
-	inFlightCount int                 // Number of QoS 1 special & QoS 2 packets currently in flight
+	inFlightCount int                 // Number of QoS 1 special & QoS 2 packets currently in flight (outgoing)
 
 	// Lifecycle
 	connected atomic.Bool

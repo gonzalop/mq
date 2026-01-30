@@ -168,6 +168,119 @@ func TestTopicAliasReconnectionClearing(t *testing.T) {
 	}
 }
 
+func TestHandleIncomingTopicAlias(t *testing.T) {
+	t.Run("register and resolve alias", func(t *testing.T) {
+		c := &Client{
+			opts: &clientOptions{
+				ProtocolVersion: ProtocolV50,
+				Logger:          testLogger(),
+			},
+			receivedAliases: make(map[uint16]string),
+		}
+
+		// 1. Incoming packet with both topic and alias
+		p1 := &packets.PublishPacket{
+			Topic: "sensors/temp",
+			Properties: &packets.Properties{
+				TopicAlias: 1,
+				Presence:   packets.PresTopicAlias,
+			},
+		}
+		c.handlePublish(p1)
+
+		// Verify registration
+		c.receivedAliasesLock.RLock()
+		if c.receivedAliases[1] != "sensors/temp" {
+			t.Errorf("expected alias 1 to be 'sensors/temp', got %q", c.receivedAliases[1])
+		}
+		c.receivedAliasesLock.RUnlock()
+
+		// 2. Incoming packet with only alias
+		p2 := &packets.PublishPacket{
+			Topic: "",
+			Properties: &packets.Properties{
+				TopicAlias: 1,
+				Presence:   packets.PresTopicAlias,
+			},
+		}
+		c.handlePublish(p2)
+
+		// Verify resolution
+		if p2.Topic != "sensors/temp" {
+			t.Errorf("expected p2.Topic to be 'sensors/temp', got %q", p2.Topic)
+		}
+	})
+
+	t.Run("invalid alias 0", func(t *testing.T) {
+		c := &Client{
+			opts: &clientOptions{
+				ProtocolVersion: ProtocolV50,
+				Logger:          testLogger(),
+			},
+		}
+
+		p := &packets.PublishPacket{
+			Topic: "test",
+			Properties: &packets.Properties{
+				TopicAlias: 0,
+				Presence:   packets.PresTopicAlias,
+			},
+		}
+		// This should log an error and NOT register anything
+		c.handlePublish(p)
+
+		if len(c.receivedAliases) != 0 {
+			t.Errorf("expected no aliases to be registered for alias 0")
+		}
+	})
+
+	t.Run("server exceeds TopicAliasMaximum", func(t *testing.T) {
+		c := &Client{
+			opts: &clientOptions{
+				ProtocolVersion:   ProtocolV50,
+				TopicAliasMaximum: 5,
+				Logger:            testLogger(),
+			},
+		}
+
+		p := &packets.PublishPacket{
+			Topic: "test",
+			Properties: &packets.Properties{
+				TopicAlias: 10, // Exceeds 5
+				Presence:   packets.PresTopicAlias,
+			},
+		}
+		c.handlePublish(p)
+
+		if len(c.receivedAliases) != 0 {
+			t.Errorf("expected no aliases to be registered when limit exceeded")
+		}
+	})
+
+	t.Run("unknown alias", func(t *testing.T) {
+		c := &Client{
+			opts: &clientOptions{
+				ProtocolVersion: ProtocolV50,
+				Logger:          testLogger(),
+			},
+			receivedAliases: make(map[uint16]string),
+		}
+
+		p := &packets.PublishPacket{
+			Topic: "",
+			Properties: &packets.Properties{
+				TopicAlias: 99,
+				Presence:   packets.PresTopicAlias,
+			},
+		}
+		c.handlePublish(p)
+
+		if p.Topic != "" {
+			t.Errorf("expected topic to remain empty for unknown alias")
+		}
+	})
+}
+
 func uint16Ptr(v uint16) *uint16 {
 	return &v
 }

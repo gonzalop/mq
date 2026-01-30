@@ -207,6 +207,8 @@ func (c *Client) handlePublish(p *packets.PublishPacket) {
 		case c.outgoing <- &packets.PubackPacket{PacketID: p.PacketID}:
 		case <-c.stop:
 		default:
+			// If we can't send PUBACK right now, it stays in in-flight
+			// and will be retried (or handled) when we have capacity.
 		}
 	case 2:
 		select {

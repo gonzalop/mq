@@ -113,9 +113,8 @@ func TestLastWillWithDelay(t *testing.T) {
 	topic := "wills/victim/" + t.Name()
 
 	// Client A: The Victim (Connects via Proxy)
-	// Will: delay=2s, expiry=5s
-	willDelay := uint32(2)
-	sessionExpiry := uint32(5)
+	willDelay := uint32(3) // See 'delay' below
+	sessionExpiry := uint32(10)
 
 	_, err := mq.Dial(proxyAddr,
 		mq.WithClientID("victim-client-"+t.Name()),
@@ -174,18 +173,14 @@ func TestLastWillWithDelay(t *testing.T) {
 		t.Logf("Received Will message after %v", elapsed)
 
 		if elapsed < 2*time.Second { // Allow slight margin, but shouldn't be instant
-			// Note: Localhost timing is fast. Proper 2s delay should be > 1.9s.
-			// If it comes immediately, Will Delay failed.
-			if elapsed < 1500*time.Millisecond {
-				t.Errorf("Will message received too early (%v), expected > 2s delay", elapsed)
-			}
+			t.Errorf("Will message received too early (%v), expected > 2s delay", elapsed)
 		}
 
 		if string(msg.Payload) != "I died ungracefully" {
 			t.Errorf("Wrong payload: %s", string(msg.Payload))
 		}
 
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("Timeout waiting for Will message")
 	}
 }
