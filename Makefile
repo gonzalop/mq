@@ -76,6 +76,12 @@ fuzz:
 	@cd internal/packets && go test -fuzz=FuzzDecodeConnect -fuzztime=10s
 	@echo "  Fuzzing PUBLISH decoder..."
 	@cd internal/packets && go test -fuzz=FuzzDecodePublish -fuzztime=10s
+	@echo "  Fuzzing PUBCOMP decoder..."
+	@cd internal/packets && go test -fuzz=FuzzDecodePubcomp -fuzztime=10s
+	@echo "  Fuzzing PUBREC decoder..."
+	@cd internal/packets && go test -fuzz=FuzzDecodePubrec -fuzztime=10s
+	@echo "  Fuzzing PUBREL decoder..."
+	@cd internal/packets && go test -fuzz=FuzzDecodePubrel -fuzztime=10s
 	@echo "  Fuzzing topic matcher..."
 	@go test -fuzz=FuzzMatchTopic -fuzztime=10s
 	@echo "  Fuzzing publish topic validation..."
@@ -112,4 +118,7 @@ integration:
 
 clean:
 	@echo "🧹 Cleaning up..."
-	@rm -fv coverage.html coverage.out coverage.txt cpu.out mem.out mq.test packets.test ${EXAMPLES}
+	@rm -fv coverage.html coverage.out coverage.txt cpu.out mem.out mq.test packets.test \
+            ${EXAMPLES} \
+            examples/throughput/paho_v3/paho_v3 \
+            examples/throughput/paho_v5/paho_v5

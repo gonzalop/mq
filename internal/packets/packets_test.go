@@ -391,3 +391,60 @@ func TestReadPacket(t *testing.T) {
 		})
 	}
 }
+
+func TestPubcompPacket(t *testing.T) {
+	pkt := &PubcompPacket{PacketID: 789}
+
+	encoded := encodeToBytes(pkt)
+	r := bytes.NewReader(encoded)
+	header, _ := DecodeFixedHeader(r)
+	remaining := make([]byte, header.RemainingLength)
+	_, _ = r.Read(remaining)
+
+	decoded, err := DecodePubcomp(remaining, 4)
+	if err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+
+	if decoded.PacketID != pkt.PacketID {
+		t.Errorf("packet ID = %d, want %d", decoded.PacketID, pkt.PacketID)
+	}
+}
+
+func TestPubrecPacket(t *testing.T) {
+	pkt := &PubrecPacket{PacketID: 456}
+
+	encoded := encodeToBytes(pkt)
+	r := bytes.NewReader(encoded)
+	header, _ := DecodeFixedHeader(r)
+	remaining := make([]byte, header.RemainingLength)
+	_, _ = r.Read(remaining)
+
+	decoded, err := DecodePubrec(remaining, 4)
+	if err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+
+	if decoded.PacketID != pkt.PacketID {
+		t.Errorf("packet ID = %d, want %d", decoded.PacketID, pkt.PacketID)
+	}
+}
+
+func TestPubrelPacket(t *testing.T) {
+	pkt := &PubrelPacket{PacketID: 101}
+
+	encoded := encodeToBytes(pkt)
+	r := bytes.NewReader(encoded)
+	header, _ := DecodeFixedHeader(r)
+	remaining := make([]byte, header.RemainingLength)
+	_, _ = r.Read(remaining)
+
+	decoded, err := DecodePubrel(remaining, 4)
+	if err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+
+	if decoded.PacketID != pkt.PacketID {
+		t.Errorf("packet ID = %d, want %d", decoded.PacketID, pkt.PacketID)
+	}
+}

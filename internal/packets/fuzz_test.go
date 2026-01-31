@@ -95,3 +95,42 @@ func FuzzDecodePublish(f *testing.F) {
 		_, _ = DecodePublish(data, header, 4)
 	})
 }
+
+// FuzzDecodePubcomp fuzzes PUBCOMP packet decoding
+func FuzzDecodePubcomp(f *testing.F) {
+	f.Add([]byte{0x00, 0x01})       // V4 PacketID
+	f.Add([]byte{0x00, 0x01, 0x00}) // V5 with reason code success
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// Try v4
+		_, _ = DecodePubcomp(data, 4)
+		// Try v5
+		_, _ = DecodePubcomp(data, 5)
+	})
+}
+
+// FuzzDecodePubrec fuzzes PUBREC packet decoding
+func FuzzDecodePubrec(f *testing.F) {
+	f.Add([]byte{0x00, 0x01})       // V4 PacketID
+	f.Add([]byte{0x00, 0x01, 0x00}) // V5 with reason code success
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// Try v4
+		_, _ = DecodePubrec(data, 4)
+		// Try v5
+		_, _ = DecodePubrec(data, 5)
+	})
+}
+
+// FuzzDecodePubrel fuzzes PUBREL packet decoding
+func FuzzDecodePubrel(f *testing.F) {
+	f.Add([]byte{0x00, 0x01})       // V4 PacketID
+	f.Add([]byte{0x00, 0x01, 0x00}) // V5 with reason code success
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// Try v4
+		_, _ = DecodePubrel(data, 4)
+		// Try v5
+		_, _ = DecodePubrel(data, 5)
+	})
+}

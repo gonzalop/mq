@@ -331,3 +331,99 @@ func TestAuthPacketV5(t *testing.T) {
 		t.Errorf("ReadPacket returned type %d, want %d", readPkt.Type(), AUTH)
 	}
 }
+
+func TestPubcompPacketV5(t *testing.T) {
+	props := &Properties{
+		ReasonString: "all done",
+		Presence:     PresReasonString,
+	}
+	pkt := &PubcompPacket{
+		PacketID:   50,
+		ReasonCode: 0,
+		Properties: props,
+		Version:    5,
+	}
+
+	encoded := encodeToBytes(pkt)
+
+	r := bytes.NewReader(encoded)
+	header, _ := DecodeFixedHeader(r)
+	remaining := make([]byte, header.RemainingLength)
+	_, _ = r.Read(remaining)
+
+	decoded, err := DecodePubcomp(remaining, 5)
+	if err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+
+	if decoded.ReasonCode != pkt.ReasonCode {
+		t.Errorf("reason code mismatch")
+	}
+	if !compareProperties(decoded.Properties, props) {
+		t.Errorf("properties mismatch")
+	}
+}
+
+func TestPubrecPacketV5(t *testing.T) {
+	props := &Properties{
+		ReasonString: "received",
+		Presence:     PresReasonString,
+	}
+	pkt := &PubrecPacket{
+		PacketID:   60,
+		ReasonCode: 0,
+		Properties: props,
+		Version:    5,
+	}
+
+	encoded := encodeToBytes(pkt)
+
+	r := bytes.NewReader(encoded)
+	header, _ := DecodeFixedHeader(r)
+	remaining := make([]byte, header.RemainingLength)
+	_, _ = r.Read(remaining)
+
+	decoded, err := DecodePubrec(remaining, 5)
+	if err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+
+	if decoded.ReasonCode != pkt.ReasonCode {
+		t.Errorf("reason code mismatch")
+	}
+	if !compareProperties(decoded.Properties, props) {
+		t.Errorf("properties mismatch")
+	}
+}
+
+func TestPubrelPacketV5(t *testing.T) {
+	props := &Properties{
+		ReasonString: "released",
+		Presence:     PresReasonString,
+	}
+	pkt := &PubrelPacket{
+		PacketID:   70,
+		ReasonCode: 0,
+		Properties: props,
+		Version:    5,
+	}
+
+	encoded := encodeToBytes(pkt)
+
+	r := bytes.NewReader(encoded)
+	header, _ := DecodeFixedHeader(r)
+	remaining := make([]byte, header.RemainingLength)
+	_, _ = r.Read(remaining)
+
+	decoded, err := DecodePubrel(remaining, 5)
+	if err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+
+	if decoded.ReasonCode != pkt.ReasonCode {
+		t.Errorf("reason code mismatch")
+	}
+	if !compareProperties(decoded.Properties, props) {
+		t.Errorf("properties mismatch")
+	}
+}
