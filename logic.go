@@ -472,12 +472,26 @@ func (c *Client) handleDisconnectPacket(p *packets.DisconnectPacket) {
 
 	c.opts.Logger.Warn("received DISCONNECT from server", attrs...)
 
-	err := &MqttError{
+	err := &DisconnectError{
 		ReasonCode: ReasonCode(p.ReasonCode),
 	}
 
-	if p.Properties != nil && p.Properties.Presence&packets.PresReasonString != 0 {
-		err.Message = p.Properties.ReasonString
+	if p.Properties != nil {
+		if p.Properties.Presence&packets.PresReasonString != 0 {
+			err.ReasonString = p.Properties.ReasonString
+		}
+		if p.Properties.Presence&packets.PresSessionExpiryInterval != 0 {
+			err.SessionExpiryInterval = p.Properties.SessionExpiryInterval
+		}
+		if p.Properties.Presence&packets.PresServerReference != 0 {
+			err.ServerReference = p.Properties.ServerReference
+		}
+		if len(p.Properties.UserProperties) > 0 {
+			err.UserProperties = make(map[string]string, len(p.Properties.UserProperties))
+			for _, up := range p.Properties.UserProperties {
+				err.UserProperties[up.Key] = up.Value
+			}
+		}
 	}
 
 	// Store for handleDisconnect to pick up

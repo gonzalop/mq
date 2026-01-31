@@ -9,8 +9,8 @@ This document outlines the support for MQTT 5.0 features in the `mq` library, ba
 | **Session Expiry** | 3.1.2.23 | ✅ Supported | `WithSessionExpiryInterval`. Persists state if > 0. Can be updated on Disconnect (v5). |
 | **Clean Start** | 3.1.2.4 | ✅ Supported | Mapped to `WithCleanSession` (false = CleanStart=0). |
 | **Reason Codes** | 3.2.2.2 | ✅ Supported | Full support for reason codes in all ACK packets and DISCONNECT. |
-| **Server Redirection** | 3.2.2.3 | ✅ Supported | `WithOnServerRedirect` callback provides the reference URI. |
-| **User Properties** | 3.1.2.28 | ✅ Supported | `WithConnectUserProperties` (send) and `ConnectionUserProperties()` (receive). |
+| **Server Redirection** | 3.2.2.3 | ✅ Supported | `WithOnServerRedirect` or `Client.ServerReference()` (CONNACK). `DisconnectError.ServerReference` via `OnConnectionLost` (DISCONNECT). |
+| **User Properties** | 3.1.2.28 | ✅ Supported | `WithConnectUserProperties` (send), `ConnectionUserProperties()` (receive), and `DisconnectError.UserProperties` (on disconnect). |
 | **Assigned Client ID** | 3.1.3.1 | ✅ Supported | Updates internal ID if server assigns one. |
 | **Server Keep Alive** | 3.2.2.3 | ✅ Supported | Respects server's override of Keep Alive interval. |
 | **Capabilities** | 3.2.2.3 | ✅ Supported | Extracts `ReceiveMaximum`, `MaximumPacketSize`, etc. |

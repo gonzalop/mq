@@ -55,3 +55,32 @@ func (e *MqttError) Is(target error) bool {
 	}
 	return false
 }
+
+// DisconnectError represents a DISCONNECT packet received from the server,
+// containing potential MQTT v5.0 properties.
+type DisconnectError struct {
+	ReasonCode            ReasonCode
+	ReasonString          string
+	SessionExpiryInterval uint32            // 0 if not set
+	ServerReference       string            // Empty if not set
+	UserProperties        map[string]string // Nil if not set
+}
+
+func (e *DisconnectError) Error() string {
+	msg := e.ReasonString
+	if msg == "" {
+		if name, ok := disconnectReasonCodeNames[e.ReasonCode]; ok {
+			msg = name
+		} else {
+			msg = fmt.Sprintf("disconnect code 0x%02X", uint8(e.ReasonCode))
+		}
+	}
+	return fmt.Sprintf("server disconnected: %s", msg)
+}
+
+func (e *DisconnectError) Is(target error) bool {
+	if rc, ok := target.(ReasonCode); ok {
+		return e.ReasonCode == rc
+	}
+	return false
+}

@@ -1005,7 +1005,7 @@ func (c *Client) ServerKeepAlive() uint16 {
 //
 // IMPORTANT: The library does NOT automatically redirect to the referenced server.
 // Users must check this value and manually reconnect if desired or use the
-// WthOnServerRedirect option.
+// WithOnServerRedirect option.
 //
 // This method returns the server's reference URI if one was provided, or an
 // empty string if:
