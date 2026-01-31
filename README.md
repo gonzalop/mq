@@ -25,18 +25,16 @@ A lightweight, idiomatic MQTT client library for Go with full support for v3.1.1
 
 All features are tested with an extensive unit and integration test suite.
 
-## Performance (updated with mosquitto v2.1rc2 test results)
+## Performance (updated with mosquitto v2.1.0 test results)
 
 The `mq` library is built for high-performance scenarios, consistently outperforming other Go MQTT clients in throughput and resource efficiency. Key highlights from our benchmarks include:
 
-- **Throughput**: Up to **3x faster** than Paho v5 and **4x faster** than Paho v3 in high-concurrency scenarios (Mosquitto v2.1rc2).
-- **Reliability**: **100% message delivery** in all QoS 0 tests, while Paho clients frequently dropped messages or timed out under high load.
-- **Memory Efficiency**: **10x lower memory allocation** compared to Paho v5 (109 MiB vs 1,137 MiB in 50-worker small-packet workloads).
-- **GC Overhead**: Significantly fewer garbage collection cycles (e.g., 53 vs 703 for Paho v5), resulting in more predictable latencies.
+- **Throughput**: Up to **3x faster** than Paho v5 and **4x faster** than Paho v3 in high-concurrency scenarios. Peak publish rates exceed **1.3 million messages per second** with end-to-end delivery of over **710,000 msg/s** (Mosquitto v2.1.0).
+- **Reliability**: **100% message delivery** in all tests, while Paho clients frequently dropped messages or stalled due to internal deadlocks under high load.
+- **Memory Efficiency**: **10x lower memory allocation** compared to Paho v5 (108 MiB vs 1,137 MiB in 50-worker small-packet workloads).
+- **GC Overhead**: Significantly fewer garbage collection cycles (e.g., 56 vs 723 for Paho v5), resulting in more predictable latencies and higher stability.
 
 For a detailed comparative analysis, see the **[Performance Analysis Report](docs/PERFORMANCE_ANALYSIS.md)**.
-
-**NOTE**: new changes after these analyses made `mq` even faster.
 
 ## Installation
 
