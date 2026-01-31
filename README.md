@@ -18,7 +18,7 @@ A lightweight, idiomatic MQTT client library for Go with full support for v3.1.1
 - ✅ **Context Awareness**: `context.Context` support for cancellation/timeouts
 - ✅ **MQTT v5.0 Features**:
   - **Message Properties**: Content Type, User Properties (see [examples/v5_properties](./examples/v5_properties)), Request/Response (see [examples/v5_request_response](./examples/v5_request_response)), Message Expiry
-  - **Connection Config**: Session Expiry, Request Problem/Response Info
+  - **Connection Config**: Session Expiry, Request Problem/Response Info, User Properties
   - **Bandwidth**: Topic Aliases (Client & Server) (see [examples/topic_aliases](./examples/topic_aliases))
   - **Flow Control**: Receive Maximum, Max Packet Size
   - **Subscription**: NoLocal, RetainAsPublished, RetainHandling, Shared Subscriptions

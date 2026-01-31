@@ -140,6 +140,9 @@ type Client struct {
 	requestedSessionExpiry uint32 // Original user request (preserved on reconnect)
 	sessionExpiryInterval  uint32 // Actual value from server (may override request)
 
+	// User Properties received in CONNACK (MQTT v5.0)
+	connackUserProperties map[string]string
+
 	// Stats (atomic)
 	packetsSent     atomic.Uint64
 	packetsReceived atomic.Uint64
@@ -554,6 +557,16 @@ func (c *Client) buildConnectPacket() *packets.ConnectPacket {
 		if c.opts.MaxIncomingPacket > 0 {
 			pkt.Properties.MaximumPacketSize = uint32(c.opts.MaxIncomingPacket)
 			pkt.Properties.Presence |= packets.PresMaximumPacketSize
+		}
+
+		if len(c.opts.ConnectUserProperties) > 0 {
+			pkt.Properties.UserProperties = make([]packets.UserProperty, 0, len(c.opts.ConnectUserProperties))
+			for k, v := range c.opts.ConnectUserProperties {
+				pkt.Properties.UserProperties = append(pkt.Properties.UserProperties, packets.UserProperty{
+					Key:   k,
+					Value: v,
+				})
+			}
 		}
 
 		if c.opts.Authenticator != nil {
@@ -1183,6 +1196,25 @@ func (c *Client) ServerCapabilities() ServerCapabilities {
 	}
 }
 
+// ConnectionUserProperties returns the User Properties received from the server
+// in the CONNACK packet. These are application-specific key-value pairs provided
+// by the server during the connection handshake.
+//
+// This is only populated for MQTT v5.0 connections.
+// Returns a copy of the map to prevent concurrent modification.
+func (c *Client) ConnectionUserProperties() map[string]string {
+	// We return a copy to avoid race conditions if the map was mutable,
+	// though currently it's set once on connect.
+	if c.connackUserProperties == nil {
+		return nil
+	}
+	props := make(map[string]string, len(c.connackUserProperties))
+	for k, v := range c.connackUserProperties {
+		props[k] = v
+	}
+	return props
+}
+
 // ClientStats holds connection and throughput statistics.
 type ClientStats struct {
 	PacketsSent     uint64
@@ -1332,9 +1364,18 @@ func (c *Client) processConnackProperties(connack *packets.ConnackPacket) {
 			c.opts.Logger.Debug("server accepted session expiry",
 				"interval", c.sessionExpiryInterval)
 		}
+
+		if len(connack.Properties.UserProperties) > 0 {
+			c.connackUserProperties = make(map[string]string)
+			for _, up := range connack.Properties.UserProperties {
+				c.connackUserProperties[up.Key] = up.Value
+			}
+			c.opts.Logger.Debug("received connack user properties", "count", len(c.connackUserProperties))
+		}
 	} else {
 		// Use default capabilities for older protocols or if no properties sent
 		c.serverCaps = extractServerCapabilities(nil)
+		c.connackUserProperties = nil
 	}
 }
 

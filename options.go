@@ -87,6 +87,9 @@ type clientOptions struct {
 	SessionExpiryInterval uint32
 	SessionExpirySet      bool // Track if explicitly set vs default
 
+	// MQTT v5.0 User Properties for CONNECT packet
+	ConnectUserProperties map[string]string
+
 	// Default publish handler (optional)
 	// Called when a PUBLISH packet doesn't match any registered subscription.
 	DefaultPublishHandler MessageHandler
@@ -393,6 +396,33 @@ func WithSessionExpiryInterval(seconds uint32) Option {
 	return func(o *clientOptions) {
 		o.SessionExpiryInterval = seconds
 		o.SessionExpirySet = true
+	}
+}
+
+// WithConnectUserProperties sets the User Properties to be sent in the CONNECT packet.
+//
+// Only applicable for MQTT v5.0 connections. User Properties are key-value pairs
+// that allow the client to send custom metadata to the server during the connection
+// handshake.
+//
+// This option is ignored when using MQTT v3.1.1.
+//
+// Example:
+//
+//	client, _ := mq.Dial("tcp://localhost:1883",
+//	    mq.WithProtocolVersion(mq.ProtocolV50),
+//	    mq.WithConnectUserProperties(map[string]string{
+//	        "region": "us-east-1",
+//	        "app-version": "1.0.2",
+//	    }))
+func WithConnectUserProperties(props map[string]string) Option {
+	return func(o *clientOptions) {
+		if o.ConnectUserProperties == nil {
+			o.ConnectUserProperties = make(map[string]string)
+		}
+		for k, v := range props {
+			o.ConnectUserProperties[k] = v
+		}
 	}
 }
 
