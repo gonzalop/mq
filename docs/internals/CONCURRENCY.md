@@ -12,6 +12,7 @@ The `Client` struct uses two primary locks to protect its state:
 
 1.  **`sessionLock` (`sync.Mutex`)**: This is the "inner" lock and protects the core session state.
 2.  **`connLock` (`sync.RWMutex`)**: This protects the network connection and connection status.
+3.  **`receivedAliasesLock` (`sync.RWMutex`)**: This protects the mapping of inbound Topic Aliases (ID -> Topic Name) for MQTT v5.0.
 
 ### `sessionLock` Protected State
 
@@ -32,6 +33,14 @@ The `connLock` MUST be held when accessing:
 -   `connected`: Boolean flag indicating connection status.
 -   `lastDisconnectReason`: Stores the reason for the last disconnection.
 
+### `receivedAliasesLock` Protected State
+
+This lock guards the `receivedAliases` map, which stores the mapping between Topic Alias IDs and their corresponding topic names for incoming messages. It uses an `RWMutex` because reads (resolving an alias) are much more frequent than writes (registering a new alias).
+
+### Atomic Statistics
+
+Client statistics (`PacketsSent`, `BytesReceived`, etc.) are stored using `atomic` types (e.g., `atomic.Uint64`). They can be accessed safely from any goroutine via `client.GetStats()` without acquiring any of the main locks. This ensures that monitoring does not contend with the critical path.
+
 ## Request Flow
 
 ### Publishing (`Publish`)
@@ -47,6 +56,13 @@ The `connLock` MUST be held when accessing:
     -   It appends the request to `publishQueue`.
     -   It releases `sessionLock`.
 
+### Flow Control
+
+It is important to distinguish between **Outbound** and **Inbound** flow control:
+
+-   **Outbound (Client Publishing)**: Managed by `inFlightCount`, `ReceiveMaximum` (server's limit), and the `publishQueue`. This ensures we don't flood the server.
+-   **Inbound (Server Publishing)**: Managed by `ReceiveMaximum` (client's limit). The client enforces this strict limit when processing incoming packets in `logicLoop` (under `sessionLock`). If the server violates it, the client may disconnect with a protocol error.
+
 ### Subscribing (`Subscribe`, `Unsubscribe`)
 
 1.  The method acquires `sessionLock`.
@@ -60,10 +76,13 @@ The `connLock` MUST be held when accessing:
 The `logicLoop` runs in a separate goroutine and handles incoming packets from the `incoming` channel (populated by `readLoop`).
 
 1.  When a packet arrives (e.g., `PUBACK`, `SUBACK`), `logicLoop` acquires `sessionLock`.
-2.  It processes the packet (updates `pending`, `inFlightCount`, `subscriptions`).
-3.  If a `PUBACK`/`PUBCOMP` frees up a flow control slot, it drains the `publishQueue` (sending queued messages).
-4.  It releases `sessionLock`.
-5.  It completes the associated `Token` (which notifies the user).
+2.  For `PUBLISH` packets:
+    -   If a Topic Alias is used, it acquires `receivedAliasesLock` (Read or Write) to resolve or register the alias.
+    -   It checks `ReceiveMaximum` to ensure the server isn't exceeding our capacity.
+3.  It processes the packet (updates `pending`, `inFlightCount`, `subscriptions`).
+4.  If a `PUBACK`/`PUBCOMP` frees up a flow control slot, it drains the `publishQueue` (sending queued messages).
+5.  It releases `sessionLock`.
+6.  It completes the associated `Token` (which notifies the user).
 
 ## Deadlock Prevention
 
