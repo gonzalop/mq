@@ -350,11 +350,7 @@ func (c *Client) connect(ctx context.Context) error {
 		c.requestedSessionExpiry = c.opts.SessionExpiryInterval
 	}
 
-	c.topicAliasesLock.Lock()
-	c.topicAliases = make(map[string]uint16)
-	c.nextAliasID = 1
-	c.maxAliases = 0
-	c.topicAliasesLock.Unlock()
+	c.resetAllTopicAliases()
 
 	c.receivedAliasesLock.Lock()
 	c.receivedAliases = make(map[uint16]string)
