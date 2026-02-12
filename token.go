@@ -49,13 +49,18 @@ type Token interface {
 
 	// Error returns the error if finished, mostly for use with Done().
 	Error() error
+
+	// Dropped returns true if the message was dropped due to a full internal buffer (QoS 0).
+	// This only occurs when Using QoS0LimitPolicyDrop.
+	Dropped() bool
 }
 
 // token is the internal implementation of Token.
 type token struct {
-	done chan struct{}
-	err  error
-	once sync.Once
+	done    chan struct{}
+	err     error
+	dropped bool
+	once    sync.Once
 }
 
 // newToken creates a new token.
@@ -83,6 +88,12 @@ func (t *token) Done() <-chan struct{} {
 // Error returns the error if the operation has completed.
 func (t *token) Error() error {
 	return t.err
+}
+
+// Dropped returns true if the message was dropped due to a full internal buffer.
+// This is only possible if QoS0LimitPolicyDrop is set (default).
+func (t *token) Dropped() bool {
+	return t.dropped
 }
 
 // complete marks the token as complete with the given error.

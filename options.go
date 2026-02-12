@@ -105,6 +105,19 @@ type clientOptions struct {
 	// Authenticator for enhanced authentication (optional, MQTT v5.0 only)
 	// If set, enables challenge/response authentication via AUTH packet flow.
 	Authenticator Authenticator
+
+	// Buffer sizes for internal packet processing.
+
+	// OutgoingQueueSize is the capacity of the outgoing packet channel.
+	// Larger sizes allow for bigger bursts of messages but increase memory usage.
+	OutgoingQueueSize int
+
+	// IncomingQueueSize is the capacity of the incoming packet channel.
+	IncomingQueueSize int
+
+	// QoS0Policy determines how the client handles QoS 0 messages when the
+	// OutgoingQueueSize is reached.
+	QoS0Policy QoS0LimitPolicy
 }
 
 const (
@@ -330,6 +343,21 @@ const (
 	// Note: Auto-reconnect should be disabled or carefully managed when using this policy,
 	// as a misbehaving server could cause an infinite loop of connect -> overflow -> disconnect.
 	LimitPolicyStrict
+)
+
+// QoS0LimitPolicy determines how the client handles QoS 0 messages when the internal buffer is full.
+type QoS0LimitPolicy int
+
+const (
+	// QoS0LimitPolicyDrop drops the QoS 0 message immediately if the internal buffer is full.
+	// This prevents the caller from blocking and avoids goroutine leaks.
+	// The token's Dropped() method will return true.
+	QoS0LimitPolicyDrop QoS0LimitPolicy = iota
+
+	// QoS0LimitPolicyBlock blocks the caller until space is available in the internal buffer.
+	// Use this if reliability is more important than preventing temporary blocking.
+	// This is safe to use as it still respects client shutdown.
+	QoS0LimitPolicyBlock
 )
 
 // WithReceiveMaximum sets the maximum number of unacknowledged QoS 1 and QoS 2
@@ -718,17 +746,48 @@ func WithSessionStore(store SessionStore) Option {
 	}
 }
 
+// WithOutgoingQueueSize sets the size of the internal outgoing packet buffer (default: 1000).
+func WithOutgoingQueueSize(size int) Option {
+	return func(o *clientOptions) {
+		if size > 0 {
+			o.OutgoingQueueSize = size
+		}
+	}
+}
+
+// WithIncomingQueueSize sets the size of the internal incoming packet buffer (default: 100).
+func WithIncomingQueueSize(size int) Option {
+	return func(o *clientOptions) {
+		if size > 0 {
+			o.IncomingQueueSize = size
+		}
+	}
+}
+
+// WithQoS0LimitPolicy sets the policy for handling QoS 0 messages when the buffer is full.
+//
+// The default policy is QoS0LimitPolicyDrop, which ensures the client remains non-blocking
+// and responsive even under extreme network congestion.
+func WithQoS0LimitPolicy(policy QoS0LimitPolicy) Option {
+	return func(o *clientOptions) {
+		o.QoS0Policy = policy
+	}
+}
+
 // defaultOptions returns the default client options.
 func defaultOptions(server string) *clientOptions {
 	return &clientOptions{
-		Server:          server,
-		ClientID:        "",
-		KeepAlive:       60 * time.Second,
-		CleanSession:    true,
-		ProtocolVersion: ProtocolV50,
-		AutoReconnect:   true,
-		ConnectTimeout:  30 * time.Second,
-		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Server:            server,
+		ClientID:          "",
+		KeepAlive:         60 * time.Second,
+		CleanSession:      true,
+		ProtocolVersion:   ProtocolV50,
+		AutoReconnect:     true,
+		ConnectTimeout:    30 * time.Second,
+		OutgoingQueueSize: 1000,
+		IncomingQueueSize: 100,
+		QoS0Policy:        QoS0LimitPolicyDrop,
+		Logger:            slog.New(slog.NewTextHandler(io.Discard, nil)),
 
 		// Use MQTT spec defaults (0 = use defaults in validation functions)
 		MaxTopicLength:    0,

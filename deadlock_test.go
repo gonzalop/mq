@@ -8,31 +8,42 @@ import (
 	"github.com/gonzalop/mq/internal/packets"
 )
 
+// newTestClient creates a Client for testing with all internal structures initialized.
+func newTestClient(opts *clientOptions) *Client {
+	if opts == nil {
+		opts = defaultOptions("tcp://localhost:1883")
+	}
+	return &Client{
+		opts:            opts,
+		outgoing:        make(chan packets.Packet, opts.OutgoingQueueSize),
+		incoming:        make(chan packets.Packet, opts.IncomingQueueSize),
+		packetReceived:  make(chan struct{}, 1),
+		pingPendingCh:   make(chan struct{}, 1),
+		stop:            make(chan struct{}),
+		pending:         make(map[uint16]*pendingOp),
+		subscriptions:   make(map[string]subscriptionEntry),
+		receivedQoS2:    make(map[uint16]struct{}),
+		inboundUnacked:  make(map[uint16]struct{}),
+		topicAliases:    make(map[string]uint16),
+		receivedAliases: make(map[uint16]string),
+		disconnected:    make(chan struct{}, 1),
+		publishQueue:    []*publishRequest{},
+	}
+}
+
 // TestQueueProcessingDeadlock verifies that the logicLoop does not deadlock
 // when the outgoing channel is full and we attempt to process the publish queue.
 func TestQueueProcessingDeadlock(t *testing.T) {
 	// 1. Setup Client with a full outgoing channel
-	// We use a small channel size for testing if we could, but struct has it hardcoded?
-	// No, we can make the channel ourselves.
-
-	outgoing := make(chan packets.Packet, 1)
-	outgoing <- &packets.PingreqPacket{} // Fill it up immediately
-
 	opts := defaultOptions("tcp://localhost:1883")
-	opts.ReceiveMaximum = 1 // Limit flow control
+	opts.ReceiveMaximum = 1
+	opts.OutgoingQueueSize = 1
 
-	c := &Client{
-		opts:          opts,
-		outgoing:      outgoing,
-		incoming:      make(chan packets.Packet, 10),
-		stop:          make(chan struct{}),
-		pending:       make(map[uint16]*pendingOp),
-		subscriptions: make(map[string]subscriptionEntry),
-		serverCaps: serverCapabilities{
-			ReceiveMaximum: 1,
-		},
-		publishQueue:  []*publishRequest{},
-		inFlightCount: 0,
+	c := newTestClient(opts)
+	c.outgoing <- &packets.PingreqPacket{} // Fill it up immediately
+
+	c.serverCaps = serverCapabilities{
+		ReceiveMaximum: 1,
 	}
 	// Note: We do NOT start writeLoop, so outgoing stays full.
 
@@ -96,24 +107,15 @@ func TestQueueProcessingDeadlock(t *testing.T) {
 // are completed (with an error) when sendPublishLocked fails due to a full outgoing channel.
 func TestQueuedTokensCompletedOnFullChannel(t *testing.T) {
 	// 1. Setup Client with a full outgoing channel
-	outgoing := make(chan packets.Packet, 1)
-	outgoing <- &packets.PingreqPacket{} // Fill it up
-
 	opts := defaultOptions("tcp://localhost:1883")
 	opts.ReceiveMaximum = 1
+	opts.OutgoingQueueSize = 1
 
-	c := &Client{
-		opts:          opts,
-		outgoing:      outgoing,
-		incoming:      make(chan packets.Packet, 10),
-		stop:          make(chan struct{}),
-		pending:       make(map[uint16]*pendingOp),
-		subscriptions: make(map[string]subscriptionEntry),
-		serverCaps: serverCapabilities{
-			ReceiveMaximum: 1,
-		},
-		publishQueue:  []*publishRequest{},
-		inFlightCount: 0,
+	c := newTestClient(opts)
+	c.outgoing <- &packets.PingreqPacket{} // Fill it up
+
+	c.serverCaps = serverCapabilities{
+		ReceiveMaximum: 1,
 	}
 
 	// 2. Add an in-flight message that we will ACK
@@ -160,12 +162,7 @@ func TestQueuedTokensCompletedOnFullChannel(t *testing.T) {
 // flow control queue are completed when the client is stopped.
 func TestQueuedTokensCompletedOnShutdown(t *testing.T) {
 	opts := defaultOptions("tcp://localhost:1883")
-	c := &Client{
-		opts:          opts,
-		stop:          make(chan struct{}),
-		publishQueue:  []*publishRequest{},
-		subscriptions: make(map[string]subscriptionEntry),
-	}
+	c := newTestClient(opts)
 
 	// Add a queued message
 	token := newToken()
@@ -194,15 +191,10 @@ func TestQueuedTokensCompletedOnShutdown(t *testing.T) {
 // TestQoS0NonBlocking verifies that QoS 0 publishes do not block when the outgoing channel is full.
 func TestQoS0NonBlocking(t *testing.T) {
 	// 1. Setup Client with a small, full outgoing channel
-	outgoing := make(chan packets.Packet, 1)
-	outgoing <- &packets.PingreqPacket{} // Fill it up
-
-	c := &Client{
-		opts:          defaultOptions("tcp://localhost:1883"),
-		outgoing:      outgoing,
-		stop:          make(chan struct{}),
-		subscriptions: make(map[string]subscriptionEntry),
-	}
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.OutgoingQueueSize = 1
+	c := newTestClient(opts)
+	c.outgoing <- &packets.PingreqPacket{} // Fill it up
 
 	// 2. Publish QoS 0
 	// Without the fix, this would block forever here because it tries to send to 'outgoing'.
@@ -224,13 +216,11 @@ func TestQoS0NonBlocking(t *testing.T) {
 
 // TestCustomBufferSizes verifies that the client respects custom buffer size options.
 func TestCustomBufferSizes(t *testing.T) {
-	opts := []Option{
-		WithOutgoingQueueSize(500),
-		WithIncomingQueueSize(50),
-	}
+	opts := defaultOptions("tcp://localhost:1883")
+	WithOutgoingQueueSize(500)(opts)
+	WithIncomingQueueSize(50)(opts)
 
-	c, _ := Dial("tcp://localhost:1883", opts...)
-	defer func() { _ = c.Disconnect(context.Background()) }()
+	c := newTestClient(opts)
 
 	if cap(c.outgoing) != 500 {
 		t.Errorf("Expected outgoing capacity 500, got %d", cap(c.outgoing))
@@ -244,18 +234,11 @@ func TestCustomBufferSizes(t *testing.T) {
 // if the QoS0LimitPolicyBlock policy is set.
 func TestQoS0Blocking(t *testing.T) {
 	// 1. Setup Client with a small, full outgoing channel and Block policy
-	outgoing := make(chan packets.Packet, 1)
-	outgoing <- &packets.PingreqPacket{} // Fill it up
-
 	opts := defaultOptions("tcp://localhost:1883")
 	opts.QoS0Policy = QoS0LimitPolicyBlock
-
-	c := &Client{
-		opts:          opts,
-		outgoing:      outgoing,
-		stop:          make(chan struct{}),
-		subscriptions: make(map[string]subscriptionEntry),
-	}
+	opts.OutgoingQueueSize = 1
+	c := newTestClient(opts)
+	c.outgoing <- &packets.PingreqPacket{} // Fill it up
 
 	// 2. Publish QoS 0 in a goroutine because it should block
 	tokenCh := make(chan Token, 1)
@@ -266,7 +249,7 @@ func TestQoS0Blocking(t *testing.T) {
 	// 3. Verify it's blocked (no token received yet)
 	var token Token
 	select {
-	case token = <-tokenCh:
+	case <-tokenCh:
 		t.Fatal("QoS 0 publish should have blocked on full outgoing channel")
 	case <-time.After(100 * time.Millisecond):
 		// Success, it's blocked
@@ -274,7 +257,7 @@ func TestQoS0Blocking(t *testing.T) {
 
 	// 4. Drain the channel to unblock
 	select {
-	case <-outgoing:
+	case <-c.outgoing:
 		// Channel should now have space
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("Failed to drain outgoing channel")

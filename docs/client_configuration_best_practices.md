@@ -64,6 +64,46 @@ client, err := mq.Dial(server,
 )
 ```
 
+### Internal Buffer Sizes
+
+The library uses internal channels for managing packets between the logic loop and the network connection. The default sizes are balanced for efficiency, but may need tuning for extreme workloads.
+
+**1. Outgoing Queue (`WithOutgoingQueueSize`)**
+- **Default:** `1000`.
+- **Purpose:** Buffers outgoing `PUBLISH` and control packets.
+- **Tuning:** Increase this if you experience "bursty" publishing behavior and want to avoid blocking the caller.
+- **RAM Impact:** `QueueSize * PacketPointer ≈ 1000 * 8 bytes ≈ 8KB` (minimal overhead, as it stores pointers to packets).
+
+**2. Incoming Queue (`WithIncomingQueueSize`)**
+- **Default:** `100`.
+- **Purpose:** Buffers packets received from the network before they are dispatched to your handlers.
+- **Tuning:** Only increase if you have extremely slow message handlers and want to prevent network stalls.
+
+### QoS 0 Reliability (Drop vs Block)
+
+QoS 0 is "At Most Once" and typically does not guarantee delivery. By default, most MQTT clients (and `mq`) will drop QoS 0 messages if the internal buffer is completely full to prioritize system stability.
+
+**`WithQoS0LimitPolicy` options:**
+
+1. **`QoS0LimitPolicyDrop` (Default):**
+   - **Behavior:** If the outgoing channel is full, the message is dropped immediately.
+   - **Benefit:** The caller never blocks. Prevents goroutine "pile-ups" during network congestion.
+   - **Notification:** The client can check if a message was dropped by calling `token.Dropped()` on the returned token.
+   - **Use Case:** High-frequency telemetry where losing a single data point is better than slowing down the whole application.
+
+2. **`QoS0LimitPolicyBlock`:**
+   - **Behavior:** If the outgoing channel is full, the caller will block until space is available or the client stops.
+   - **Benefit:** Provides **100% reliability** for QoS 0 even under heavy load, provided the network eventually clears.
+   - **Use Case:** High-throughput benchmarking or critical but non-persistent streaming.
+
+```go
+// Example: Absolute reliability for QoS 0 (blocking)
+client, err := mq.Dial(server,
+    mq.WithOutgoingQueueSize(5000),      // Large buffer for bursts
+    mq.WithQoS0LimitPolicy(mq.QoS0LimitPolicyBlock), // Never drop
+)
+```
+
 ---
 
 ## TLS Configuration
@@ -378,6 +418,8 @@ client, err := mq.Dial("tcp://internal-broker:1883",
     mq.WithClientID("backend-service-worker-01"),
     mq.WithTopicAliasMaximum(5000),      // Maximize bandwidth savings
     mq.WithReceiveMaximum(2000, mq.LimitPolicyIgnore), // Allow high concurrency
+    mq.WithOutgoingQueueSize(10000),     // Support massive publication bursts
+    mq.WithQoS0LimitPolicy(mq.QoS0LimitPolicyBlock), // Ensure every QoS 0 pkt is sent
     mq.WithMaxIncomingPacket(10 * 1024 * 1024), // 10MB limit
     mq.WithDefaultPublishHandler(myLogHandler),
     mq.WithKeepAlive(10 * time.Second),  // Fast failure detection

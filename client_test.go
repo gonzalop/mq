@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -22,8 +23,8 @@ func TestOperationsAfterDisconnect(t *testing.T) {
 
 	// Test Publish
 	token := c.Publish("test", []byte("payload"))
-	if token.Error() == nil || token.Error().Error() != "client stopped" {
-		t.Errorf("expected 'client stopped' error, got %v", token.Error())
+	if err := token.Error(); !errors.Is(err, ErrClientDisconnected) {
+		t.Errorf("expected ErrClientDisconnected, got %v", err)
 	}
 }
 

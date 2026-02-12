@@ -221,8 +221,8 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 
 	c := &Client{
 		opts:     options,
-		outgoing: make(chan packets.Packet, 1000),
-		incoming: make(chan packets.Packet, 100),
+		outgoing: make(chan packets.Packet, options.OutgoingQueueSize),
+		incoming: make(chan packets.Packet, options.IncomingQueueSize),
 
 		packetReceived: make(chan struct{}, 1),
 		pingPendingCh:  make(chan struct{}, 1),

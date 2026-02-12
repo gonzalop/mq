@@ -25,6 +25,7 @@ func main() {
 		msgSize  = flag.Int("size", 1024, "Size of message payload in bytes")
 		qos      = flag.Int("qos", 1, "QoS level (0, 1, or 2)")
 		workers  = flag.Int("workers", 10, "Number of concurrent publisher workers")
+		buffer   = flag.Int("buffer", 1000, "Internal buffer size for packets")
 	)
 	flag.Parse()
 
@@ -40,6 +41,9 @@ func main() {
 		*server,
 		mq.WithClientID("bench-sub-"+randomString(5)),
 		mq.WithLogger(logger.With("client", "sub")),
+		mq.WithOutgoingQueueSize(*buffer),
+		mq.WithIncomingQueueSize(*buffer),
+		mq.WithQoS0LimitPolicy(mq.QoS0LimitPolicyBlock),
 	)
 	if err != nil {
 		panic(err)
@@ -71,6 +75,8 @@ func main() {
 		mq.WithClientID("bench-pub-"+randomString(5)),
 		mq.WithProtocolVersion(mq.ProtocolV50),
 		mq.WithLogger(logger.With("client", "pub")),
+		mq.WithOutgoingQueueSize(*buffer),
+		mq.WithQoS0LimitPolicy(mq.QoS0LimitPolicyBlock),
 	)
 	if err != nil {
 		panic(err)

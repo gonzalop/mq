@@ -72,6 +72,8 @@ client, err := mq.DialContext(ctx, server, options...)
 - `WithDefaultPublishHandler(handler)` - Set fallback handler for unexpected messages.
 - `WithDialer(d ContextDialer)` - Set custom dialer (e.g. for WebSockets or proxy).
 - `WithKeepAlive(duration time.Duration)` - Set MQTT keepalive interval (default: 60s).
+- `WithIncomingQueueSize(size int)` - Set internal incoming buffer size (default: 100).
+- `WithOutgoingQueueSize(size int)` - Set internal outgoing buffer size (default: 1000).
 - `WithLogger(logger)` - Set custom log/slog Logger.
 - `WithMaxIncomingPacket(max int)` - Set maximum incoming packet size (default: 256MB).
 - `WithMaxPacketSize(bytes int)` - Set maximum packet size sent in CONNECT properties (v5.0) and enforce limit locally.
@@ -80,6 +82,9 @@ client, err := mq.DialContext(ctx, server, options...)
 - `WithOnConnect(func)` - Set callback for successful connection.
 - `WithOnConnectionLost(func)` - Set callback for connection loss.
 - `WithProtocolVersion(version uint8)` - Set MQTT protocol version (default: v5.0).
+- `WithQoS0LimitPolicy(policy)` - Set reliability policy for QoS 0 (default: Drop).
+  - `mq.QoS0LimitPolicyDrop` - Drop messages if buffer is full (non-blocking).
+  - `mq.QoS0LimitPolicyBlock` - Block until space is available (reliable).
   - `mq.ProtocolV311` (4) - MQTT v3.1.1
   - `mq.ProtocolV50` (5) - MQTT v5.0
 - `WithReceiveMaximum(max uint16, policy LimitPolicy)` - Set maximum concurrent unacknowledged messages (Flow Control) (v5.0).
@@ -101,6 +106,8 @@ client, err := mq.Dial("tcp://localhost:1883",
     mq.WithProtocolVersion(mq.ProtocolV50),
     mq.WithMaxPayloadSize(1024*1024),          // Limit to 1MB payloads
     mq.WithReceiveMaximum(100, mq.LimitPolicyIgnore), // Limit concurrent incoming messages
+    mq.WithOutgoingQueueSize(5000),             // Increase internal buffer for bursts
+    mq.WithQoS0LimitPolicy(mq.QoS0LimitPolicyBlock), // Ensure zero drops for QoS 0
 )
 ```
 

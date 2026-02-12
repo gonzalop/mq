@@ -42,11 +42,26 @@ func (c *Client) internalPublish(req *publishRequest) {
 
 	if pkt.QoS == 0 {
 		c.sessionLock.Unlock()
+		if c.opts.QoS0Policy == QoS0LimitPolicyBlock {
+			select {
+			case c.outgoing <- pkt:
+				req.token.complete(nil)
+			case <-c.stop:
+				req.token.complete(ErrClientDisconnected)
+			}
+			return
+		}
+
+		// Default Drop behavior
 		select {
 		case c.outgoing <- pkt:
 			req.token.complete(nil)
 		case <-c.stop:
-			req.token.complete(fmt.Errorf("client stopped"))
+			req.token.complete(ErrClientDisconnected)
+		default:
+			// Channel full, drop QoS 0 message (at most once)
+			req.token.dropped = true
+			req.token.complete(nil)
 		}
 		return
 	}
