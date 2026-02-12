@@ -124,6 +124,8 @@ func (c *Client) sendPublishLocked(req *publishRequest) bool {
 		// Channel full, back off
 		// Remove from pending since we failed to send
 		delete(c.pending, pkt.PacketID)
+		// Complete token with error so caller doesn't block forever
+		req.token.complete(fmt.Errorf("failed to send publish: outgoing channel full"))
 		return false
 	}
 }

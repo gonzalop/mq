@@ -34,6 +34,11 @@ func (c *Client) logicLoop() {
 			for _, op := range c.pending {
 				op.token.complete(ErrClientDisconnected)
 			}
+			// Complete tokens for queued publish requests
+			for _, req := range c.publishQueue {
+				req.token.complete(ErrClientDisconnected)
+			}
+			c.publishQueue = nil
 			c.sessionLock.Unlock()
 			return
 		}
