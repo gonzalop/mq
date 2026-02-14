@@ -236,6 +236,7 @@ func TestEnhancedAuthenticationFlow(t *testing.T) {
 
 	// 2. Start Mock Server
 	errCh := make(chan error, 1)
+	done := make(chan struct{})
 	go func() {
 		defer serverConn.Close()
 
@@ -305,6 +306,7 @@ func TestEnhancedAuthenticationFlow(t *testing.T) {
 		}
 
 		errCh <- nil
+		<-done
 	}()
 
 	// 3. Start Client
@@ -319,7 +321,9 @@ func TestEnhancedAuthenticationFlow(t *testing.T) {
 		WithAuthenticator(&PingPongAuthenticator{}),
 		WithDialer(dialer),
 		WithConnectTimeout(2*time.Second),
+		WithAutoReconnect(false),
 	)
+	defer close(done)
 
 	// Check server error first
 	select {
