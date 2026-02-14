@@ -107,7 +107,7 @@ func (c *Client) resetAllTopicAliases() {
 	// 3. Reset outgoing channel (mostly QoS 0)
 	// We drain and re-queue to ensure no stale aliases remain.
 	count := len(c.outgoing)
-	for i := 0; i < count; i++ {
+	for range count {
 		select {
 		case pkt := <-c.outgoing:
 			if pub, ok := pkt.(*packets.PublishPacket); ok {

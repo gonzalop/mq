@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/url"
 	"sync"
@@ -1205,9 +1206,7 @@ func (c *Client) ConnectionUserProperties() map[string]string {
 		return nil
 	}
 	props := make(map[string]string, len(c.connackUserProperties))
-	for k, v := range c.connackUserProperties {
-		props[k] = v
-	}
+	maps.Copy(props, c.connackUserProperties)
 	return props
 }
 

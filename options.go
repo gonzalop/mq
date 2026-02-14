@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"time"
 )
@@ -448,9 +449,7 @@ func WithConnectUserProperties(props map[string]string) Option {
 		if o.ConnectUserProperties == nil {
 			o.ConnectUserProperties = make(map[string]string)
 		}
-		for k, v := range props {
-			o.ConnectUserProperties[k] = v
-		}
+		maps.Copy(o.ConnectUserProperties, props)
 	}
 }
 
