@@ -10,6 +10,7 @@ A lightweight, idiomatic MQTT client library for Go with full support for v3.1.1
 ## Supported Features
 - ✅ **MQTT v3.1.1 & v5.0**: Full support for both protocol versions
   - **Unified API**: Write modern v5-style code (Properties, Reason Codes) that automatically degrades on v3 servers.
+  - **Auto-Negotiation**: Automatically falls back to v3.1.1 if v5.0 is not supported by the server.
 - ✅ **Auto-Reconnect**: Built-in exponential backoff (see [examples/auto_reconnect](./examples/auto_reconnect))
 - ✅ **Persistence**: Optional Durable Session Persistence (CleanSession=false) (see [docs/persistence.md](docs/persistence.md))
 - ✅ **Transport**: TCP and TLS directly, WebSockets via `WithDialer` (see [examples/websocket](./examples/websocket))

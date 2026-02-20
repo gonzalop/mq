@@ -65,6 +65,7 @@ client, err := mq.DialContext(ctx, server, options...)
 
 ### Connection Options
 - `WithAutoReconnect(bool)` - Enable/disable auto-reconnect (default: true).
+- `WithAutoProtocolVersion(bool)` - Enable/disable automatic protocol version negotiation (default: true).
 - `WithCleanSession(bool)` - Set clean session flag (default: true).
 - `WithClientID(id string)` - Set client identifier.
 - `WithConnectTimeout(duration time.Duration)` - Set connection timeout (default: 30s).
@@ -244,7 +245,8 @@ client.Subscribe("sensors/temp", mq.AtLeastOnce, handler)
 
 ## Protocol Compatibility
 
-- **Defaults to MQTT v5.0**: To connect to a v3.1.1 server, use `mq.WithProtocolVersion(mq.ProtocolV311)`.
+- **Automatic Negotiation (Default)**: The library automatically attempts to connect using MQTT v5.0. If the server rejects the version, it falls back to MQTT v3.1.1.
+- **Explicit Version**: To force a specific version, use `mq.WithProtocolVersion(mq.ProtocolV311)` or `mq.ProtocolV50`.
 - **Graceful Degradation**: v5.0 features (Reason Codes, Properties) are safely ignored when connected to a v3.1.1 server.
 
 ## Monitoring & Stats

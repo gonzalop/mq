@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -249,7 +250,31 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 	}
 
 	if err := c.connect(ctx); err != nil {
-		return nil, err
+		// Version negotiation: if v5.0 fails with "unacceptable protocol", try v3.1.1
+		if c.opts.AutoProtocolVersion && c.opts.ProtocolVersion == ProtocolV50 {
+			isProtoError := false
+			if errors.Is(err, ErrUnacceptableProtocolVersion) {
+				isProtoError = true
+			} else if mqErr, ok := err.(*MqttError); ok && mqErr.ReasonCode == 0x84 {
+				// 0x84 is MQTT v5.0 "Unsupported Protocol Version"
+				isProtoError = true
+			} else if mqErr, ok := err.(*MqttError); ok && mqErr.ReasonCode == ReasonCode(packets.ConnRefusedUnacceptableProtocol) {
+				// Some servers might return 0x01 even in v5.0-like responses
+				isProtoError = true
+			}
+
+			if isProtoError {
+				c.opts.Logger.Debug("v5.0 connection refused with unacceptable protocol, falling back to v3.1.1")
+				c.opts.ProtocolVersion = ProtocolV311
+				if err := c.connect(ctx); err != nil {
+					return nil, err
+				}
+			} else {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
 	}
 
 	c.wg.Add(1)

@@ -54,6 +54,7 @@
 // The Dial and DialContext functions accept various options to configure the client:
 //
 //   - WithProtocolVersion(v) - Set MQTT version (ProtocolV50 or ProtocolV311)
+//   - WithAutoProtocolVersion(bool) - Enable automatic protocol version negotiation (default: true)
 //   - WithClientID(id) - Set the MQTT client identifier
 //   - WithCredentials(user, pass) - Set username and password
 //   - WithKeepAlive(duration) - Set keepalive interval (default: 60s)

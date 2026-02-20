@@ -67,6 +67,10 @@ type clientOptions struct {
 	// Protocol Version (4 = v3.1.1, 5 = v5.0)
 	ProtocolVersion uint8
 
+	// AutoProtocolVersion enables automatic protocol version negotiation.
+	// If true, the client will first try v5.0 and fall back to v3.1.1 if refused.
+	AutoProtocolVersion bool
+
 	// MQTT v5.0 request flags
 	RequestProblemInformation  bool
 	RequestResponseInformation bool
@@ -237,6 +241,24 @@ func WithTLS(config *tls.Config) Option {
 func WithProtocolVersion(version uint8) Option {
 	return func(o *clientOptions) {
 		o.ProtocolVersion = version
+	}
+}
+
+// WithAutoProtocolVersion enables or disables automatic protocol version negotiation.
+//
+// When enabled (default: true), the client will first attempt to connect using
+// MQTT v5.0. If the server rejects the connection with an "Unacceptable
+// Protocol Version" error (0x01), the client will automatically fall back
+// to MQTT v3.1.1 and try again.
+//
+// This is useful when connecting to unknown servers or during migrations
+// where some brokers might not yet support MQTT v5.0.
+//
+// Note: This only applies to the initial connection. Once a version is
+// negotiated, it is used for all subsequent automatic reconnections.
+func WithAutoProtocolVersion(auto bool) Option {
+	return func(o *clientOptions) {
+		o.AutoProtocolVersion = auto
 	}
 }
 
@@ -776,17 +798,18 @@ func WithQoS0LimitPolicy(policy QoS0LimitPolicy) Option {
 // defaultOptions returns the default client options.
 func defaultOptions(server string) *clientOptions {
 	return &clientOptions{
-		Server:            server,
-		ClientID:          "",
-		KeepAlive:         60 * time.Second,
-		CleanSession:      true,
-		ProtocolVersion:   ProtocolV50,
-		AutoReconnect:     true,
-		ConnectTimeout:    30 * time.Second,
-		OutgoingQueueSize: 1000,
-		IncomingQueueSize: 100,
-		QoS0Policy:        QoS0LimitPolicyDrop,
-		Logger:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Server:              server,
+		ClientID:            "",
+		KeepAlive:           60 * time.Second,
+		CleanSession:        true,
+		ProtocolVersion:     ProtocolV50,
+		AutoProtocolVersion: true,
+		AutoReconnect:       true,
+		ConnectTimeout:      30 * time.Second,
+		OutgoingQueueSize:   1000,
+		IncomingQueueSize:   100,
+		QoS0Policy:          QoS0LimitPolicyDrop,
+		Logger:              slog.New(slog.NewTextHandler(io.Discard, nil)),
 
 		// Use MQTT spec defaults (0 = use defaults in validation functions)
 		MaxTopicLength:    0,
