@@ -57,11 +57,11 @@ func ReadPacket(r io.Reader, version uint8, maxIncomingPacket int) (Packet, erro
 	var bufPtr *[]byte
 
 	if header.RemainingLength > 0 {
-		bufPtr = getBuffer(header.RemainingLength)
+		bufPtr = GetBuffer(header.RemainingLength)
 		remaining = (*bufPtr)[:header.RemainingLength]
 
 		if _, err := io.ReadFull(r, remaining); err != nil {
-			putBuffer(bufPtr)
+			PutBuffer(bufPtr)
 			return nil, fmt.Errorf("failed to read packet body: %w", err)
 		}
 	}
@@ -69,7 +69,7 @@ func ReadPacket(r io.Reader, version uint8, maxIncomingPacket int) (Packet, erro
 	decoder, ok := packetDecoders[header.PacketType]
 	if !ok {
 		if bufPtr != nil {
-			putBuffer(bufPtr)
+			PutBuffer(bufPtr)
 		}
 		return nil, fmt.Errorf("unknown packet type: %d", header.PacketType)
 	}
@@ -77,7 +77,7 @@ func ReadPacket(r io.Reader, version uint8, maxIncomingPacket int) (Packet, erro
 	pkt, err := decoder(remaining, &header, version)
 
 	if bufPtr != nil {
-		putBuffer(bufPtr)
+		PutBuffer(bufPtr)
 	}
 
 	return pkt, err

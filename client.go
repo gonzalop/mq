@@ -701,7 +701,7 @@ func (c *Client) writeLoop() {
 		select {
 		case pkt := <-c.outgoing:
 			c.opts.Logger.Debug("sending packet", "type", packets.PacketNames[pkt.Type()])
-			if _, err := pkt.WriteTo(bw); err != nil {
+			if err := c.writePacket(bw, pkt); err != nil {
 				c.opts.Logger.Debug("write error, disconnecting", "error", err)
 				c.handleDisconnect()
 				return
@@ -714,7 +714,7 @@ func (c *Client) writeLoop() {
 			for range count {
 				pkt := <-c.outgoing
 				c.opts.Logger.Debug("sending packet (batch)", "type", packets.PacketNames[pkt.Type()])
-				if _, err := pkt.WriteTo(bw); err != nil {
+				if err := c.writePacket(bw, pkt); err != nil {
 					c.opts.Logger.Debug("write error (batch), disconnecting", "error", err)
 					c.handleDisconnect()
 					return
@@ -771,7 +771,7 @@ func (c *Client) writeLoop() {
 					"time_since_received", timeSinceReceived)
 
 				ping := &packets.PingreqPacket{}
-				if _, err := ping.WriteTo(bw); err != nil {
+				if err := c.writePacket(bw, ping); err != nil {
 					c.handleDisconnect()
 					return
 				}
@@ -818,6 +818,26 @@ func (c *Client) handleDisconnect() {
 	case c.disconnected <- struct{}{}:
 	default:
 	}
+}
+
+// writePacket serializes a packet and writes it to the writer.
+// It uses a pooled buffer for serialization if the packet implements packets.Encoder.
+func (c *Client) writePacket(w io.Writer, pkt packets.Packet) error {
+	if enc, ok := pkt.(packets.Encoder); ok {
+		bufPtr := packets.GetBuffer(4096)
+		defer packets.PutBuffer(bufPtr)
+
+		data, err := enc.Encode((*bufPtr)[:0])
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(data)
+		return err
+	}
+
+	// Fallback to WriteTo if Encoder is not implemented
+	_, err := pkt.WriteTo(w)
+	return err
 }
 
 // IsConnected returns true if the client is currently connected to the server.

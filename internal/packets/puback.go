@@ -21,22 +21,15 @@ func (p *PubackPacket) Type() uint8 {
 	return PUBACK
 }
 
-// Encode serializes the PUBACK packet to bytes.
-
-// WriteTo writes the PUBACK packet to the writer.
-func (p *PubackPacket) WriteTo(w io.Writer) (int64, error) {
-	var total int64
-
+// Encode serializes the PUBACK packet into dst.
+func (p *PubackPacket) Encode(dst []byte) ([]byte, error) {
 	// 1. Calculate Variable Header length
-	var packetIDBytes [2]byte
-	var propsBytes []byte
 	var propsLen int
-
-	// MQTT v5.0
 	if p.Version >= 5 {
 		if p.ReasonCode != 0 || p.Properties != nil {
-			propsBytes = encodeProperties(p.Properties)
-			propsLen = len(propsBytes)
+			var propBuf [128]byte
+			encodedProps := appendProperties(propBuf[:0], p.Properties)
+			propsLen = len(encodedProps)
 		}
 	}
 
@@ -48,45 +41,39 @@ func (p *PubackPacket) WriteTo(w io.Writer) (int64, error) {
 	}
 
 	// 2. Write Fixed Header
-	header := &FixedHeader{
+	header := FixedHeader{
 		PacketType:      PUBACK,
 		Flags:           0,
 		RemainingLength: variableHeaderLen,
 	}
-
-	hN, err := header.WriteTo(w)
-	total += hN
-	if err != nil {
-		return total, err
-	}
-	var n int
+	dst = header.appendBytes(dst)
 
 	// 3. Write Variable Header
 	// Packet ID
-	binary.BigEndian.PutUint16(packetIDBytes[:], p.PacketID)
-	n, err = w.Write(packetIDBytes[:])
-	total += int64(n)
-	if err != nil {
-		return total, err
-	}
+	dst = binary.BigEndian.AppendUint16(dst, p.PacketID)
 
 	// MQTT v5.0
 	if p.Version >= 5 {
 		if p.ReasonCode != 0 || p.Properties != nil {
-			if err := binary.Write(w, binary.BigEndian, p.ReasonCode); err != nil {
-				return total, err
-			}
-			total++
-
-			n, err = w.Write(propsBytes)
-			total += int64(n)
-			if err != nil {
-				return total, err
-			}
+			dst = append(dst, p.ReasonCode)
+			dst = appendProperties(dst, p.Properties)
 		}
 	}
 
-	return total, nil
+	return dst, nil
+}
+
+// WriteTo writes the PUBACK packet to the writer.
+func (p *PubackPacket) WriteTo(w io.Writer) (int64, error) {
+	bufPtr := GetBuffer(4096)
+	defer PutBuffer(bufPtr)
+
+	data, err := p.Encode((*bufPtr)[:0])
+	if err != nil {
+		return 0, err
+	}
+	n, err := w.Write(data)
+	return int64(n), err
 }
 
 // DecodePuback decodes a PUBACK packet from the buffer.

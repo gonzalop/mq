@@ -35,21 +35,18 @@ func (p *PublishPacket) Type() uint8 {
 	return PUBLISH
 }
 
-// Encode serializes the PUBLISH packet to bytes.
-
-// WriteTo writes the PUBLISH packet to the writer.
-func (p *PublishPacket) WriteTo(w io.Writer) (int64, error) {
-	var total int64
-
-	// 1. Calculate Variable Header length
+// Encode serializes the PUBLISH packet into dst.
+func (p *PublishPacket) Encode(dst []byte) ([]byte, error) {
+	// 1. Calculate variable header length
 	var topicLen int = 2 + len(p.Topic)
-	var propertyBytes []byte
 	var propertyLen int
 
-	// Properties (v5.0 only)
 	if p.Version >= 5 {
-		propertyBytes = encodeProperties(p.Properties)
-		propertyLen = len(propertyBytes)
+		// Temporary properties encoding to get length.
+		// Use a stack-allocated buffer for typical small properties.
+		var propBuf [128]byte
+		encodedProps := appendProperties(propBuf[:0], p.Properties)
+		propertyLen = len(encodedProps)
 	}
 
 	variableHeaderLen := topicLen
@@ -60,10 +57,10 @@ func (p *PublishPacket) WriteTo(w io.Writer) (int64, error) {
 		variableHeaderLen += propertyLen
 	}
 
-	// 2. Calculate Remaining Length
+	// 2. Calculate remaining length
 	remainingLength := variableHeaderLen + len(p.Payload)
 
-	// 3. Write Fixed Header
+	// 3. Write fixed header
 	var flags uint8
 	if p.Dup {
 		flags |= 0x08
@@ -73,86 +70,45 @@ func (p *PublishPacket) WriteTo(w io.Writer) (int64, error) {
 		flags |= 0x01
 	}
 
-	header := &FixedHeader{
+	header := FixedHeader{
 		PacketType:      PUBLISH,
 		Flags:           flags,
 		RemainingLength: remainingLength,
 	}
 
-	hN, err := header.WriteTo(w)
-	total += hN
-	if err != nil {
-		return total, err
-	}
-	var n int
+	dst = header.appendBytes(dst)
 
-	// 4. Write Variable Header
+	// 4. Write variable header
 	// Topic
-	topicStrLen := uint16(len(p.Topic))
-	if bw, ok := w.(io.ByteWriter); ok {
-		if err := bw.WriteByte(byte(topicStrLen >> 8)); err != nil {
-			return total, err
-		}
-		total++
-		if err := bw.WriteByte(byte(topicStrLen)); err != nil {
-			return total, err
-		}
-		total++
-	} else {
-		var buf [2]byte
-		binary.BigEndian.PutUint16(buf[:], topicStrLen)
-		n, err = w.Write(buf[:])
-		total += int64(n)
-		if err != nil {
-			return total, err
-		}
-	}
-
-	n, err = io.WriteString(w, p.Topic)
-	total += int64(n)
-	if err != nil {
-		return total, err
-	}
+	dst = appendString(dst, p.Topic)
 
 	// Packet ID
 	if p.QoS > 0 {
-		if bw, ok := w.(io.ByteWriter); ok {
-			if err := bw.WriteByte(byte(p.PacketID >> 8)); err != nil {
-				return total, err
-			}
-			total++
-			if err := bw.WriteByte(byte(p.PacketID)); err != nil {
-				return total, err
-			}
-			total++
-		} else {
-			var buf [2]byte
-			binary.BigEndian.PutUint16(buf[:], p.PacketID)
-			n, err = w.Write(buf[:])
-			total += int64(n)
-			if err != nil {
-				return total, err
-			}
-		}
+		dst = binary.BigEndian.AppendUint16(dst, p.PacketID)
 	}
 
 	// Properties
 	if p.Version >= 5 {
-		n, err = w.Write(propertyBytes)
-		total += int64(n)
-		if err != nil {
-			return total, err
-		}
+		dst = appendProperties(dst, p.Properties)
 	}
 
-	// 5. Write Payload
-	n, err = w.Write(p.Payload)
-	total += int64(n)
+	// 5. Write payload
+	dst = append(dst, p.Payload...)
+
+	return dst, nil
+}
+
+// WriteTo writes the PUBLISH packet to the writer.
+func (p *PublishPacket) WriteTo(w io.Writer) (int64, error) {
+	bufPtr := GetBuffer(4096)
+	defer PutBuffer(bufPtr)
+
+	data, err := p.Encode((*bufPtr)[:0])
 	if err != nil {
-		return total, err
+		return 0, err
 	}
-
-	return total, nil
+	n, err := w.Write(data)
+	return int64(n), err
 }
 
 // DecodePublish decodes a PUBLISH packet from the buffer and fixed header.

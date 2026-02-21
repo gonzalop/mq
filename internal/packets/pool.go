@@ -13,9 +13,9 @@ var bufferPool = sync.Pool{
 	},
 }
 
-// getBuffer returns a buffer from the pool.
+// GetBuffer returns a buffer from the pool.
 // If the requested size is larger than the pooled buffer, it allocates a new one.
-func getBuffer(size int) *[]byte {
+func GetBuffer(size int) *[]byte {
 	if size > 4096 {
 		buf := make([]byte, size)
 		return &buf
@@ -23,9 +23,9 @@ func getBuffer(size int) *[]byte {
 	return bufferPool.Get().(*[]byte)
 }
 
-// putBuffer returns a buffer to the pool.
+// PutBuffer returns a buffer to the pool.
 // Only pooled buffers (<= 4096 capacity) should be returned.
-func putBuffer(bufPtr *[]byte) {
+func PutBuffer(bufPtr *[]byte) {
 	if cap(*bufPtr) != 4096 {
 		return
 	}
