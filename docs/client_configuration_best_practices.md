@@ -106,6 +106,41 @@ client, err := mq.Dial(server,
 
 ---
 
+## Interceptors (Middleware)
+
+The library supports an interceptor pattern for both incoming (`HandlerInterceptor`) and outgoing (`PublishInterceptor`) messages. This is the recommended way to implement cross-cutting concerns like logging, metrics, or tracing (OpenTelemetry).
+
+### Use Cases
+1. **Logging**: Record every message received or sent with its topic and size.
+2. **Metrics**: Count messages, track processing duration, or monitor payload sizes.
+3. **Tracing**: Use MQTT v5.0 User Properties to pass `trace-id` between services.
+4. **Validation/Transformation**: Globally validate or modify payloads (e.g., encryption).
+
+### Performance Considerations
+- **Non-Blocking**: Handlers are called in their own goroutines, but interceptors still add execution time. Keep them lightweight.
+- **Ordering**: Interceptors are executed in the order they are added via `mq.With*Interceptor`.
+
+```go
+// Example: Metrics & Logging Interceptor
+loggingInterceptor := func(next mq.MessageHandler) mq.MessageHandler {
+    return func(c *mq.Client, m mq.Message) {
+        start := time.Now()
+
+        // Execute actual handler (or next interceptor)
+        next(c, m)
+
+        duration := time.Since(start)
+        if duration > 100*time.Millisecond {
+            slog.Warn("Slow message processing", "topic", m.Topic, "duration", duration)
+        }
+    }
+}
+
+client, err := mq.Dial(server, mq.WithHandlerInterceptor(loggingInterceptor))
+```
+
+---
+
 ## TLS Configuration
 
 TLS is mandatory for securing your MQTT username, password, and payload over the wire.

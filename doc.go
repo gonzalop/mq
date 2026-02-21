@@ -67,6 +67,36 @@
 //   - WithOutgoingQueueSize(int) - Set internal outgoing buffer size
 //   - WithIncomingQueueSize(int) - Set internal incoming buffer size
 //   - WithQoS0LimitPolicy(policy) - Set reliability policy for QoS 0
+//   - WithHandlerInterceptor(interceptor) - Add an interceptor for incoming messages
+//   - WithPublishInterceptor(interceptor) - Add an interceptor for outgoing messages
+//
+// # Interceptors (Middleware)
+//
+// The library supports an interceptor pattern (middleware) for both incoming
+// and outgoing messages. This is useful for cross-cutting concerns like
+// logging, metrics, tracing (OpenTelemetry), or message auditing.
+//
+// Handler Interceptors wrap message handlers for incoming messages:
+//
+//	loggingInterceptor := func(next mq.MessageHandler) mq.MessageHandler {
+//	    return func(c *mq.Client, m mq.Message) {
+//	        log.Printf("Received: %s", m.Topic)
+//	        next(c, m)
+//	    }
+//	}
+//
+//	client, _ := mq.Dial(uri, mq.WithHandlerInterceptor(loggingInterceptor))
+//
+// Publish Interceptors wrap the Publish call for outgoing messages:
+//
+//	tracingInterceptor := func(next mq.PublishFunc) mq.PublishFunc {
+//	    return func(topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
+//	        // Inject tracing headers into opts here
+//	        return next(topic, payload, opts...)
+//	    }
+//	}
+//
+//	client, _ := mq.Dial(uri, mq.WithPublishInterceptor(tracingInterceptor))
 //
 // # TLS Connections
 //

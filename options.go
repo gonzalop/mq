@@ -123,6 +123,10 @@ type clientOptions struct {
 	// QoS0Policy determines how the client handles QoS 0 messages when the
 	// OutgoingQueueSize is reached.
 	QoS0Policy QoS0LimitPolicy
+
+	// Interceptors for message handling and publishing.
+	HandlerInterceptors []HandlerInterceptor
+	PublishInterceptors []PublishInterceptor
 }
 
 const (
@@ -792,6 +796,44 @@ func WithIncomingQueueSize(size int) Option {
 func WithQoS0LimitPolicy(policy QoS0LimitPolicy) Option {
 	return func(o *clientOptions) {
 		o.QoS0Policy = policy
+	}
+}
+
+// WithHandlerInterceptor adds an interceptor to the incoming message handler chain.
+// Interceptors are called in the order they are added.
+//
+// Example (Logging):
+//
+//	client, _ := mq.Dial(uri,
+//	    mq.WithHandlerInterceptor(func(next mq.MessageHandler) mq.MessageHandler {
+//	        return func(c *mq.Client, m mq.Message) {
+//	            log.Printf("Received message on topic %s", m.Topic)
+//	            next(c, m)
+//	        }
+//	    }),
+//	)
+func WithHandlerInterceptor(interceptor HandlerInterceptor) Option {
+	return func(o *clientOptions) {
+		o.HandlerInterceptors = append(o.HandlerInterceptors, interceptor)
+	}
+}
+
+// WithPublishInterceptor adds an interceptor to the outbound publish chain.
+// Interceptors are called in the order they are added.
+//
+// Example (Tracing):
+//
+//	client, _ := mq.Dial(uri,
+//	    mq.WithPublishInterceptor(func(next mq.PublishFunc) mq.PublishFunc {
+//	        return func(topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
+//	            // Inject tracing headers or log the publish
+//	            return next(topic, payload, opts...)
+//	        }
+//	    }),
+//	)
+func WithPublishInterceptor(interceptor PublishInterceptor) Option {
+	return func(o *clientOptions) {
+		o.PublishInterceptors = append(o.PublishInterceptors, interceptor)
 	}
 }
 

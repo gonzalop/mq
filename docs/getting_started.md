@@ -73,6 +73,8 @@ client, err := mq.DialContext(ctx, server, options...)
 - `WithDefaultPublishHandler(handler)` - Set fallback handler for unexpected messages.
 - `WithDialer(d ContextDialer)` - Set custom dialer (e.g. for WebSockets or proxy).
 - `WithKeepAlive(duration time.Duration)` - Set MQTT keepalive interval (default: 60s).
+- `WithHandlerInterceptor(interceptor)` - Add an interceptor for incoming messages.
+- `WithPublishInterceptor(interceptor)` - Add an interceptor for outgoing messages.
 - `WithIncomingQueueSize(size int)` - Set internal incoming buffer size (default: 100).
 - `WithOutgoingQueueSize(size int)` - Set internal outgoing buffer size (default: 1000).
 - `WithLogger(logger)` - Set custom log/slog Logger.
@@ -109,6 +111,33 @@ client, err := mq.Dial("tcp://localhost:1883",
     mq.WithReceiveMaximum(100, mq.LimitPolicyIgnore), // Limit concurrent incoming messages
     mq.WithOutgoingQueueSize(5000),             // Increase internal buffer for bursts
     mq.WithQoS0LimitPolicy(mq.QoS0LimitPolicyBlock), // Ensure zero drops for QoS 0
+)
+```
+
+## Interceptors (Middleware)
+
+The library supports an interceptor pattern (middleware) for both incoming and outgoing messages. This is useful for cross-cutting concerns like logging, metrics, or tracing (OpenTelemetry).
+
+```go
+// Handler Interceptor (Incoming)
+loggingInterceptor := func(next mq.MessageHandler) mq.MessageHandler {
+    return func(c *mq.Client, m mq.Message) {
+        log.Printf("Received: %s", m.Topic)
+        next(c, m)
+    }
+}
+
+// Publish Interceptor (Outgoing)
+tracingInterceptor := func(next mq.PublishFunc) mq.PublishFunc {
+    return func(topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
+        // Add tracing headers or audit logging
+        return next(topic, payload, opts...)
+    }
+}
+
+client, _ := mq.Dial(uri,
+    mq.WithHandlerInterceptor(loggingInterceptor),
+    mq.WithPublishInterceptor(tracingInterceptor),
 )
 ```
 

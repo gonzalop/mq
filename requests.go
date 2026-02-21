@@ -196,7 +196,7 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 		}
 
 		c.subscriptions[topic] = subscriptionEntry{
-			handler: req.handler,
+			handler: c.wrapHandler(req.handler),
 			options: subOpts,
 			qos:     qos,
 		}

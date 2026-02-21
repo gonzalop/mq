@@ -212,8 +212,12 @@ func (c *Client) handlePublish(p *packets.PublishPacket) {
 	}
 
 	// Use default handler if no matches found
-	if len(handlers) == 0 && c.opts.DefaultPublishHandler != nil {
-		handlers = append(handlers, c.opts.DefaultPublishHandler)
+	if len(handlers) == 0 {
+		if c.defaultHandler != nil {
+			handlers = append(handlers, c.defaultHandler)
+		} else if c.opts != nil && c.opts.DefaultPublishHandler != nil {
+			handlers = append(handlers, c.opts.DefaultPublishHandler)
+		}
 	}
 
 	msg := Message{

@@ -102,6 +102,15 @@ All callbacks are executed asynchronously in their own goroutines. This design p
 | `OnServerRedirect` | **Asynchronous** | Prevents blocking the processing of CONNACK properties; allows user to decide on reconnection strategy independently. |
 | `MessageHandler` | **Asynchronous** | Critical for high throughput; slow message processing shouldn't block reception of other packets or ACKs. |
 
+## Interceptors (Middleware)
+
+Interceptors are executed synchronously within the goroutine that invokes the wrapped function:
+
+- **Handler Interceptors**: Executed within the asynchronous goroutine spawned for the `MessageHandler`. They do not block the `logicLoop`.
+- **Publish Interceptors**: Executed within the caller's goroutine when `client.Publish` is called.
+
+Because they are part of the execution chain, interceptors should be non-blocking and efficient to avoid introducing latency in message processing or publishing.
+
 ## Thread Safety
 
 All public methods of `Client` are thread-safe and can be called concurrently. Internal methods (prefixed with `internal` or `handle`) usually assume the caller holds the necessary locks (check method documentation).

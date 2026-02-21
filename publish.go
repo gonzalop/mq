@@ -202,6 +202,13 @@ func WithProperties(props *Properties) PublishOption {
 //	    log.Printf("Publish timeout or failed: %v", err)
 //	}
 func (c *Client) Publish(topic string, payload []byte, opts ...PublishOption) Token {
+	if c.publish == nil {
+		return c.basePublish(topic, payload, opts...)
+	}
+	return c.publish(topic, payload, opts...)
+}
+
+func (c *Client) basePublish(topic string, payload []byte, opts ...PublishOption) Token {
 	c.opts.Logger.Debug("publishing message", "topic", topic, "payload_size", len(payload))
 
 	if err := validatePublishTopic(topic, c.opts); err != nil {

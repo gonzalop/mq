@@ -8,16 +8,17 @@
 A lightweight, idiomatic MQTT client library for Go with full support for v3.1.1 and v5.0 with a unified API, built using only the standard library.
 
 ## Supported Features
-- ✅ **MQTT v3.1.1 & v5.0**: Full support for both protocol versions
+- **MQTT v3.1.1 & v5.0**: Full support for both protocol versions
   - **Unified API**: Write modern v5-style code (Properties, Reason Codes) that automatically degrades on v3 servers.
   - **Auto-Negotiation**: Automatically falls back to v3.1.1 if v5.0 is not supported by the server.
-- ✅ **Auto-Reconnect**: Built-in exponential backoff (see [examples/auto_reconnect](./examples/auto_reconnect))
-- ✅ **Persistence**: Optional Durable Session Persistence (CleanSession=false) (see [docs/persistence.md](docs/persistence.md))
-- ✅ **Transport**: TCP and TLS directly, WebSockets via `WithDialer` (see [examples/websocket](./examples/websocket))
-- ✅ **Optimized**: High throughput, low memory footprint
-- ✅ **Thread-Safe**: Safe for concurrent use
-- ✅ **Context Awareness**: `context.Context` support for cancellation/timeouts
-- ✅ **MQTT v5.0 Features**:
+- **Auto-Reconnect**: Built-in exponential backoff (see [examples/auto_reconnect](./examples/auto_reconnect))
+- **Persistence**: Optional Durable Session Persistence (CleanSession=false) (see [docs/persistence.md](docs/persistence.md))
+- **Transport**: TCP and TLS directly, WebSockets via `WithDialer` (see [examples/websocket](./examples/websocket))
+- **Middleware/Interceptors**: Intercept inbound/outbound messages for logging, metrics, or tracing.
+- **Optimized**: High throughput, low memory footprint
+- **Thread-Safe**: Safe for concurrent use
+- **Context Awareness**: `context.Context` support for cancellation/timeouts
+- **MQTT v5.0 Features**:
   - **Message Properties**: Content Type, User Properties (see [examples/v5_properties](./examples/v5_properties)), Request/Response (see [examples/v5_request_response](./examples/v5_request_response)), Message Expiry
   - **Connection Config**: Session Expiry, Request Problem/Response Info, User Properties
   - **Bandwidth**: Topic Aliases (Client & Server) (see [examples/topic_aliases](./examples/topic_aliases))
@@ -92,7 +93,29 @@ func main() {
 }
 ```
 
-## 📚 Documentation
+## Middleware / Interceptors
+
+The library supports an interceptor pattern (middleware) for both incoming and outgoing messages. This is perfect for cross-cutting concerns like logging, metrics, or OpenTelemetry tracing.
+
+```go
+// Incoming message logging
+client, _ := mq.Dial(uri, mq.WithHandlerInterceptor(func(next mq.MessageHandler) mq.MessageHandler {
+    return func(c *mq.Client, m mq.Message) {
+        log.Printf("Received: %s", m.Topic)
+        next(c, m)
+    }
+}))
+
+// Outgoing message tracing
+client, _ := mq.Dial(uri, mq.WithPublishInterceptor(func(next mq.PublishFunc) mq.PublishFunc {
+    return func(topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
+        // Add tracing or modify payload
+        return next(topic, payload, opts...)
+    }
+}))
+```
+
+## Documentation
 
 - **[Getting Started](docs/getting_started.md)**: Detailed guide on Connecting, Publishing, Subscribing, and Options.
 - **[Best Practices](./docs/client_configuration_best_practices.md)**: Production-grade configuration guide (Security, Resource Limits, Session Management). A **MUST**-read.

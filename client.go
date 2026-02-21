@@ -157,6 +157,12 @@ type Client struct {
 
 	// Last disconnect reason (if any) received from server via DISCONNECT packet
 	lastDisconnectReason error
+
+	// The wrapped publish function (including interceptors)
+	publish PublishFunc
+
+	// The wrapped default message handler (including interceptors)
+	defaultHandler MessageHandler
 }
 
 // publishRequest represents a request to publish a message.
@@ -236,9 +242,12 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 		disconnected:   make(chan struct{}, 1),
 	}
 
+	c.publish = applyPublishInterceptors(c.basePublish, options.PublishInterceptors)
+	c.defaultHandler = c.wrapHandler(options.DefaultPublishHandler)
+
 	for topic, handler := range options.InitialSubscriptions {
 		c.subscriptions[topic] = subscriptionEntry{
-			handler: handler,
+			handler: c.wrapHandler(handler),
 			qos:     0,
 		}
 	}
@@ -286,6 +295,14 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 	}
 
 	return c, nil
+}
+
+// wrapHandler applies handler interceptors to a MessageHandler.
+func (c *Client) wrapHandler(handler MessageHandler) MessageHandler {
+	if handler == nil || c.opts == nil {
+		return handler
+	}
+	return applyHandlerInterceptors(handler, c.opts.HandlerInterceptors)
 }
 
 // Dial establishes a connection to an MQTT server and returns a Client.
