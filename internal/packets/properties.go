@@ -513,8 +513,7 @@ func (p *Properties) decodeStringOrBinary(id byte, data []byte) (int, bool, erro
 		if err != nil {
 			return 0, false, err
 		}
-		p.CorrelationData = make([]byte, len(b))
-		copy(p.CorrelationData, b)
+		p.CorrelationData = b
 		return n, true, nil
 	case PropAssignedClientIdentifier:
 		s, n, err := decodeString(data)
@@ -537,8 +536,7 @@ func (p *Properties) decodeStringOrBinary(id byte, data []byte) (int, bool, erro
 		if err != nil {
 			return 0, false, err
 		}
-		p.AuthenticationData = make([]byte, len(b))
-		copy(p.AuthenticationData, b)
+		p.AuthenticationData = b
 		return n, true, nil
 	case PropResponseInformation:
 		s, n, err := decodeString(data)

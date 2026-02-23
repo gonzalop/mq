@@ -76,26 +76,6 @@ func (h *FixedHeader) WriteTo(w io.Writer) (int64, error) {
 	return int64(nw), err
 }
 
-// appendBytes appends the fixed header to dst and returns the resulting slice.
-func (h *FixedHeader) appendBytes(dst []byte) []byte {
-	firstByte := (h.PacketType << 4) | (h.Flags & 0x0F)
-	dst = append(dst, firstByte)
-
-	x := h.RemainingLength
-	for {
-		b := byte(x % 128)
-		x /= 128
-		if x > 0 {
-			b |= 128
-		}
-		dst = append(dst, b)
-		if x == 0 {
-			break
-		}
-	}
-	return dst
-}
-
 // DecodeFixedHeader reads and decodes a fixed header from the reader.
 func DecodeFixedHeader(r io.Reader) (FixedHeader, error) {
 	var buf [1]byte
