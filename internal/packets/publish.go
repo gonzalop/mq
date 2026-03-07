@@ -42,7 +42,7 @@ func (p *PublishPacket) WriteTo(w io.Writer) (int64, error) {
 	var total int64
 
 	// 1. Calculate Variable Header length
-	var topicLen int = 2 + len(p.Topic)
+	var topicLen = 2 + len(p.Topic)
 	var propertyBytes []byte
 	var propertyLen int
 

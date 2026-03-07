@@ -63,9 +63,7 @@ func MatchTopic(filter, topic string) bool {
 			tLevel = topic[tIdx:]
 		}
 
-		if fLevel == "+" {
-			// Single-level wildcard matches this level
-		} else if fLevel != tLevel {
+		if fLevel != "+" && fLevel != tLevel {
 			// No match
 			return false
 		}

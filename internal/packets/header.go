@@ -19,7 +19,7 @@ func (h *FixedHeader) WriteTo(w io.Writer) (int64, error) {
 
 	// Optimization: If writer supports WriteByte, use it to avoid slice allocation
 	if bw, ok := w.(io.ByteWriter); ok {
-		var totalBytesWritten int64 = 0
+		var totalBytesWritten int64
 
 		if err := bw.WriteByte(firstByte); err != nil {
 			return totalBytesWritten, err

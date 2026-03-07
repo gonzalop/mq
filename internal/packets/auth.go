@@ -1,3 +1,4 @@
+// Package packets provides MQTT packet encoding and decoding.
 package packets
 
 import (

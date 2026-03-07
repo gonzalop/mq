@@ -21,7 +21,7 @@ func TestSharedSubscriptionNoLocalValidation(t *testing.T) {
 	// Simple logger
 	c.opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	handler := func(c *Client, msg Message) {}
+	handler := func(_ *Client, _ Message) {}
 
 	tests := []struct {
 		name      string

@@ -35,7 +35,7 @@ func TestDefaultPublishHandlerIntegration(t *testing.T) {
 	}
 
 	subscribeDone := make(chan struct{})
-	token := clientA.Subscribe(persistentTopic, 1, func(c *mq.Client, msg mq.Message) {
+	token := clientA.Subscribe(persistentTopic, 1, func(_ *mq.Client, _ mq.Message) {
 		// Handler logic not relevant for this test, but must be present initially
 		close(subscribeDone)
 	})
@@ -67,7 +67,7 @@ func TestDefaultPublishHandlerIntegration(t *testing.T) {
 	// catch it.
 	received := make(chan mq.Message, 1)
 
-	defaultHandler := func(c *mq.Client, msg mq.Message) {
+	defaultHandler := func(_ *mq.Client, msg mq.Message) {
 		received <- msg
 	}
 

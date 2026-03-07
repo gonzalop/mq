@@ -34,7 +34,7 @@ func TestAutoReconnect(t *testing.T) {
 	var mu sync.Mutex
 	var msgCount int
 
-	token := client.Subscribe("test/reconnect", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe("test/reconnect", mq.AtLeastOnce, func(_ *mq.Client, msg mq.Message) {
 		mu.Lock()
 		msgCount++
 		mu.Unlock()

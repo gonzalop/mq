@@ -15,7 +15,7 @@ func FuzzReadPacket(f *testing.F) {
 	f.Add([]byte{0xd0, 0x00})             // PINGRESP
 	f.Add([]byte{0xe0, 0x00})             // DISCONNECT
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		// Just try to read - should never panic
 		r := bytes.NewReader(data)
 		_, _ = ReadPacket(r, 4, 0)
@@ -30,7 +30,7 @@ func FuzzDecodeFixedHeader(f *testing.F) {
 	f.Add([]byte{0x30, 0x80, 0x01})
 	f.Add([]byte{0x30, 0xff, 0xff, 0xff, 0x7f})
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		r := bytes.NewReader(data)
 		_, _ = DecodeFixedHeader(r)
 	})
@@ -45,7 +45,7 @@ func FuzzDecodeVarInt(f *testing.F) {
 	f.Add([]byte{0xff, 0x7f})
 	f.Add([]byte{0x80, 0x80, 0x80, 0x01})
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		r := bytes.NewReader(data)
 		_, _ = decodeVarInt(r)
 	})
@@ -58,7 +58,7 @@ func FuzzDecodeString(f *testing.F) {
 	f.Add([]byte{0x00, 0x04, 'M', 'Q', 'T', 'T'})
 	f.Add([]byte{0x00, 0x05, 'h', 'e', 'l', 'l', 'o'})
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		_, _, _ = decodeString(data)
 	})
 }
@@ -75,7 +75,7 @@ func FuzzDecodeConnect(f *testing.F) {
 	}
 	f.Add(validConnect)
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		_, _ = DecodeConnect(data)
 	})
 }
@@ -86,7 +86,7 @@ func FuzzDecodePublish(f *testing.F) {
 	f.Add([]byte{0x00, 0x04, 't', 'e', 's', 't', 'h', 'i'})                       // QoS 0
 	f.Add([]byte{0x00, 0x04, 't', 'e', 's', 't', 0x00, 0x01, 'd', 'a', 't', 'a'}) // QoS 1
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		header := &FixedHeader{
 			PacketType:      PUBLISH,
 			Flags:           0,
@@ -101,7 +101,7 @@ func FuzzDecodePubcomp(f *testing.F) {
 	f.Add([]byte{0x00, 0x01})       // V4 PacketID
 	f.Add([]byte{0x00, 0x01, 0x00}) // V5 with reason code success
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		// Try v4
 		_, _ = DecodePubcomp(data, 4)
 		// Try v5
@@ -114,7 +114,7 @@ func FuzzDecodePubrec(f *testing.F) {
 	f.Add([]byte{0x00, 0x01})       // V4 PacketID
 	f.Add([]byte{0x00, 0x01, 0x00}) // V5 with reason code success
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		// Try v4
 		_, _ = DecodePubrec(data, 4)
 		// Try v5
@@ -127,7 +127,7 @@ func FuzzDecodePubrel(f *testing.F) {
 	f.Add([]byte{0x00, 0x01})       // V4 PacketID
 	f.Add([]byte{0x00, 0x01, 0x00}) // V5 with reason code success
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		// Try v4
 		_, _ = DecodePubrel(data, 4)
 		// Try v5

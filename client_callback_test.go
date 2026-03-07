@@ -24,7 +24,7 @@ func TestAsyncCallbacks(t *testing.T) {
 	callbackDone := make(chan struct{})
 
 	// Subscribe with a slow callback
-	handler := func(client *Client, msg Message) {
+	handler := func(_ *Client, _ Message) {
 		close(callbackStart)
 		time.Sleep(100 * time.Millisecond) // Simulate slow work
 		close(callbackDone)

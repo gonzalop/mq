@@ -10,10 +10,10 @@ type MockSessionStoreForRestore struct {
 	pendingPublishes map[uint16]*PersistedPublish
 }
 
-func (m *MockSessionStoreForRestore) SavePendingPublish(packetID uint16, pub *PersistedPublish) error {
+func (m *MockSessionStoreForRestore) SavePendingPublish(_ uint16, _ *PersistedPublish) error {
 	return nil
 }
-func (m *MockSessionStoreForRestore) DeletePendingPublish(packetID uint16) error { return nil }
+func (m *MockSessionStoreForRestore) DeletePendingPublish(_ uint16) error { return nil }
 func (m *MockSessionStoreForRestore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
 	// Return copy to avoid races in test
 	result := make(map[uint16]*PersistedPublish)
@@ -21,15 +21,15 @@ func (m *MockSessionStoreForRestore) LoadPendingPublishes() (map[uint16]*Persist
 	return result, nil
 }
 func (m *MockSessionStoreForRestore) ClearPendingPublishes() error { return nil }
-func (m *MockSessionStoreForRestore) SaveSubscription(topic string, sub *PersistedSubscription) error {
+func (m *MockSessionStoreForRestore) SaveSubscription(_ string, _ *PersistedSubscription) error {
 	return nil
 }
-func (m *MockSessionStoreForRestore) DeleteSubscription(topic string) error { return nil }
+func (m *MockSessionStoreForRestore) DeleteSubscription(_ string) error { return nil }
 func (m *MockSessionStoreForRestore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {
 	return nil, nil
 }
-func (m *MockSessionStoreForRestore) SaveReceivedQoS2(packetID uint16) error         { return nil }
-func (m *MockSessionStoreForRestore) DeleteReceivedQoS2(packetID uint16) error       { return nil }
+func (m *MockSessionStoreForRestore) SaveReceivedQoS2(_ uint16) error                { return nil }
+func (m *MockSessionStoreForRestore) DeleteReceivedQoS2(_ uint16) error              { return nil }
 func (m *MockSessionStoreForRestore) LoadReceivedQoS2() (map[uint16]struct{}, error) { return nil, nil }
 func (m *MockSessionStoreForRestore) ClearReceivedQoS2() error                       { return nil }
 func (m *MockSessionStoreForRestore) Clear() error                                   { return nil }

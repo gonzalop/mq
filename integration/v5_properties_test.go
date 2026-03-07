@@ -27,7 +27,7 @@ func TestV5Properties(t *testing.T) {
 	t.Run("ContentType", func(t *testing.T) {
 		received := make(chan mq.Message, 1)
 
-		token := client.Subscribe("test/properties/contenttype", 1, func(c *mq.Client, msg mq.Message) {
+		token := client.Subscribe("test/properties/contenttype", 1, func(_ *mq.Client, msg mq.Message) {
 			received <- msg
 		})
 
@@ -67,7 +67,7 @@ func TestV5Properties(t *testing.T) {
 	t.Run("UserProperties", func(t *testing.T) {
 		received := make(chan mq.Message, 1)
 
-		token := client.Subscribe("test/properties/user", 1, func(c *mq.Client, msg mq.Message) {
+		token := client.Subscribe("test/properties/user", 1, func(_ *mq.Client, msg mq.Message) {
 			received <- msg
 		})
 
@@ -116,7 +116,7 @@ func TestV5Properties(t *testing.T) {
 		responses := make(chan mq.Message, 1)
 
 		// Subscribe to response topic
-		token := client.Subscribe(responseTopic, 1, func(c *mq.Client, msg mq.Message) {
+		token := client.Subscribe(responseTopic, 1, func(_ *mq.Client, msg mq.Message) {
 			responses <- msg
 		})
 
@@ -180,7 +180,7 @@ func TestV5Properties(t *testing.T) {
 	t.Run("MultipleProperties", func(t *testing.T) {
 		received := make(chan mq.Message, 1)
 
-		token := client.Subscribe("test/properties/multiple", 1, func(c *mq.Client, msg mq.Message) {
+		token := client.Subscribe("test/properties/multiple", 1, func(_ *mq.Client, msg mq.Message) {
 			received <- msg
 		})
 
@@ -238,7 +238,7 @@ func TestV5Properties(t *testing.T) {
 	t.Run("PropertiesStruct", func(t *testing.T) {
 		received := make(chan mq.Message, 1)
 
-		token := client.Subscribe("test/properties/struct", 1, func(c *mq.Client, msg mq.Message) {
+		token := client.Subscribe("test/properties/struct", 1, func(_ *mq.Client, msg mq.Message) {
 			received <- msg
 		})
 
@@ -302,7 +302,7 @@ func TestV3NoProperties(t *testing.T) {
 
 	received := make(chan mq.Message, 1)
 
-	token := client.Subscribe("test/v3/noprops", 1, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe("test/v3/noprops", 1, func(_ *mq.Client, msg mq.Message) {
 		received <- msg
 	})
 

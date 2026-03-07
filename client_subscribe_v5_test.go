@@ -21,7 +21,7 @@ func TestSubscribeWithUserProperties(t *testing.T) {
 	}
 
 	topic := "test/topic"
-	handler := func(c *Client, msg Message) {}
+	handler := func(_ *Client, _ Message) {}
 
 	// Test subscription with User Properties
 	token := c.Subscribe(topic, 1, handler,

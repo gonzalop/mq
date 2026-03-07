@@ -35,7 +35,7 @@ func TestTopicAliases(t *testing.T) {
 	}
 	defer subClient.Disconnect(context.Background())
 
-	token := subClient.Subscribe(topic, 1, func(c *mq.Client, msg mq.Message) {
+	token := subClient.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
 		subReceived <- msg
 	})
 	if err := token.Wait(context.Background()); err != nil {

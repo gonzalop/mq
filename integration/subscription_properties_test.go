@@ -31,7 +31,7 @@ func TestSubscriptionProperties_Integration(t *testing.T) {
 	// Subscribe with Subscription Identifier and User Properties
 	subID := 42
 
-	token := client.Subscribe(topic, mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe(topic, mq.AtLeastOnce, func(_ *mq.Client, msg mq.Message) {
 		received <- msg
 	},
 		mq.WithSubscriptionIdentifier(subID),
@@ -143,7 +143,7 @@ func TestSubscriptionProperties_Persistence(t *testing.T) {
 		mq.WithCleanSession(false),
 		mq.WithSessionStore(store2),
 		mq.WithProtocolVersion(mq.ProtocolV50),
-		mq.WithDefaultPublishHandler(func(c *mq.Client, msg mq.Message) {
+		mq.WithDefaultPublishHandler(func(_ *mq.Client, msg mq.Message) {
 			received <- msg
 		}),
 	)

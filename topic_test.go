@@ -166,7 +166,7 @@ func FuzzValidatePublishTopic(f *testing.F) {
 	f.Add("sensors/#")
 
 	opts := defaultOptions("tcp://test:1883")
-	f.Fuzz(func(t *testing.T, topic string) {
+	f.Fuzz(func(_ *testing.T, topic string) {
 		// Should never panic
 		_ = validatePublishTopic(topic, opts)
 	})
@@ -181,7 +181,7 @@ func FuzzValidateSubscribeTopic(f *testing.F) {
 	f.Add("#")
 
 	opts := defaultOptions("tcp://test:1883")
-	f.Fuzz(func(t *testing.T, topic string) {
+	f.Fuzz(func(_ *testing.T, topic string) {
 		// Should never panic
 		_ = validateSubscribeTopic(topic, opts)
 	})
@@ -296,7 +296,7 @@ func FuzzMatchTopic(f *testing.F) {
 	f.Add("exact/match", "exact/match")
 	f.Add("no/match", "different/topic")
 
-	f.Fuzz(func(t *testing.T, filter, topic string) {
+	f.Fuzz(func(_ *testing.T, filter, topic string) {
 		// Should never panic, just return true or false
 		_ = MatchTopic(filter, topic)
 	})

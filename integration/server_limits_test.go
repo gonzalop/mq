@@ -81,7 +81,7 @@ max_inflight_messages 2
 		start := time.Now()
 
 		for i := 0; i < numMsgs; i++ {
-			go func(id int) {
+			go func(_ int) {
 				token := client.Publish("test/flow", []byte("data"), mq.WithQoS(1))
 				err := token.Wait(context.Background())
 				done <- err

@@ -79,7 +79,7 @@ func TestAdvancedFeatures(t *testing.T) {
 
 		// 2. Subscribe and verify we get it
 		received := make(chan mq.Message, 1)
-		if err := client.Subscribe(topic, 1, func(c *mq.Client, msg mq.Message) {
+		if err := client.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
 			received <- msg
 		}).Wait(context.Background()); err != nil {
 			t.Fatalf("Failed to subscribe: %v", err)
@@ -111,7 +111,7 @@ func TestAdvancedFeatures(t *testing.T) {
 		defer client.Disconnect(context.Background())
 
 		received := make(chan mq.Message, 2)
-		handler := func(c *mq.Client, msg mq.Message) {
+		handler := func(_ *mq.Client, msg mq.Message) {
 			received <- msg
 		}
 

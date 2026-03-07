@@ -81,7 +81,7 @@ func (p *simpleProxy) handleConn(clientConn net.Conn) {
 }
 
 func (p *simpleProxy) closeConnections() {
-	p.conns.Range(func(key, value any) bool {
+	p.conns.Range(func(key, _ any) bool {
 		if conn, ok := key.(net.Conn); ok {
 			conn.Close()
 		}
@@ -148,7 +148,7 @@ func TestLastWillWithDelay(t *testing.T) {
 
 	// Watch for Will
 	wills := make(chan mq.Message, 1)
-	if err := witness.Subscribe(topic, 1, func(c *mq.Client, msg mq.Message) {
+	if err := witness.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
 		wills <- msg
 	}).Wait(context.Background()); err != nil {
 		t.Fatalf("Failed to subscribe witness: %v", err)

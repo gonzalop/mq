@@ -68,7 +68,7 @@ func TestDisconnectReasonPropagation(t *testing.T) {
 		mq.WithClientID("test-client"),
 		mq.WithProtocolVersion(mq.ProtocolV50),
 		mq.WithAutoReconnect(false), // Disable auto-reconnect to make checking error stable
-		mq.WithOnConnectionLost(func(c *mq.Client, err error) {
+		mq.WithOnConnectionLost(func(_ *mq.Client, err error) {
 			disconnectErr = err
 			wg.Done()
 		}),
@@ -171,7 +171,7 @@ func TestDisconnectExtraProperties(t *testing.T) {
 		mq.WithClientID("test-props-client-2"),
 		mq.WithProtocolVersion(mq.ProtocolV50),
 		mq.WithAutoReconnect(false),
-		mq.WithOnConnectionLost(func(c *mq.Client, err error) {
+		mq.WithOnConnectionLost(func(_ *mq.Client, err error) {
 			disconnectErr = err
 			wg.Done()
 		}),

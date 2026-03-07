@@ -29,7 +29,7 @@ func TestOperationsAfterDisconnect(t *testing.T) {
 }
 
 // TestConcurrentSafety verifies that API methods are safe to call concurrently.
-func TestConcurrentSafety(t *testing.T) {
+func TestConcurrentSafety(_ *testing.T) {
 	// This mainly tests that the API methods don't race on themselves.
 	// Without a running loop, they block or error safeley.
 
@@ -43,6 +43,7 @@ func TestConcurrentSafety(t *testing.T) {
 	// Drain outgoing to prevent blocking
 	go func() {
 		for range c.outgoing {
+			continue
 		}
 	}()
 	// Don't close stop, so they send to channel
@@ -628,10 +629,7 @@ func TestDialDefaultPorts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.uri, func(t *testing.T) {
 			_, err := Dial(tt.uri, WithClientID("test"), WithAutoReconnect(false))
-			if err == nil {
-				// Assuming no server on standard ports for unit tests, but if there's one, it's fine.
-				// We just avoid failing the test in that case.
-			} else {
+			if err != nil {
 				// Expect error like "dial tcp [::1]:1883: connect: connection refused"
 				// or "dial tcp 127.0.0.1:1883..."
 				if !strings.Contains(err.Error(), tt.expectedPort) {

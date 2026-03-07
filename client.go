@@ -376,13 +376,9 @@ func (c *Client) connect(ctx context.Context) error {
 	// MQTT 3.1.1: Empty ClientID requires CleanSession=true
 	// MQTT 5.0: Empty ClientID with CleanStart=false is allowed if SessionExpiryInterval > 0
 	//           (server will assign a ClientID)
-	if c.opts.ClientID == "" && !c.opts.CleanSession {
-		// For MQTT 5.0, allow empty ClientID if SessionExpiryInterval is set
-		if c.opts.ProtocolVersion >= ProtocolV50 && c.opts.SessionExpirySet && c.opts.SessionExpiryInterval > 0 {
-			// Valid: Server will assign a ClientID
-		} else {
-			return fmt.Errorf("MQTT requires a non-empty ClientID when CleanSession is false")
-		}
+	if c.opts.ClientID == "" && !c.opts.CleanSession &&
+		!(c.opts.ProtocolVersion >= ProtocolV50 && c.opts.SessionExpirySet && c.opts.SessionExpiryInterval > 0) {
+		return fmt.Errorf("MQTT requires a non-empty ClientID when CleanSession is false")
 	}
 
 	if c.requestedKeepAlive == 0 {

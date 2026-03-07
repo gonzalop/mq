@@ -21,7 +21,7 @@ func TestSubscribe(t *testing.T) {
 	}
 
 	topic := "test/topic"
-	handler := func(c *Client, msg Message) {}
+	handler := func(_ *Client, _ Message) {}
 
 	// Test successful subscription request
 	token := c.Subscribe(topic, 1, handler)
@@ -140,7 +140,7 @@ func TestInternalSubscribe(t *testing.T) {
 	}
 
 	topic := "test/topic"
-	handler := func(c *Client, msg Message) {}
+	handler := func(_ *Client, _ Message) {}
 
 	pkt := &packets.SubscribePacket{
 		Topics:  []string{topic},

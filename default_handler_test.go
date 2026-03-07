@@ -13,7 +13,7 @@ func TestDefaultPublishHandler(t *testing.T) {
 	var receivedTopic string
 	var receivedPayload []byte
 
-	defaultHandler := func(c *Client, msg Message) {
+	defaultHandler := func(_ *Client, msg Message) {
 		receivedTopic = msg.Topic
 		receivedPayload = msg.Payload
 		close(handlerCalled)
@@ -58,11 +58,11 @@ func TestDefaultHandlerNotCalledIfSubscriptionExists(t *testing.T) {
 	defaultCalled := make(chan struct{})
 	subCalled := make(chan struct{})
 
-	defaultHandler := func(c *Client, msg Message) {
+	defaultHandler := func(_ *Client, _ Message) {
 		close(defaultCalled)
 	}
 
-	subHandler := func(c *Client, msg Message) {
+	subHandler := func(_ *Client, _ Message) {
 		close(subCalled)
 	}
 

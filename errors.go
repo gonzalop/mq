@@ -78,6 +78,7 @@ func (e *DisconnectError) Error() string {
 	return fmt.Sprintf("server disconnected: %s", msg)
 }
 
+// Is implements the errors.Is interface, allowing checks against ReasonCode constants.
 func (e *DisconnectError) Is(target error) bool {
 	if rc, ok := target.(ReasonCode); ok {
 		return e.ReasonCode == rc

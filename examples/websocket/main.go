@@ -1,3 +1,4 @@
+// Package main provides an example of using mq with WebSockets.
 package main
 
 import (
@@ -27,7 +28,7 @@ func main() {
 	}
 
 	// 1. Create a custom dialer for WebSockets
-	wsDialer := mq.DialFunc(func(ctx context.Context, network, addr string) (net.Conn, error) {
+	wsDialer := mq.DialFunc(func(ctx context.Context, _ string, addr string) (net.Conn, error) {
 		// Note: 'addr' here is the full URL string like "ws://server.hivemq.com:8000/mqtt"
 		// If you passed "wss://..." it would be encrypted.
 
@@ -75,7 +76,7 @@ func main() {
 	topic := "mq-test/websocket"
 	subReady := make(chan struct{})
 
-	token := client.Subscribe(topic, 1, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
 		fmt.Printf("Received: %s on %s\n", string(msg.Payload), msg.Topic)
 		subReady <- struct{}{}
 	})

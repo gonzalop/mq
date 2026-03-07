@@ -41,7 +41,8 @@ import (
 //	        }
 //	    }
 //	}()
-func (c *Client) Reauthenticate(ctx context.Context) error {
+func (c *Client) Reauthenticate(_ context.Context) error {
+	// ctx is currently unused but kept for future use and API consistency.
 	if c.opts.ProtocolVersion < ProtocolV50 {
 		return fmt.Errorf("re-authentication requires MQTT v5.0")
 	}

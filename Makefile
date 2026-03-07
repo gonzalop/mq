@@ -14,7 +14,7 @@ help:
 	@echo "  make          - Run format, lint, build, and test"
 	@echo "  make full     - Run format, lint, build, test, fuzz, integration, coverage, and benchmark (~3-4m)"
 	@echo "  make fmt      - Format code with gofmt"
-	@echo "  make lint     - Run linters (golangci-lint and go vet)"
+	@echo "  make lint     - Run linter (revive)"
 	@echo "  make build    - Build the project"
 	@echo "  make examples - Build all example binaries"
 	@echo "  make test     - Run unit tests with race detector"
@@ -29,15 +29,13 @@ fmt:
 	@gofmt -w .
 
 lint:
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		echo "🔍 Linting: golangci-lint run"; \
-		golangci-lint run; \
+	@if command -v revive >/dev/null 2>&1; then \
+		echo "🔍 Linting: revive"; \
+		revive; \
 	else \
-		echo "⚠️  golangci-lint not installed, skipping"; \
-		echo "   To install: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+		echo "⚠️  revive not installed, skipping"; \
+		echo "   To install: go install github.com/mgechev/revive@latest"; \
 	fi
-	@echo "🔍 Linting: go vet ./..."
-	@go vet ./...
 
 build:
 	@echo "🏗️  Building: go build ./..."

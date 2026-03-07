@@ -27,6 +27,6 @@ func (p *PingrespPacket) WriteTo(w io.Writer) (int64, error) {
 }
 
 // DecodePingresp decodes a PINGRESP packet (no payload).
-func DecodePingresp(buf []byte) (*PingrespPacket, error) {
+func DecodePingresp(_ []byte) (*PingrespPacket, error) {
 	return &PingrespPacket{}, nil
 }

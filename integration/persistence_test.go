@@ -72,7 +72,7 @@ func TestPersistenceIntegration(t *testing.T) {
 			mq.WithCleanSession(false),
 			mq.WithSessionStore(store2),
 			mq.WithSessionExpiryInterval(60),
-			mq.WithDefaultPublishHandler(func(c *mq.Client, msg mq.Message) {
+			mq.WithDefaultPublishHandler(func(_ *mq.Client, msg mq.Message) {
 				received <- msg
 			}),
 		)
@@ -155,7 +155,7 @@ func TestPersistenceIntegration(t *testing.T) {
 			mq.WithClientID(clientID),
 			mq.WithCleanSession(false),
 			mq.WithSessionStore(store2), // Has subscription on disk
-			mq.WithDefaultPublishHandler(func(c *mq.Client, msg mq.Message) {
+			mq.WithDefaultPublishHandler(func(_ *mq.Client, msg mq.Message) {
 				received <- msg
 			}),
 		)
@@ -242,7 +242,7 @@ func TestPersistenceIntegration(t *testing.T) {
 			mq.WithClientID(clientID),
 			mq.WithCleanSession(false),
 			mq.WithSessionStore(store2),
-			mq.WithDefaultPublishHandler(func(c *mq.Client, msg mq.Message) {
+			mq.WithDefaultPublishHandler(func(_ *mq.Client, msg mq.Message) {
 				received <- msg
 			}),
 		)

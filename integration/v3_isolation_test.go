@@ -75,7 +75,7 @@ func TestV311SubscribeIsolation(t *testing.T) {
 	token := client.Subscribe(
 		"test/isolation/sub",
 		1,
-		func(c *mq.Client, m mq.Message) {},
+		func(_ *mq.Client, _ mq.Message) {},
 		mq.WithNoLocal(true), // v5 feature
 	)
 

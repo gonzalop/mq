@@ -24,7 +24,7 @@ func TestBasicPublishSubscribe(t *testing.T) {
 
 	// Subscribe to topic
 	received := make(chan mq.Message, 1)
-	token := client.Subscribe("test/topic", 1, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe("test/topic", 1, func(_ *mq.Client, msg mq.Message) {
 		received <- msg
 	})
 
@@ -70,7 +70,7 @@ func TestQoS0PublishSubscribe(t *testing.T) {
 	defer client.Disconnect(context.Background())
 
 	received := make(chan mq.Message, 1)
-	token := client.Subscribe("qos0/topic", 0, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe("qos0/topic", 0, func(_ *mq.Client, msg mq.Message) {
 		received <- msg
 	})
 
@@ -103,7 +103,7 @@ func TestQoS2PublishSubscribe(t *testing.T) {
 	defer client.Disconnect(context.Background())
 
 	received := make(chan mq.Message, 1)
-	token := client.Subscribe("qos2/topic", 2, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe("qos2/topic", 2, func(_ *mq.Client, msg mq.Message) {
 		received <- msg
 	})
 
@@ -160,7 +160,7 @@ func TestWildcardSubscriptions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			received := make(chan mq.Message, 1)
-			token := client.Subscribe(tt.filter, 1, func(c *mq.Client, msg mq.Message) {
+			token := client.Subscribe(tt.filter, 1, func(_ *mq.Client, msg mq.Message) {
 				received <- msg
 			})
 
@@ -224,7 +224,7 @@ func TestRetainedMessages(t *testing.T) {
 	defer client2.Disconnect(context.Background())
 
 	received := make(chan mq.Message, 1)
-	subToken := client2.Subscribe(topic, 1, func(c *mq.Client, msg mq.Message) {
+	subToken := client2.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
 		received <- msg
 	})
 
@@ -267,7 +267,7 @@ func TestMultipleSubscribers(t *testing.T) {
 		channels[i] = make(chan mq.Message, 1)
 
 		ch := channels[i] // Capture for closure
-		token := client.Subscribe(topic, 1, func(c *mq.Client, msg mq.Message) {
+		token := client.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
 			ch <- msg
 		})
 
@@ -309,7 +309,7 @@ func TestHighThroughput(t *testing.T) {
 	var receivedCount int
 	var mu sync.Mutex
 
-	token := client.Subscribe(topic, 1, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
 		mu.Lock()
 		receivedCount++
 		mu.Unlock()
@@ -362,7 +362,7 @@ func TestUnsubscribe(t *testing.T) {
 
 	topic := "unsub/topic/" + t.Name()
 	received := make(chan mq.Message, 10)
-	token := client.Subscribe(topic, 1, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
 		received <- msg
 	})
 
@@ -418,7 +418,7 @@ func TestCleanSession(t *testing.T) {
 	}
 
 	// Subscribe
-	token := client1.Subscribe(topic, 1, func(c *mq.Client, msg mq.Message) {})
+	token := client1.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {})
 	if err := token.Wait(context.Background()); err != nil {
 		t.Fatalf("Failed to subscribe: %v", err)
 	}
@@ -446,7 +446,7 @@ func TestCleanSession(t *testing.T) {
 		mq.WithClientID(clientID),
 		mq.WithCleanSession(false),
 		mq.WithSessionExpiryInterval(0xFFFFFFFF),
-		mq.WithSubscription(topic, func(c *mq.Client, msg mq.Message) {
+		mq.WithSubscription(topic, func(_ *mq.Client, msg mq.Message) {
 			received <- msg
 		}))
 	if err != nil {

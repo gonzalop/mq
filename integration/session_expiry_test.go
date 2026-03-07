@@ -56,7 +56,7 @@ func TestSessionExpiry(t *testing.T) {
 			mq.WithProtocolVersion(mq.ProtocolV50),
 			mq.WithCleanSession(false),
 			mq.WithSessionExpiryInterval(5),
-			mq.WithSubscription(topic, func(c *mq.Client, msg mq.Message) {
+			mq.WithSubscription(topic, func(_ *mq.Client, msg mq.Message) {
 				received <- msg
 			}),
 		)
@@ -126,7 +126,7 @@ func TestSessionExpiry(t *testing.T) {
 			mq.WithProtocolVersion(mq.ProtocolV50),
 			mq.WithCleanSession(false),
 			mq.WithSessionExpiryInterval(2),
-			mq.WithSubscription(topic, func(c *mq.Client, msg mq.Message) {
+			mq.WithSubscription(topic, func(_ *mq.Client, msg mq.Message) {
 				received <- msg
 			}),
 		)
@@ -182,7 +182,7 @@ func TestSessionExpiry(t *testing.T) {
 			mq.WithClientID(clientID),
 			mq.WithCleanSession(false),
 			mq.WithSessionExpiryInterval(60),
-			mq.WithDefaultPublishHandler(func(c *mq.Client, msg mq.Message) {
+			mq.WithDefaultPublishHandler(func(_ *mq.Client, msg mq.Message) {
 				received <- msg
 			}),
 		)

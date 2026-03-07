@@ -37,7 +37,7 @@ func TestReceiveMaximum_FlowControl(t *testing.T) {
 
 	// 2. Subscribe
 	var mu sync.Mutex
-	handler := func(c *mq.Client, m mq.Message) {
+	handler := func(_ *mq.Client, _ mq.Message) {
 		mu.Lock()
 		defer mu.Unlock()
 		receivedCount++
@@ -61,7 +61,7 @@ func TestReceiveMaximum_FlowControl(t *testing.T) {
 	wg.Add(msgCount)
 
 	for i := 0; i < msgCount; i++ {
-		go func(id int) {
+		go func(_ int) {
 			defer wg.Done()
 			token := sender.Publish(topic, []byte("payload"), mq.WithQoS(1))
 			token.Wait(context.Background())

@@ -31,7 +31,7 @@ func TestSubscriptionOptions_NoLocal(t *testing.T) {
 	received := make(chan string, 10)
 
 	// Subscribe with NoLocal = true
-	token := client.Subscribe(topic, mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe(topic, mq.AtLeastOnce, func(_ *mq.Client, msg mq.Message) {
 		received <- string(msg.Payload)
 	}, mq.WithNoLocal(true))
 
@@ -55,7 +55,7 @@ func TestSubscriptionOptions_NoLocal(t *testing.T) {
 
 	// Control Test: Subscribe to another topic WITHOUT NoLocal
 	topicControl := "test/local"
-	tokenControl := client.Subscribe(topicControl, mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+	tokenControl := client.Subscribe(topicControl, mq.AtLeastOnce, func(_ *mq.Client, msg mq.Message) {
 		received <- string(msg.Payload)
 	}, mq.WithNoLocal(false))
 

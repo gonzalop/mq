@@ -26,7 +26,7 @@ func FuzzDecodeProperties(f *testing.F) {
 		0x24, 0x02, // MaximumQoS = 2
 	})
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		_, _, _ = decodeProperties(data)
 	})
 }
@@ -41,7 +41,7 @@ func FuzzVarIntBuffer(f *testing.F) {
 	f.Add([]byte{0x80, 0x80, 0x80, 0x01})
 	f.Add([]byte{0xff, 0xff, 0xff, 0x7f}) // Max value
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		_, _, _ = decodeVarIntBuf(data)
 	})
 }
@@ -107,7 +107,7 @@ func FuzzDecodeConnack(f *testing.F) {
 	f.Add([]byte{0x00, 0x00, 0x00}, uint8(5))                               // Empty properties
 	f.Add([]byte{0x00, 0x00, 0x05, 0x11, 0x00, 0x00, 0x0e, 0x10}, uint8(5)) // SessionExpiryInterval
 
-	f.Fuzz(func(t *testing.T, data []byte, version uint8) {
+	f.Fuzz(func(_ *testing.T, data []byte, version uint8) {
 		if version != 4 && version != 5 {
 			return
 		}
@@ -122,7 +122,7 @@ func FuzzPacketReaderV5(f *testing.F) {
 	f.Add([]byte{0x30, 0x00})                   // PUBLISH QoS 0
 	f.Add([]byte{0xe0, 0x00})                   // DISCONNECT v3
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		r := bytes.NewReader(data)
 		_, _ = ReadPacket(r, 5, 0)
 	})

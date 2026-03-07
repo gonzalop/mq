@@ -22,7 +22,7 @@ func TestHandlerInterceptor(t *testing.T) {
 	}
 
 	handlerCalled := false
-	handler := func(c *Client, m Message) {
+	handler := func(_ *Client, _ Message) {
 		handlerCalled = true
 	}
 
@@ -41,15 +41,15 @@ func TestPublishInterceptor(t *testing.T) {
 	var count atomic.Int32
 
 	interceptor := func(next PublishFunc) PublishFunc {
-		return func(topic string, payload []byte, opts ...PublishOption) Token {
+		return func(_ string, payload []byte, opts ...PublishOption) Token {
 			count.Add(1)
 			// Modify payload
-			return next(topic, []byte(string(payload)+"_intercepted"), opts...)
+			return next("test", []byte(string(payload)+"_intercepted"), opts...)
 		}
 	}
 
 	basePublishCalled := false
-	basePublish := func(topic string, payload []byte, opts ...PublishOption) Token {
+	basePublish := func(_ string, payload []byte, _ ...PublishOption) Token {
 		basePublishCalled = true
 		if string(payload) != "hello_intercepted" {
 			t.Errorf("expected modified payload, got %s", string(payload))
@@ -80,13 +80,13 @@ func TestMultipleInterceptors(t *testing.T) {
 	}
 
 	interceptor2 := func(next PublishFunc) PublishFunc {
-		return func(topic string, payload []byte, opts ...PublishOption) Token {
+		return func(_ string, _ []byte, _ ...PublishOption) Token {
 			order = append(order, 2)
-			return next(topic, payload, opts...)
+			return next("test", []byte("hello"), nil)
 		}
 	}
 
-	basePublish := func(topic string, payload []byte, opts ...PublishOption) Token {
+	basePublish := func(_ string, _ []byte, _ ...PublishOption) Token {
 		order = append(order, 3)
 		return newToken()
 	}

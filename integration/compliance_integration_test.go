@@ -100,7 +100,7 @@ func TestComplianceIntegration_NoLocal_Persistence(t *testing.T) {
 	received := make(chan string, 10)
 
 	// Subscribe with NoLocal = true
-	token := client.Subscribe(topic, mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe(topic, mq.AtLeastOnce, func(_ *mq.Client, msg mq.Message) {
 		received <- string(msg.Payload)
 	}, mq.WithNoLocal(true))
 

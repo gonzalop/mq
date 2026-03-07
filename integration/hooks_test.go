@@ -31,7 +31,7 @@ func TestLifecycleHooks(t *testing.T) {
 	client, err := mq.Dial(server,
 		mq.WithClientID("test-hooks"),
 		mq.WithAutoReconnect(true),
-		mq.WithOnConnect(func(c *mq.Client) {
+		mq.WithOnConnect(func(_ *mq.Client) {
 			mu.Lock()
 			connectCount++
 			count := connectCount
@@ -39,7 +39,7 @@ func TestLifecycleHooks(t *testing.T) {
 			t.Logf("OnConnect hook called (count=%d)", count)
 			connectCh <- struct{}{}
 		}),
-		mq.WithOnConnectionLost(func(c *mq.Client, err error) {
+		mq.WithOnConnectionLost(func(_ *mq.Client, err error) {
 			t.Logf("OnConnectionLost hook called: %v", err)
 			disconnectCh <- err
 		}),

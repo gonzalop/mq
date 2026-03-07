@@ -1,3 +1,4 @@
+// Package main provides an example of using mq with SCRAM authentication.
 package main
 
 import (

@@ -16,10 +16,10 @@ func NewMockSessionStore() *MockSessionStore {
 	}
 }
 
-func (m *MockSessionStore) SavePendingPublish(packetID uint16, pub *PersistedPublish) error {
+func (m *MockSessionStore) SavePendingPublish(_ uint16, _ *PersistedPublish) error {
 	return nil
 }
-func (m *MockSessionStore) DeletePendingPublish(packetID uint16) error { return nil }
+func (m *MockSessionStore) DeletePendingPublish(_ uint16) error { return nil }
 func (m *MockSessionStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
 	return nil, nil
 }
@@ -38,8 +38,8 @@ func (m *MockSessionStore) LoadSubscriptions() (map[string]*PersistedSubscriptio
 	maps.Copy(result, m.storedSubs)
 	return result, nil
 }
-func (m *MockSessionStore) SaveReceivedQoS2(packetID uint16) error         { return nil }
-func (m *MockSessionStore) DeleteReceivedQoS2(packetID uint16) error       { return nil }
+func (m *MockSessionStore) SaveReceivedQoS2(_ uint16) error                { return nil }
+func (m *MockSessionStore) DeleteReceivedQoS2(_ uint16) error              { return nil }
 func (m *MockSessionStore) LoadReceivedQoS2() (map[uint16]struct{}, error) { return nil, nil }
 func (m *MockSessionStore) ClearReceivedQoS2() error                       { return nil }
 func (m *MockSessionStore) Clear() error                                   { return nil }
@@ -56,7 +56,7 @@ func TestInitialSubscriptionsPersistence(t *testing.T) {
 	opts.CleanSession = false
 	opts.SessionStore = store
 	opts.InitialSubscriptions = map[string]MessageHandler{
-		topic: func(c *Client, msg Message) {},
+		topic: func(_ *Client, _ Message) {},
 	}
 
 	// Initialize client (partial initialization just to test loadSessionState)

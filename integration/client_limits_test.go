@@ -81,7 +81,7 @@ func TestClientLimits_IncomingPacket(t *testing.T) {
 		mq.WithClientID("victim-client"),
 		mq.WithProtocolVersion(mq.ProtocolV311),
 		mq.WithMaxIncomingPacket(100), // Strict limit
-		mq.WithOnConnectionLost(func(c *mq.Client, err error) {
+		mq.WithOnConnectionLost(func(_ *mq.Client, err error) {
 			connectionLost <- err
 		}),
 		mq.WithAutoReconnect(false), // Do not reconnect, we want to verify the disconnect

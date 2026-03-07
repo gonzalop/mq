@@ -129,7 +129,7 @@ func TestKeepAliveTimeoutPrevented(t *testing.T) {
 }
 
 // TestKeepAlivePINGREQSent verifies that PINGREQ is sent when no activity.
-func TestKeepAlivePINGREQSent(t *testing.T) {
+func TestKeepAlivePINGREQSent(_ *testing.T) {
 	// Create a mock connection
 	serverConn, clientConn := net.Pipe()
 	defer serverConn.Close()

@@ -111,7 +111,7 @@ type MockLogicSessionStore struct {
 	deleteError                error
 }
 
-func (m *MockLogicSessionStore) SavePendingPublish(packetID uint16, pub *PersistedPublish) error {
+func (m *MockLogicSessionStore) SavePendingPublish(_ uint16, _ *PersistedPublish) error {
 	return nil
 }
 func (m *MockLogicSessionStore) DeletePendingPublish(packetID uint16) error {
@@ -123,15 +123,15 @@ func (m *MockLogicSessionStore) LoadPendingPublishes() (map[uint16]*PersistedPub
 	return nil, nil
 }
 func (m *MockLogicSessionStore) ClearPendingPublishes() error { return nil }
-func (m *MockLogicSessionStore) SaveSubscription(topic string, sub *PersistedSubscription) error {
+func (m *MockLogicSessionStore) SaveSubscription(_ string, _ *PersistedSubscription) error {
 	return nil
 }
-func (m *MockLogicSessionStore) DeleteSubscription(topic string) error { return nil }
+func (m *MockLogicSessionStore) DeleteSubscription(_ string) error { return nil }
 func (m *MockLogicSessionStore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {
 	return nil, nil
 }
-func (m *MockLogicSessionStore) SaveReceivedQoS2(packetID uint16) error   { return nil }
-func (m *MockLogicSessionStore) DeleteReceivedQoS2(packetID uint16) error { return nil }
+func (m *MockLogicSessionStore) SaveReceivedQoS2(_ uint16) error   { return nil }
+func (m *MockLogicSessionStore) DeleteReceivedQoS2(_ uint16) error { return nil }
 func (m *MockLogicSessionStore) LoadReceivedQoS2() (map[uint16]struct{}, error) {
 	return nil, nil
 }

@@ -24,7 +24,7 @@ func (t *tokenAuthenticator) InitialData() ([]byte, error) {
 	return []byte(t.token), nil
 }
 
-func (t *tokenAuthenticator) HandleChallenge(data []byte, reasonCode uint8) ([]byte, error) {
+func (t *tokenAuthenticator) HandleChallenge(_ []byte, _ uint8) ([]byte, error) {
 	t.challengeCount++
 	return []byte("challenge-response"), nil
 }
@@ -219,7 +219,7 @@ func (a *PingPongAuthenticator) InitialData() ([]byte, error) {
 	return nil, nil
 }
 
-func (a *PingPongAuthenticator) HandleChallenge(data []byte, code uint8) ([]byte, error) {
+func (a *PingPongAuthenticator) HandleChallenge(data []byte, _ uint8) ([]byte, error) {
 	if string(data) == "PING" {
 		return []byte("PONG"), nil
 	}
@@ -311,7 +311,7 @@ func TestEnhancedAuthenticationFlow(t *testing.T) {
 
 	// 3. Start Client
 	// Use a custom dialer that returns our pipe connection
-	dialer := DialFunc(func(ctx context.Context, network, addr string) (net.Conn, error) {
+	dialer := DialFunc(func(_ context.Context, _ string, _ string) (net.Conn, error) {
 		return clientConn, nil
 	})
 

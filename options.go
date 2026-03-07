@@ -351,9 +351,9 @@ func WithRequestResponseInformation(request bool) Option {
 //	    // Topic is automatically resolved from alias
 //	    fmt.Printf("Topic: %s\n", msg.Topic)
 //	})
-func WithTopicAliasMaximum(max uint16) Option {
+func WithTopicAliasMaximum(limit uint16) Option {
 	return func(o *clientOptions) {
-		o.TopicAliasMaximum = max
+		o.TopicAliasMaximum = limit
 	}
 }
 
@@ -405,9 +405,9 @@ const (
 //     Use this if strict flow control compliance is required.
 //
 // This option is ignored when using MQTT v3.1.1.
-func WithReceiveMaximum(max uint16, policy LimitPolicy) Option {
+func WithReceiveMaximum(limit uint16, policy LimitPolicy) Option {
 	return func(o *clientOptions) {
-		o.ReceiveMaximum = max
+		o.ReceiveMaximum = limit
 		o.ReceiveMaximumPolicy = policy
 	}
 }

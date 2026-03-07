@@ -11,10 +11,10 @@ type MockPersistenceStore struct {
 	SavedSubs map[string]*PersistedSubscription
 }
 
-func (m *MockPersistenceStore) SavePendingPublish(packetID uint16, pub *PersistedPublish) error {
+func (m *MockPersistenceStore) SavePendingPublish(_ uint16, _ *PersistedPublish) error {
 	return nil
 }
-func (m *MockPersistenceStore) DeletePendingPublish(packetID uint16) error { return nil }
+func (m *MockPersistenceStore) DeletePendingPublish(_ uint16) error { return nil }
 func (m *MockPersistenceStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
 	return nil, nil
 }
@@ -33,8 +33,8 @@ func (m *MockPersistenceStore) DeleteSubscription(topic string) error {
 func (m *MockPersistenceStore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {
 	return nil, nil
 }
-func (m *MockPersistenceStore) SaveReceivedQoS2(packetID uint16) error         { return nil }
-func (m *MockPersistenceStore) DeleteReceivedQoS2(packetID uint16) error       { return nil }
+func (m *MockPersistenceStore) SaveReceivedQoS2(_ uint16) error                { return nil }
+func (m *MockPersistenceStore) DeleteReceivedQoS2(_ uint16) error              { return nil }
 func (m *MockPersistenceStore) LoadReceivedQoS2() (map[uint16]struct{}, error) { return nil, nil }
 func (m *MockPersistenceStore) ClearReceivedQoS2() error                       { return nil }
 func (m *MockPersistenceStore) Clear() error                                   { return nil }
