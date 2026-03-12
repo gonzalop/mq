@@ -32,6 +32,47 @@ var packetDecoders = map[uint8]PacketDecoder{
 	AUTH:       func(remaining []byte, _ *FixedHeader, v uint8) (Packet, error) { return DecodeAuth(remaining, v) },
 }
 
+type ProtocolError struct {
+	Message string
+}
+
+func (e *ProtocolError) Error() string {
+	return e.Message
+}
+
+type MalformedPacketError struct {
+	Message string
+}
+
+func (e *MalformedPacketError) Error() string {
+	return e.Message
+}
+
+func validateFlags(packetType uint8, flags uint8) error {
+	switch packetType {
+	case PUBLISH:
+		// QoS 3 (bits 1 and 2 set) is not allowed
+		if (flags & 0x06) == 0x06 {
+			return &ProtocolError{Message: "malformed packet: PUBLISH QoS 3 is not allowed"}
+		}
+		// DUP must be 0 for QoS 0 (MQTT 3.1.1, section 3.3.1.2)
+		if (flags&0x08) != 0 && (flags&0x06) == 0 {
+			return &ProtocolError{Message: "malformed packet: DUP must be 0 for QoS 0 PUBLISH"}
+		}
+		return nil // Flags are used for DUP, QoS, and RETAIN
+	case PUBREL, SUBSCRIBE, UNSUBSCRIBE:
+		if flags != 2 {
+			return &ProtocolError{Message: fmt.Sprintf("malformed packet: expected flags 2 for packet type %d, got %d", packetType, flags)}
+		}
+	default:
+		// All other packet types must have flags = 0
+		if flags != 0 {
+			return &ProtocolError{Message: fmt.Sprintf("malformed packet: expected flags 0 for packet type %d, got %d", packetType, flags)}
+		}
+	}
+	return nil
+}
+
 // ReadPacket reads a complete MQTT packet from the reader.
 // It accepts the protocol version to correctly decode version-specific fields (like Properties).
 // The maxIncomingPacket parameter sets the maximum allowed packet size. If 0 or exceeding the
@@ -42,6 +83,10 @@ func ReadPacket(r io.Reader, version uint8, maxIncomingPacket int) (Packet, erro
 		return nil, fmt.Errorf("failed to decode fixed header: %w", err)
 	}
 
+	if err := validateFlags(header.PacketType, header.Flags); err != nil {
+		return nil, err
+	}
+
 	// Validate packet size
 	// MQTT spec maximum: 268435455 bytes (256MB - 1 byte)
 	const mqttSpecMax = 268435455
@@ -50,7 +95,7 @@ func ReadPacket(r io.Reader, version uint8, maxIncomingPacket int) (Packet, erro
 		maxPacketSize = mqttSpecMax
 	}
 	if header.RemainingLength > maxPacketSize {
-		return nil, fmt.Errorf("packet size %d exceeds maximum %d", header.RemainingLength, maxPacketSize)
+		return nil, &ProtocolError{Message: fmt.Sprintf("packet size %d exceeds maximum %d", header.RemainingLength, maxPacketSize)}
 	}
 
 	var remaining []byte
@@ -71,7 +116,7 @@ func ReadPacket(r io.Reader, version uint8, maxIncomingPacket int) (Packet, erro
 		if bufPtr != nil {
 			putBuffer(bufPtr)
 		}
-		return nil, fmt.Errorf("unknown packet type: %d", header.PacketType)
+		return nil, &ProtocolError{Message: fmt.Sprintf("unknown packet type: %d", header.PacketType)}
 	}
 
 	pkt, err := decoder(remaining, &header, version)

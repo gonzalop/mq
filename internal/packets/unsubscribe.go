@@ -136,5 +136,9 @@ func DecodeUnsubscribe(buf []byte, version uint8) (*UnsubscribePacket, error) {
 		pkt.Topics = append(pkt.Topics, topic)
 	}
 
+	if len(pkt.Topics) == 0 {
+		return nil, fmt.Errorf("malformed packet: UNSUBSCRIBE must contain at least one topic filter")
+	}
+
 	return pkt, nil
 }

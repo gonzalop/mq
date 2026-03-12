@@ -95,6 +95,9 @@ func DecodeConnack(buf []byte, version uint8) (*ConnackPacket, error) {
 
 	// Connect acknowledge flags
 	ackFlags := buf[0]
+	if (ackFlags & 0xFE) != 0 {
+		return nil, &ProtocolError{Message: "malformed packet: CONNACK flags reserved bits 7-1 are not 0"}
+	}
 	pkt.SessionPresent = (ackFlags & 0x01) != 0
 
 	// Return code

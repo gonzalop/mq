@@ -151,6 +151,18 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 
 	c.sessionLock.Lock()
 
+	// Validate packet size against server's maximum
+	if c.serverCaps.MaximumPacketSize > 0 {
+		n, _ := pkt.WriteTo(io.Discard)
+		packetSize := uint32(n)
+		if packetSize > c.serverCaps.MaximumPacketSize {
+			req.token.complete(fmt.Errorf("SUBSCRIBE packet size %d bytes exceeds server maximum %d bytes",
+				packetSize, c.serverCaps.MaximumPacketSize))
+			c.sessionLock.Unlock()
+			return
+		}
+	}
+
 	pkt.PacketID = c.nextID()
 
 	c.pending[pkt.PacketID] = &pendingOp{
@@ -215,6 +227,18 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 	pkt := req.packet
 
 	c.sessionLock.Lock()
+
+	// Validate packet size against server's maximum
+	if c.serverCaps.MaximumPacketSize > 0 {
+		n, _ := pkt.WriteTo(io.Discard)
+		packetSize := uint32(n)
+		if packetSize > c.serverCaps.MaximumPacketSize {
+			req.token.complete(fmt.Errorf("UNSUBSCRIBE packet size %d bytes exceeds server maximum %d bytes",
+				packetSize, c.serverCaps.MaximumPacketSize))
+			c.sessionLock.Unlock()
+			return
+		}
+	}
 
 	pkt.PacketID = c.nextID()
 

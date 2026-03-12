@@ -27,7 +27,7 @@ func toPublicProperties(internal *packets.Properties) *Properties {
 	}
 
 	// Convert byte slices
-	if len(internal.CorrelationData) > 0 {
+	if internal.Presence&packets.PresCorrelationData != 0 {
 		props.CorrelationData = internal.CorrelationData
 	}
 
@@ -93,6 +93,7 @@ func toInternalProperties(public *Properties) *packets.Properties {
 	// Convert byte slices
 	if len(public.CorrelationData) > 0 {
 		props.CorrelationData = public.CorrelationData
+		props.Presence |= packets.PresCorrelationData
 	}
 
 	// Convert optional numeric fields
@@ -134,8 +135,6 @@ func isEmpty(p *packets.Properties) bool {
 	}
 
 	return p.Presence == 0 &&
-		len(p.CorrelationData) == 0 &&
 		len(p.UserProperties) == 0 &&
-		len(p.SubscriptionIdentifier) == 0 && // Check for subscription IDs
-		len(p.AuthenticationData) == 0
+		len(p.SubscriptionIdentifier) == 0
 }

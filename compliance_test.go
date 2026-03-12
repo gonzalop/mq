@@ -2,6 +2,7 @@ package mq
 
 import (
 	"bytes"
+	"net"
 	"testing"
 	"time"
 
@@ -93,6 +94,79 @@ func TestCompliance_PacketID_Reuse(t *testing.T) {
 		t.Logf("Compliance passed: nextID() skipped in-use ID 11")
 	default:
 		t.Errorf("Unexpected ID: %d", id)
+	}
+}
+
+// TestCompliance_ProtocolError_Disconnect verifies that the client sends a DISCONNECT
+// with Protocol Error reason code when receiving a malformed packet (MQTT v5.0).
+func TestCompliance_ProtocolError_Disconnect(t *testing.T) {
+	// 1. Setup mock server
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		// Read CONNECT
+		_, _ = packets.ReadPacket(conn, 5, 0)
+
+		// Send CONNACK (Success)
+		connack := &packets.ConnackPacket{
+			ReturnCode: packets.ConnAccepted,
+		}
+		_, _ = connack.WriteTo(conn)
+
+		// Send malformed packet (e.g. PINGRESP with non-zero flags)
+		// 0xD0 is PINGRESP type (13) << 4. 0xD1 has flag bit 0 set.
+		_, _ = conn.Write([]byte{0xD1, 0x00})
+
+		// Expect DISCONNECT from client
+		pkt, err := packets.ReadPacket(conn, 5, 0)
+		if err != nil {
+			t.Errorf("failed to read DISCONNECT: %v", err)
+			return
+		}
+
+		disc, ok := pkt.(*packets.DisconnectPacket)
+		if !ok {
+			t.Errorf("expected DISCONNECT, got %T", pkt)
+			return
+		}
+
+		if disc.ReasonCode != uint8(ReasonCodeProtocolError) {
+			t.Errorf("expected reason code 0x82 (Protocol Error), got 0x%02x", disc.ReasonCode)
+		}
+	}()
+
+	// 2. Connect client
+	client, err := Dial("tcp://"+ln.Addr().String(),
+		WithProtocolVersion(ProtocolV50),
+		WithClientID("protocol-error-test"),
+		WithAutoReconnect(false),
+	)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+
+	// 3. Wait for disconnect
+	select {
+	case <-done:
+		// Success
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for client to disconnect")
+	}
+
+	if client.IsConnected() {
+		t.Error("client should be disconnected")
 	}
 }
 

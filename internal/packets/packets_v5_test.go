@@ -294,7 +294,7 @@ func TestAuthPacketV5(t *testing.T) {
 	props := &Properties{
 		AuthenticationMethod: "SCRAM-SHA-256",
 		AuthenticationData:   []byte("client-first-message"),
-		Presence:             PresAuthenticationMethod,
+		Presence:             PresAuthenticationMethod | PresAuthenticationData,
 	}
 	pkt := &AuthPacket{
 		ReasonCode: AuthReasonContinue,
