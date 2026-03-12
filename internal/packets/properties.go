@@ -61,6 +61,8 @@ const (
 	PresWildcardSubscriptionAvailable   uint32 = 1 << 20
 	PresSubscriptionIdentifierAvailable uint32 = 1 << 21
 	PresSharedSubscriptionAvailable     uint32 = 1 << 22
+	PresCorrelationData                 uint32 = 1 << 23
+	PresAuthenticationData              uint32 = 1 << 24
 )
 
 // Property represents a single MQTT property.
@@ -369,6 +371,9 @@ func (p *Properties) appendSpecial(dst []byte) []byte {
 func (p *Properties) decodeNumeric(id byte, data []byte) (int, bool, error) {
 	switch id {
 	case PropPayloadFormatIndicator:
+		if p.Presence&PresPayloadFormatIndicator != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 1 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -376,6 +381,9 @@ func (p *Properties) decodeNumeric(id byte, data []byte) (int, bool, error) {
 		p.Presence |= PresPayloadFormatIndicator
 		return 1, true, nil
 	case PropMessageExpiryInterval:
+		if p.Presence&PresMessageExpiryInterval != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 4 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -383,6 +391,9 @@ func (p *Properties) decodeNumeric(id byte, data []byte) (int, bool, error) {
 		p.Presence |= PresMessageExpiryInterval
 		return 4, true, nil
 	case PropSessionExpiryInterval:
+		if p.Presence&PresSessionExpiryInterval != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 4 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -390,6 +401,9 @@ func (p *Properties) decodeNumeric(id byte, data []byte) (int, bool, error) {
 		p.Presence |= PresSessionExpiryInterval
 		return 4, true, nil
 	case PropServerKeepAlive:
+		if p.Presence&PresServerKeepAlive != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 2 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -397,6 +411,9 @@ func (p *Properties) decodeNumeric(id byte, data []byte) (int, bool, error) {
 		p.Presence |= PresServerKeepAlive
 		return 2, true, nil
 	case PropRequestProblemInformation:
+		if p.Presence&PresRequestProblemInformation != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 1 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -404,6 +421,9 @@ func (p *Properties) decodeNumeric(id byte, data []byte) (int, bool, error) {
 		p.Presence |= PresRequestProblemInformation
 		return 1, true, nil
 	case PropWillDelayInterval:
+		if p.Presence&PresWillDelayInterval != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 4 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -411,6 +431,9 @@ func (p *Properties) decodeNumeric(id byte, data []byte) (int, bool, error) {
 		p.Presence |= PresWillDelayInterval
 		return 4, true, nil
 	case PropRequestResponseInformation:
+		if p.Presence&PresRequestResponseInformation != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 1 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -418,6 +441,9 @@ func (p *Properties) decodeNumeric(id byte, data []byte) (int, bool, error) {
 		p.Presence |= PresRequestResponseInformation
 		return 1, true, nil
 	case PropReceiveMaximum:
+		if p.Presence&PresReceiveMaximum != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 2 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -425,6 +451,9 @@ func (p *Properties) decodeNumeric(id byte, data []byte) (int, bool, error) {
 		p.Presence |= PresReceiveMaximum
 		return 2, true, nil
 	case PropTopicAliasMaximum:
+		if p.Presence&PresTopicAliasMaximum != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 2 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -432,6 +461,9 @@ func (p *Properties) decodeNumeric(id byte, data []byte) (int, bool, error) {
 		p.Presence |= PresTopicAliasMaximum
 		return 2, true, nil
 	case PropTopicAlias:
+		if p.Presence&PresTopicAlias != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 2 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -439,6 +471,9 @@ func (p *Properties) decodeNumeric(id byte, data []byte) (int, bool, error) {
 		p.Presence |= PresTopicAlias
 		return 2, true, nil
 	case PropMaximumQoS:
+		if p.Presence&PresMaximumQoS != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 1 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -446,6 +481,9 @@ func (p *Properties) decodeNumeric(id byte, data []byte) (int, bool, error) {
 		p.Presence |= PresMaximumQoS
 		return 1, true, nil
 	case PropMaximumPacketSize:
+		if p.Presence&PresMaximumPacketSize != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 4 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -459,6 +497,9 @@ func (p *Properties) decodeNumeric(id byte, data []byte) (int, bool, error) {
 func (p *Properties) decodeBool(id byte, data []byte) (int, bool, error) {
 	switch id {
 	case PropRetainAvailable:
+		if p.Presence&PresRetainAvailable != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 1 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -466,6 +507,9 @@ func (p *Properties) decodeBool(id byte, data []byte) (int, bool, error) {
 		p.Presence |= PresRetainAvailable
 		return 1, true, nil
 	case PropWildcardSubscriptionAvailable:
+		if p.Presence&PresWildcardSubscriptionAvailable != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 1 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -473,6 +517,9 @@ func (p *Properties) decodeBool(id byte, data []byte) (int, bool, error) {
 		p.Presence |= PresWildcardSubscriptionAvailable
 		return 1, true, nil
 	case PropSubscriptionIdentifierAvailable:
+		if p.Presence&PresSubscriptionIdentifierAvailable != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 1 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -480,6 +527,9 @@ func (p *Properties) decodeBool(id byte, data []byte) (int, bool, error) {
 		p.Presence |= PresSubscriptionIdentifierAvailable
 		return 1, true, nil
 	case PropSharedSubscriptionAvailable:
+		if p.Presence&PresSharedSubscriptionAvailable != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		if len(data) < 1 {
 			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
 		}
@@ -493,6 +543,9 @@ func (p *Properties) decodeBool(id byte, data []byte) (int, bool, error) {
 func (p *Properties) decodeStringOrBinary(id byte, data []byte) (int, bool, error) {
 	switch id {
 	case PropContentType:
+		if p.Presence&PresContentType != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		s, n, err := decodeString(data)
 		if err != nil {
 			return 0, false, err
@@ -501,6 +554,9 @@ func (p *Properties) decodeStringOrBinary(id byte, data []byte) (int, bool, erro
 		p.Presence |= PresContentType
 		return n, true, nil
 	case PropResponseTopic:
+		if p.Presence&PresResponseTopic != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		s, n, err := decodeString(data)
 		if err != nil {
 			return 0, false, err
@@ -509,13 +565,20 @@ func (p *Properties) decodeStringOrBinary(id byte, data []byte) (int, bool, erro
 		p.Presence |= PresResponseTopic
 		return n, true, nil
 	case PropCorrelationData:
+		if p.Presence&PresCorrelationData != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		b, n, err := decodeBinary(data)
 		if err != nil {
 			return 0, false, err
 		}
 		p.CorrelationData = b
+		p.Presence |= PresCorrelationData
 		return n, true, nil
 	case PropAssignedClientIdentifier:
+		if p.Presence&PresAssignedClientIdentifier != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		s, n, err := decodeString(data)
 		if err != nil {
 			return 0, false, err
@@ -524,6 +587,9 @@ func (p *Properties) decodeStringOrBinary(id byte, data []byte) (int, bool, erro
 		p.Presence |= PresAssignedClientIdentifier
 		return n, true, nil
 	case PropAuthenticationMethod:
+		if p.Presence&PresAuthenticationMethod != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		s, n, err := decodeString(data)
 		if err != nil {
 			return 0, false, err
@@ -532,13 +598,20 @@ func (p *Properties) decodeStringOrBinary(id byte, data []byte) (int, bool, erro
 		p.Presence |= PresAuthenticationMethod
 		return n, true, nil
 	case PropAuthenticationData:
+		if p.Presence&PresAuthenticationData != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		b, n, err := decodeBinary(data)
 		if err != nil {
 			return 0, false, err
 		}
 		p.AuthenticationData = b
+		p.Presence |= PresAuthenticationData
 		return n, true, nil
 	case PropResponseInformation:
+		if p.Presence&PresResponseInformation != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		s, n, err := decodeString(data)
 		if err != nil {
 			return 0, false, err
@@ -547,6 +620,9 @@ func (p *Properties) decodeStringOrBinary(id byte, data []byte) (int, bool, erro
 		p.Presence |= PresResponseInformation
 		return n, true, nil
 	case PropServerReference:
+		if p.Presence&PresServerReference != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		s, n, err := decodeString(data)
 		if err != nil {
 			return 0, false, err
@@ -555,6 +631,9 @@ func (p *Properties) decodeStringOrBinary(id byte, data []byte) (int, bool, erro
 		p.Presence |= PresServerReference
 		return n, true, nil
 	case PropReasonString:
+		if p.Presence&PresReasonString != 0 {
+			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
+		}
 		s, n, err := decodeString(data)
 		if err != nil {
 			return 0, false, err

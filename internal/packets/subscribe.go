@@ -195,7 +195,21 @@ func DecodeSubscribe(buf []byte, version uint8) (*SubscribePacket, error) {
 
 			// Retain Handling (Bits 4-5)
 			pkt.RetainHandling = append(pkt.RetainHandling, (opts>>4)&0x03)
+
+			// Reserved bits 6 and 7 MUST be 0
+			if (opts & 0xC0) != 0 {
+				return nil, fmt.Errorf("malformed packet: SUBSCRIBE options reserved bits 6-7 are not 0")
+			}
+		} else {
+			// In v3.1.1, bits 2-7 MUST be 0
+			if (opts & 0xFC) != 0 {
+				return nil, fmt.Errorf("malformed packet: SUBSCRIBE options reserved bits 2-7 are not 0")
+			}
 		}
+	}
+
+	if len(pkt.Topics) == 0 {
+		return nil, fmt.Errorf("malformed packet: SUBSCRIBE must contain at least one topic filter")
 	}
 
 	return pkt, nil

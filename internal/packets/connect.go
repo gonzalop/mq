@@ -257,12 +257,25 @@ func DecodeConnect(buf []byte) (*ConnectPacket, error) {
 	connectFlags := buf[offset]
 	offset++
 
+	// Reserved bit MUST be 0
+	if (connectFlags & 0x01) != 0 {
+		return nil, fmt.Errorf("malformed packet: CONNECT flags reserved bit 0 is not 0")
+	}
+
 	pkt.CleanSession = (connectFlags & 0x02) != 0
 	pkt.WillFlag = (connectFlags & 0x04) != 0
 	pkt.WillQoS = (connectFlags >> 3) & 0x03
 	pkt.WillRetain = (connectFlags & 0x20) != 0
 	pkt.PasswordFlag = (connectFlags & 0x40) != 0
 	pkt.UsernameFlag = (connectFlags & 0x80) != 0
+
+	if !pkt.WillFlag {
+		if pkt.WillQoS != 0 || pkt.WillRetain {
+			return nil, fmt.Errorf("malformed packet: Will QoS and Will Retain must be 0 if Will Flag is 0")
+		}
+	} else if pkt.WillQoS > 2 {
+		return nil, fmt.Errorf("malformed packet: Will QoS must be 0, 1, or 2")
+	}
 
 	// Keep alive
 	if offset+2 > len(buf) {

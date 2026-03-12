@@ -661,7 +661,16 @@ func (c *Client) readLoop() {
 	for {
 		pkt, err := packets.ReadPacket(br, c.opts.ProtocolVersion, c.opts.MaxIncomingPacket)
 		if err != nil {
-			c.opts.Logger.Debug("read error, disconnecting", "error", err)
+			var protoErr *packets.ProtocolError
+			if errors.As(err, &protoErr) {
+				c.opts.Logger.Error("protocol error, disconnecting", "error", err)
+				if c.opts.ProtocolVersion >= ProtocolV50 {
+					// Section 4.13: receiver SHOULD send a DISCONNECT with Reason Code 0x82 (Protocol Error)
+					_ = c.disconnectWithReason(context.Background(), uint8(ReasonCodeProtocolError), nil)
+				}
+			} else {
+				c.opts.Logger.Debug("read error, disconnecting", "error", err)
+			}
 			return
 		}
 		c.packetsReceived.Add(1)

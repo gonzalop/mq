@@ -90,7 +90,9 @@ func TestProperties(t *testing.T) {
 					PresMaximumPacketSize |
 					PresWildcardSubscriptionAvailable |
 					PresSubscriptionIdentifierAvailable |
-					PresSharedSubscriptionAvailable,
+					PresSharedSubscriptionAvailable |
+					PresCorrelationData |
+					PresAuthenticationData,
 			},
 		},
 	}
