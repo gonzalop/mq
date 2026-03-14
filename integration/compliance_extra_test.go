@@ -27,7 +27,7 @@ func TestCompliance_OverlappingSubscriptions(t *testing.T) {
 
 	base := "overlapping/" + t.Name()
 	topic := base + "/room1/temp"
-	
+
 	var wg sync.WaitGroup
 	wg.Add(3)
 
@@ -46,7 +46,7 @@ func TestCompliance_OverlappingSubscriptions(t *testing.T) {
 	})
 
 	// Sub 2: Single-level wildcard
-	t2 := client.Subscribe(base + "/+/temp", 1, func(_ *mq.Client, _ mq.Message) {
+	t2 := client.Subscribe(base+"/+/temp", 1, func(_ *mq.Client, _ mq.Message) {
 		mu.Lock()
 		handler2Called++
 		mu.Unlock()
@@ -54,7 +54,7 @@ func TestCompliance_OverlappingSubscriptions(t *testing.T) {
 	})
 
 	// Sub 3: Multi-level wildcard
-	t3 := client.Subscribe(base + "/#", 1, func(_ *mq.Client, _ mq.Message) {
+	t3 := client.Subscribe(base+"/#", 1, func(_ *mq.Client, _ mq.Message) {
 		mu.Lock()
 		handler3Called++
 		mu.Unlock()
@@ -62,9 +62,15 @@ func TestCompliance_OverlappingSubscriptions(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	if err := t1.Wait(ctx); err != nil { t.Fatal(err) }
-	if err := t2.Wait(ctx); err != nil { t.Fatal(err) }
-	if err := t3.Wait(ctx); err != nil { t.Fatal(err) }
+	if err := t1.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := t2.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := t3.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
 
 	// Publish message
 	client.Publish(topic, []byte("23.5"), mq.WithQoS(1))
@@ -84,7 +90,7 @@ func TestCompliance_OverlappingSubscriptions(t *testing.T) {
 	}
 
 	if handler1Called != 1 || handler2Called != 1 || handler3Called != 1 {
-		t.Errorf("Expected each handler to be called once, got: h1=%d, h2=%d, h3=%d", 
+		t.Errorf("Expected each handler to be called once, got: h1=%d, h2=%d, h3=%d",
 			handler1Called, handler2Called, handler3Called)
 	}
 }
@@ -98,7 +104,9 @@ func TestCompliance_QoS_Downgrade(t *testing.T) {
 
 	// 1. Client A subscribes with QoS 0
 	clientA, err := mq.Dial(server, mq.WithClientID("client-qos-0-"+t.Name()))
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer clientA.Disconnect(context.Background())
 
 	receivedQoS := make(chan mq.QoS, 1)
@@ -109,7 +117,9 @@ func TestCompliance_QoS_Downgrade(t *testing.T) {
 
 	// 2. Client B publishes with QoS 2
 	clientB, err := mq.Dial(server, mq.WithClientID("client-pub-2-"+t.Name()))
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer clientB.Disconnect(context.Background())
 
 	clientB.Publish(topic, []byte("downgrade-me"), mq.WithQoS(2)).Wait(context.Background())
@@ -132,11 +142,13 @@ func TestCompliance_SubscriptionIdentifier(t *testing.T) {
 	server, cleanup := startMosquitto(t, "")
 	defer cleanup()
 
-	client, err := mq.Dial(server, 
+	client, err := mq.Dial(server,
 		mq.WithClientID("sub-id-client-"+t.Name()),
 		mq.WithProtocolVersion(mq.ProtocolV50),
 	)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer client.Disconnect(context.Background())
 
 	receivedIDs := make(chan []int, 1)
@@ -174,12 +186,16 @@ func TestCompliance_Subscribe_MaxPacketSize(t *testing.T) {
 	t.Parallel()
 	// Use a mock server that advertises a very small Max Packet Size
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer ln.Close()
 
 	go func() {
 		conn, err := ln.Accept()
-		if err != nil { return }
+		if err != nil {
+			return
+		}
 		defer conn.Close()
 
 		// Read CONNECT
@@ -194,7 +210,7 @@ func TestCompliance_Subscribe_MaxPacketSize(t *testing.T) {
 			},
 		}
 		_, _ = connack.WriteTo(conn)
-		
+
 		// Keep connection open for a bit
 		time.Sleep(1 * time.Second)
 	}()
@@ -203,7 +219,9 @@ func TestCompliance_Subscribe_MaxPacketSize(t *testing.T) {
 		mq.WithProtocolVersion(mq.ProtocolV50),
 		mq.WithAutoReconnect(false),
 	)
-	if err != nil { t.Fatalf("Dial failed: %v", err) }
+	if err != nil {
+		t.Fatalf("Dial failed: %v", err)
+	}
 	defer client.Disconnect(context.Background())
 
 	// Attempt a large SUBSCRIBE that exceeds 20 bytes

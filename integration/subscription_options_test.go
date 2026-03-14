@@ -85,7 +85,9 @@ func TestSubscriptionOptions_RetainAsPublished(t *testing.T) {
 		mq.WithClientID("client-rap-true"),
 		mq.WithProtocolVersion(mq.ProtocolV50),
 	)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer clientA.Disconnect(context.Background())
 
 	receivedRetain := make(chan bool, 1)
@@ -97,7 +99,9 @@ func TestSubscriptionOptions_RetainAsPublished(t *testing.T) {
 
 	// 2. Client B publishes a RETAINED message
 	clientB, err := mq.Dial(server, mq.WithClientID("client-pub-retain"))
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer clientB.Disconnect(context.Background())
 
 	clientB.Publish(topic, []byte("rap-test"), mq.WithQoS(1), mq.WithRetain(true)).Wait(context.Background())
@@ -122,7 +126,9 @@ func TestSubscriptionOptions_RetainHandling(t *testing.T) {
 
 	// 1. Publish a retained message first
 	pub, err := mq.Dial(server, mq.WithClientID("retain-handler-pub"))
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	pub.Publish(topic, []byte("pre-existing"), mq.WithRetain(true), mq.WithQoS(1)).Wait(context.Background())
 	pub.Disconnect(context.Background())
 
@@ -131,7 +137,9 @@ func TestSubscriptionOptions_RetainHandling(t *testing.T) {
 		mq.WithClientID("client-rh-2"),
 		mq.WithProtocolVersion(mq.ProtocolV50),
 	)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer sub.Disconnect(context.Background())
 
 	received := make(chan string, 1)

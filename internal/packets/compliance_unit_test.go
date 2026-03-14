@@ -137,7 +137,7 @@ func TestCompliance_DecodeSubscribe_ReservedBits(t *testing.T) {
 func TestCompliance_DuplicateProperties(t *testing.T) {
 	// PropContentType (0x03) repeated twice
 	data := []byte{
-		7,                      // Properties length (1 ID + 2 len + 1 "a" = 4) * 2 = 8? No, 1+2+1=4. Two of them = 8.
+		7, // Properties length (1 ID + 2 len + 1 "a" = 4) * 2 = 8? No, 1+2+1=4. Two of them = 8.
 		PropContentType, 0, 1, 'a',
 		PropContentType, 0, 1, 'b',
 	}
