@@ -87,14 +87,17 @@ func MatchTopic(filter, topic string) bool {
 
 // MQTT specification limits (defaults when not configured)
 const (
-	// DefaultMaxTopicLength is the maximum length of an MQTT topic (2 bytes for length prefix)
-	DefaultMaxTopicLength = 65535
+	// DefaultMaxTopicLength is the maximum length of an MQTT topic.
+	// Reduced from spec maximum (65535) to 1024 for security.
+	DefaultMaxTopicLength = 1024
 
-	// DefaultMaxPayloadSize is the maximum size of an MQTT message payload (256MB)
-	DefaultMaxPayloadSize = 268435455 // 256MB - 1
+	// DefaultMaxPayloadSize is the maximum size of an MQTT message payload.
+	// Reduced from spec maximum (256MB) to 1MB for security.
+	DefaultMaxPayloadSize = 1048576 // 1MB
 
-	// DefaultMaxIncomingPacket is the maximum size of an incoming MQTT packet
-	DefaultMaxIncomingPacket = 268435455 // 256MB - 1
+	// DefaultMaxIncomingPacket is the maximum size of an incoming MQTT packet.
+	// Reduced from spec maximum (256MB) to 1MB for security.
+	DefaultMaxIncomingPacket = 1048576 // 1MB
 
 	// MaxClientIDLength is the recommended maximum client ID length
 	MaxClientIDLength = 23

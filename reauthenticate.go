@@ -72,6 +72,7 @@ func (c *Client) Reauthenticate(_ context.Context) error {
 		Version: c.opts.ProtocolVersion,
 	}
 
+	c.authExchangeCount.Store(0)
 	c.outgoing <- authPkt
 	c.opts.Logger.Debug("initiated re-authentication", "method", c.opts.Authenticator.Method())
 

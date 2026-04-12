@@ -138,6 +138,13 @@ type Client struct {
 	receivedAliases     map[uint16]string // alias ID → topic
 	receivedAliasesLock sync.RWMutex      // protect concurrent access (read-heavy)
 
+	// Concurrency control for message handlers
+	handlerSem chan struct{}
+
+	// authExchangeCount tracks the number of AUTH packet exchanges
+	// to prevent infinite authentication loops.
+	authExchangeCount atomic.Uint32
+
 	// Session expiry interval (MQTT v5.0)
 	requestedSessionExpiry uint32 // Original user request (preserved on reconnect)
 	sessionExpiryInterval  uint32 // Actual value from server (may override request)
@@ -232,14 +239,19 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 		outgoing: make(chan packets.Packet, options.OutgoingQueueSize),
 		incoming: make(chan packets.Packet, options.IncomingQueueSize),
 
-		packetReceived: make(chan struct{}, 1),
-		pingPendingCh:  make(chan struct{}, 1),
-		stop:           make(chan struct{}),
-		pending:        make(map[uint16]*pendingOp),
-		subscriptions:  make(map[string]subscriptionEntry),
-		receivedQoS2:   make(map[uint16]struct{}),
-		inboundUnacked: make(map[uint16]struct{}),
-		disconnected:   make(chan struct{}, 1),
+		packetReceived:  make(chan struct{}, 1),
+		pingPendingCh:   make(chan struct{}, 1),
+		stop:            make(chan struct{}),
+		pending:         make(map[uint16]*pendingOp),
+		subscriptions:   make(map[string]subscriptionEntry),
+		receivedAliases: make(map[uint16]string),
+		receivedQoS2:    make(map[uint16]struct{}),
+		inboundUnacked:  make(map[uint16]struct{}),
+		disconnected:    make(chan struct{}, 1),
+	}
+
+	if options.MaxHandlerConcurrency > 0 {
+		c.handlerSem = make(chan struct{}, options.MaxHandlerConcurrency)
 	}
 
 	c.publish = applyPublishInterceptors(c.basePublish, options.PublishInterceptors)
@@ -1291,6 +1303,8 @@ func (c *Client) performHandshake(ctx context.Context, r io.Reader, w io.Writer)
 	_ = conn.SetReadDeadline(deadline)
 	defer func() { _ = conn.SetReadDeadline(time.Time{}) }()
 
+	c.authExchangeCount.Store(0)
+
 	for {
 		pkt, err := packets.ReadPacket(r, c.opts.ProtocolVersion, c.opts.MaxIncomingPacket)
 		if err != nil {
@@ -1311,6 +1325,12 @@ func (c *Client) performHandshake(ctx context.Context, r io.Reader, w io.Writer)
 			if c.opts.Authenticator == nil {
 				conn.Close()
 				return nil, fmt.Errorf("received AUTH packet but no authenticator configured")
+			}
+
+			count := c.authExchangeCount.Add(1)
+			if c.opts.MaxAuthExchanges > 0 && count > uint32(c.opts.MaxAuthExchanges) {
+				conn.Close()
+				return nil, fmt.Errorf("maximum authentication exchanges (%d) exceeded", c.opts.MaxAuthExchanges)
 			}
 
 			respData, err := c.opts.Authenticator.HandleChallenge(p.Properties.AuthenticationData, p.ReasonCode)

@@ -16,9 +16,9 @@ func TestMaxIncomingPacketEnforcement(t *testing.T) {
 		wantError         bool
 	}{
 		{
-			name:              "default limit (0) allows large packets",
+			name:              "default limit (0) allows medium packets",
 			maxIncomingPacket: 0,
-			packetSize:        1024 * 1024, // 1MB
+			packetSize:        512 * 1024, // 512KB (under default 1MB)
 			wantError:         false,
 		},
 		{
@@ -40,9 +40,9 @@ func TestMaxIncomingPacketEnforcement(t *testing.T) {
 			wantError:         false,
 		},
 		{
-			name:              "negative limit uses spec maximum",
+			name:              "negative limit uses conservative default",
 			maxIncomingPacket: -1,
-			packetSize:        1024 * 1024, // 1MB
+			packetSize:        512 * 1024, // 512KB
 			wantError:         false,
 		},
 	}
@@ -100,10 +100,17 @@ func TestMaxIncomingPacketSpecMaximum(t *testing.T) {
 		t.Errorf("expected 'exceeds maximum' error, got: %v", err)
 	}
 
-	// Try again with default limit (0) - should accept since it's under spec max
+	// Try again with large limit (20MB) - should accept
+	r = bytes.NewReader(encoded)
+	_, err = ReadPacket(r, 4, 20*1024*1024)
+	if err != nil {
+		t.Errorf("unexpected error with 20MB limit: %v", err)
+	}
+
+	// Try again with default limit (0) - should reject 10MB payload
 	r = bytes.NewReader(encoded)
 	_, err = ReadPacket(r, 4, 0)
-	if err != nil {
-		t.Errorf("unexpected error with default limit: %v", err)
+	if err == nil {
+		t.Error("expected error with default 1MB limit for 10MB packet, got nil")
 	}
 }

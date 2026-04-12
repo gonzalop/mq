@@ -1,6 +1,8 @@
 package mq
 
 import (
+	"context"
+
 	"github.com/gonzalop/mq/internal/packets"
 )
 
@@ -8,6 +10,22 @@ import (
 func (c *Client) handleAuth(p *packets.AuthPacket) {
 	if c.opts.Authenticator == nil {
 		c.opts.Logger.Warn("received AUTH packet but no authenticator configured")
+		return
+	}
+
+	// Reset counter on success
+	if p.ReasonCode == uint8(ReasonCodeSuccess) {
+		c.authExchangeCount.Store(0)
+		if err := c.opts.Authenticator.Complete(); err != nil {
+			c.opts.Logger.Warn("authenticator completion failed", "error", err)
+		}
+		return
+	}
+
+	count := c.authExchangeCount.Add(1)
+	if c.opts.MaxAuthExchanges > 0 && count > uint32(c.opts.MaxAuthExchanges) {
+		c.opts.Logger.Error("maximum authentication exchanges exceeded", "limit", c.opts.MaxAuthExchanges)
+		_ = c.disconnectWithReason(context.Background(), uint8(ReasonCodeBadAuthenticationMethod), nil)
 		return
 	}
 
@@ -44,6 +62,9 @@ func (c *Client) handleAuth(p *packets.AuthPacket) {
 		Version: c.opts.ProtocolVersion,
 	}
 
-	c.outgoing <- authResp
-	c.opts.Logger.Debug("sent AUTH response", "reason_code", authResp.ReasonCode)
+	select {
+	case c.outgoing <- authResp:
+		c.opts.Logger.Debug("sent AUTH response", "reason_code", authResp.ReasonCode)
+	case <-c.stop:
+	}
 }

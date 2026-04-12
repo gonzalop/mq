@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -225,5 +226,64 @@ func TestHandlePubcomp_WithSessionStore_Error(t *testing.T) {
 	// Verify session store called
 	if !store.deletePendingPublishCalled {
 		t.Error("expected DeletePendingPublish to be called")
+	}
+}
+
+func TestHandlePublish_ConcurrencyLimit(t *testing.T) {
+	concurrencyLimit := 2
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.MaxHandlerConcurrency = concurrencyLimit
+
+	c := &Client{
+		opts:           opts,
+		handlerSem:     make(chan struct{}, concurrencyLimit),
+		stop:           make(chan struct{}),
+		subscriptions:  make(map[string]subscriptionEntry),
+		inboundUnacked: make(map[uint16]struct{}),
+	}
+
+	var activeHandlers atomic.Int32
+	var maxHandlers atomic.Int32
+	var totalProcessed atomic.Int32
+
+	handler := func(_ *Client, _ Message) {
+		active := activeHandlers.Add(1)
+		for {
+			currentMax := maxHandlers.Load()
+			if active <= currentMax || maxHandlers.CompareAndSwap(currentMax, active) {
+				break
+			}
+		}
+
+		// Hold the handler for a bit to ensure concurrency
+		time.Sleep(50 * time.Millisecond)
+
+		activeHandlers.Add(-1)
+		totalProcessed.Add(1)
+	}
+
+	c.defaultHandler = handler
+
+	// Send 5 messages. With limit 2, it should only run 2 at a time.
+	for i := range 5 {
+		p := &packets.PublishPacket{
+			Topic:    "test/topic",
+			Payload:  []byte("data"),
+			PacketID: uint16(i + 1),
+		}
+		// handlePublish is what we're testing - it spawns goroutines but blocks on sem
+		c.handlePublish(p)
+	}
+
+	// Wait for all to finish (total 5)
+	for totalProcessed.Load() < 5 {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if maxHandlers.Load() > int32(concurrencyLimit) {
+		t.Errorf("max concurrent handlers was %d, expected limit %d", maxHandlers.Load(), concurrencyLimit)
+	}
+	if totalProcessed.Load() != 5 {
+		t.Errorf("expected 5 messages processed, got %d", totalProcessed.Load())
 	}
 }

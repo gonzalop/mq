@@ -232,7 +232,22 @@ func (c *Client) handlePublish(p *packets.PublishPacket) {
 	// Call handlers in separate goroutines (don't block logicLoop)
 	for _, handler := range handlers {
 		h := handler // Capture for goroutine
-		go h(c, msg)
+
+		// Acquire semaphore if configured
+		if c.handlerSem != nil {
+			select {
+			case c.handlerSem <- struct{}{}:
+			case <-c.stop:
+				return
+			}
+		}
+
+		go func() {
+			if c.handlerSem != nil {
+				defer func() { <-c.handlerSem }()
+			}
+			h(c, msg)
+		}()
 	}
 
 	switch p.QoS {

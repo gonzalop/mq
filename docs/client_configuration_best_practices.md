@@ -8,17 +8,18 @@ Efficient resource management is critical for preventing Denial of Service (DoS)
 
 ### Incoming Packet Size
 
-The library defaults to the MQTT specification maximum of **~256MB**. **This is usually too high for production environments.** A single malicious or malformed packet could exhaust your application's memory.
+The library defaults to a conservative limit of **1MB** to protect against memory exhaustion. While the MQTT specification allows for packets up to **~256MB**, enabling such large packets by default is risky for most production environments.
 
 **Recommendations:**
-- **Constrained/IoT:** 64KB - 1MB. Most sensor data is small.
-- **General Purpose:** 1MB - 10MB.
-- **Server/Bridge:** Use your expected maximum message size + 10%.
+- **Constrained/IoT:** 64KB - 512KB. Most sensor data is small.
+- **General Purpose:** 1MB (Default). Suitable for most applications.
+- **High Payload Apps:** 1MB - 10MB. Explicitly opt-in if you need larger messages.
+- **Server/Bridge:** Use your expected maximum message size + 10%, up to 256MB.
 
 ```go
-// Example: Strict 1MB limit for an IoT device
+// Example: Explicitly increase limit to 10MB for large payloads
 client, err := mq.Dial(server,
-    mq.WithMaxIncomingPacket(1024 * 1024),
+    mq.WithMaxIncomingPacket(10 * 1024 * 1024),
 )
 ```
 
@@ -69,15 +70,25 @@ client, err := mq.Dial(server,
 The library uses internal channels for managing packets between the logic loop and the network connection. The default sizes are balanced for efficiency, but may need tuning for extreme workloads.
 
 **1. Outgoing Queue (`WithOutgoingQueueSize`)**
-- **Default:** `1000`.
-- **Purpose:** Buffers outgoing `PUBLISH` and control packets.
-- **Tuning:** Increase this if you experience "bursty" publishing behavior and want to avoid blocking the caller.
+...
 - **RAM Impact:** `QueueSize * PacketPointer ≈ 1000 * 8 bytes ≈ 8KB` (minimal overhead, as it stores pointers to packets).
 
 **2. Incoming Queue (`WithIncomingQueueSize`)**
-- **Default:** `100`.
-- **Purpose:** Buffers packets received from the network before they are dispatched to your handlers.
+...
 - **Tuning:** Only increase if you have extremely slow message handlers and want to prevent network stalls.
+
+**3. Handler Concurrency (`WithMaxHandlerConcurrency`)**
+- **Default:** `100`.
+- **Purpose:** Limits the number of message handler goroutines running simultaneously to prevent resource exhaustion (CPU/RAM).
+- **Behavior:** When the limit is reached, the internal processing loop blocks until a handler finishes. This provides natural backpressure but can affect keepalive if handlers are extremely slow.
+- **Tuning:** Increase for high-performance servers with many fast handlers. Decrease for constrained devices. Set to `0` for unlimited (not recommended).
+
+```go
+// Example: Limit to 50 concurrent handlers
+client, err := mq.Dial(server,
+    mq.WithMaxHandlerConcurrency(50),
+)
+```
 
 ### QoS 0 Reliability (Drop vs Block)
 

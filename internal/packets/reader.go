@@ -32,6 +32,7 @@ var packetDecoders = map[uint8]PacketDecoder{
 	AUTH:       func(remaining []byte, _ *FixedHeader, v uint8) (Packet, error) { return DecodeAuth(remaining, v) },
 }
 
+// ProtocolError represents an error where the received packet violates the MQTT protocol.
 type ProtocolError struct {
 	Message string
 }
@@ -40,6 +41,7 @@ func (e *ProtocolError) Error() string {
 	return e.Message
 }
 
+// MalformedPacketError represents an error where the received packet is structurally invalid.
 type MalformedPacketError struct {
 	Message string
 }
@@ -73,10 +75,21 @@ func validateFlags(packetType uint8, flags uint8) error {
 	return nil
 }
 
+const (
+	// DefaultMaxPacketSize is the default maximum allowed size for an incoming packet (1MB).
+	// This is a conservative default to protect against memory exhaustion.
+	DefaultMaxPacketSize = 1048576
+
+	// MaxAllowedPacketSize is the absolute maximum packet size allowed by the MQTT spec (256MB).
+	MaxAllowedPacketSize = 268435455
+)
+
 // ReadPacket reads a complete MQTT packet from the reader.
 // It accepts the protocol version to correctly decode version-specific fields (like Properties).
-// The maxIncomingPacket parameter sets the maximum allowed packet size. If 0 or exceeding the
-// MQTT spec maximum (268435455 bytes), the spec maximum is used.
+//
+// The maxIncomingPacket parameter sets the maximum allowed packet size in bytes.
+//   - If 0: uses DefaultMaxPacketSize (1MB)
+//   - If > 0: uses the provided value, capped at MaxAllowedPacketSize (256MB)
 func ReadPacket(r io.Reader, version uint8, maxIncomingPacket int) (Packet, error) {
 	header, err := DecodeFixedHeader(r)
 	if err != nil {
@@ -88,12 +101,13 @@ func ReadPacket(r io.Reader, version uint8, maxIncomingPacket int) (Packet, erro
 	}
 
 	// Validate packet size
-	// MQTT spec maximum: 268435455 bytes (256MB - 1 byte)
-	const mqttSpecMax = 268435455
 	maxPacketSize := maxIncomingPacket
-	if maxPacketSize <= 0 || maxPacketSize > mqttSpecMax {
-		maxPacketSize = mqttSpecMax
+	if maxPacketSize <= 0 {
+		maxPacketSize = DefaultMaxPacketSize
+	} else if maxPacketSize > MaxAllowedPacketSize {
+		maxPacketSize = MaxAllowedPacketSize
 	}
+
 	if header.RemainingLength > maxPacketSize {
 		return nil, &ProtocolError{Message: fmt.Sprintf("packet size %d exceeds maximum %d", header.RemainingLength, maxPacketSize)}
 	}

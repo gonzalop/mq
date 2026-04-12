@@ -49,9 +49,18 @@ type clientOptions struct {
 	Logger *slog.Logger
 
 	// Limits (0 = use MQTT spec defaults)
-	MaxTopicLength    int // Maximum topic length (default: 65535)
-	MaxPayloadSize    int // Maximum outgoing payload size (default: 256MB)
-	MaxIncomingPacket int // Maximum incoming packet size (default: 256MB)
+	MaxTopicLength    int // Maximum topic length (default: 1024)
+	MaxPayloadSize    int // Maximum outgoing payload size (default: 1MB)
+	MaxIncomingPacket int // Maximum incoming packet size (default: 1MB)
+
+	// MaxHandlerConcurrency limits the number of message handler goroutines
+	// that can run simultaneously.
+	// Default is 100. Set to 0 for unlimited (not recommended for production).
+	MaxHandlerConcurrency int
+
+	// MaxAuthExchanges limits the number of AUTH packet exchanges per connection.
+	// Default is 10.
+	MaxAuthExchanges uint16
 
 	// Will message (optional)
 	will *willMessage
@@ -857,5 +866,8 @@ func defaultOptions(server string) *clientOptions {
 		MaxTopicLength:    0,
 		MaxPayloadSize:    0,
 		MaxIncomingPacket: 0,
+
+		MaxHandlerConcurrency: 100,
+		MaxAuthExchanges:      10,
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -199,7 +200,7 @@ func TestReauthenticateErrors(t *testing.T) {
 				t.Fatal("expected error, got nil")
 			}
 
-			if !contains(err.Error(), tt.expectError) {
+			if !strings.Contains(err.Error(), tt.expectError) {
 				t.Errorf("expected error containing %q, got %q", tt.expectError, err.Error())
 			}
 		})
@@ -342,5 +343,138 @@ func TestEnhancedAuthenticationFlow(t *testing.T) {
 	// Verify connected state
 	if !client.IsConnected() {
 		t.Error("Client should be connected")
+	}
+}
+
+func TestAuthExchangeLimit(t *testing.T) {
+	// 1. Create a pipe to simulate network connection
+	clientConn, serverConn := net.Pipe()
+
+	// 2. Start Mock Server that keeps sending AUTH Continue
+	errCh := make(chan error, 1)
+	done := make(chan struct{})
+	go func() {
+		defer serverConn.Close()
+
+		// A. Read CONNECT
+		_, err := packets.ReadPacket(serverConn, 5, 1024*1024)
+		if err != nil {
+			errCh <- fmt.Errorf("server read CONNECT: %w", err)
+			return
+		}
+
+		// B. Keep sending AUTH (Challenge) until limit (default 10)
+		for i := 0; i < 15; i++ {
+			authChallenge := &packets.AuthPacket{
+				Version:    5,
+				ReasonCode: packets.AuthReasonContinue,
+				Properties: &packets.Properties{
+					AuthenticationMethod: "TOKEN",
+					AuthenticationData:   []byte("PING"),
+					Presence:             packets.PresAuthenticationMethod,
+				},
+			}
+			if _, err := authChallenge.WriteTo(serverConn); err != nil {
+				// This might fail once the client disconnects, which is expected
+				break
+			}
+
+			// Read response
+			_, err = packets.ReadPacket(serverConn, 5, 1024*1024)
+			if err != nil {
+				break
+			}
+		}
+
+		errCh <- nil
+		<-done
+	}()
+
+	// 3. Start Client
+	dialer := DialFunc(func(_ context.Context, _ string, _ string) (net.Conn, error) {
+		return clientConn, nil
+	})
+
+	_, err := Dial("tcp://mock-server:1883",
+		WithClientID("limit-client"),
+		WithProtocolVersion(ProtocolV50),
+		WithAuthenticator(&tokenAuthenticator{token: "test"}),
+		WithDialer(dialer),
+		WithConnectTimeout(1*time.Second),
+		WithAutoReconnect(false),
+		WithMaxAuthExchanges(3), // Set a low limit for testing
+	)
+	defer close(done)
+
+	if err == nil {
+		t.Fatal("expected error due to auth exchange limit, got nil")
+	}
+
+	if !contains(err.Error(), "maximum authentication exchanges (3) exceeded") {
+		t.Errorf("expected exchange limit error, got: %v", err)
+	}
+}
+
+func TestHandleAuth_LimitEnforcement(t *testing.T) {
+	auth := &tokenAuthenticator{token: "test-token"}
+
+	client := &Client{
+		opts: &clientOptions{
+			ProtocolVersion:  ProtocolV50,
+			Authenticator:    auth,
+			MaxAuthExchanges: 2,
+			Logger:           testLogger(),
+		},
+		outgoing: make(chan packets.Packet, 10),
+		stop:     make(chan struct{}),
+	}
+	client.connected.Store(true)
+
+	// First challenge
+	authPkt := &packets.AuthPacket{ReasonCode: packets.AuthReasonContinue, Version: 5}
+	client.handleAuth(authPkt)
+	if client.authExchangeCount.Load() != 1 {
+		t.Errorf("expected count 1, got %d", client.authExchangeCount.Load())
+	}
+
+	// Second challenge
+	client.handleAuth(authPkt)
+	if client.authExchangeCount.Load() != 2 {
+		t.Errorf("expected count 2, got %d", client.authExchangeCount.Load())
+	}
+
+	// Third challenge - should exceed limit (2)
+	client.handleAuth(authPkt)
+
+	// Should be disconnected (IsConnected will be false)
+	if client.IsConnected() {
+		t.Error("expected client to be disconnected after exceeding auth limit")
+	}
+}
+
+func TestHandleAuth_SuccessReset(t *testing.T) {
+	auth := &tokenAuthenticator{token: "test-token"}
+
+	client := &Client{
+		opts: &clientOptions{
+			ProtocolVersion:  ProtocolV50,
+			Authenticator:    auth,
+			MaxAuthExchanges: 5,
+			Logger:           testLogger(),
+		},
+		outgoing: make(chan packets.Packet, 1),
+	}
+	client.authExchangeCount.Store(3)
+
+	// Success AUTH packet
+	successPkt := &packets.AuthPacket{
+		ReasonCode: uint8(ReasonCodeSuccess),
+		Version:    5,
+	}
+
+	client.handleAuth(successPkt)
+
+	if client.authExchangeCount.Load() != 0 {
+		t.Errorf("expected count reset to 0, got %d", client.authExchangeCount.Load())
 	}
 }
