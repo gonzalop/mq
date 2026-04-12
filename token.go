@@ -50,6 +50,17 @@ type Token interface {
 	// Error returns the error if finished, mostly for use with Done().
 	Error() error
 
+	// ReasonCode returns the MQTT v5.0 reason code from the server's acknowledgment.
+	// This is useful for inspecting non-error status codes such as:
+	//   - ReasonCodeNoMatchingSubscribers (0x10) - message accepted but no one is subscribed
+	//   - ReasonCodeGrantedQoS1 (0x01) - subscription accepted at QoS 1 (may differ from requested)
+	//   - ReasonCodeNoSubscriptionExisted (0x11) - unsubscribed from a non-existent subscription
+	//
+	// Returns ReasonCodeSuccess (0x00) if the operation succeeded normally,
+	// if no reason code was provided by the server, or for MQTT v3.1.1 connections.
+	// Only valid after the token has completed (Wait returned or Done channel closed).
+	ReasonCode() ReasonCode
+
 	// Dropped returns true if the message was dropped due to a full internal buffer (QoS 0).
 	// This only occurs when Using QoS0LimitPolicyDrop.
 	Dropped() bool
@@ -57,10 +68,11 @@ type Token interface {
 
 // token is the internal implementation of Token.
 type token struct {
-	done    chan struct{}
-	err     error
-	dropped bool
-	once    sync.Once
+	done       chan struct{}
+	err        error
+	reasonCode ReasonCode
+	dropped    bool
+	once       sync.Once
 }
 
 // newToken creates a new token.
@@ -88,6 +100,11 @@ func (t *token) Done() <-chan struct{} {
 // Error returns the error if the operation has completed.
 func (t *token) Error() error {
 	return t.err
+}
+
+// ReasonCode returns the MQTT v5.0 reason code from the server's acknowledgment.
+func (t *token) ReasonCode() ReasonCode {
+	return t.reasonCode
 }
 
 // Dropped returns true if the message was dropped due to a full internal buffer.

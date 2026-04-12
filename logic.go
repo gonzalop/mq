@@ -274,9 +274,12 @@ func (c *Client) handlePublish(p *packets.PublishPacket) {
 func (c *Client) handlePuback(p *packets.PubackPacket) {
 	if op, ok := c.pending[p.PacketID]; ok {
 		var err error
-		if c.opts.ProtocolVersion >= ProtocolV50 && p.ReasonCode >= 0x80 {
-			err = &MqttError{
-				ReasonCode: ReasonCode(p.ReasonCode),
+		if c.opts.ProtocolVersion >= ProtocolV50 {
+			op.token.reasonCode = ReasonCode(p.ReasonCode)
+			if p.ReasonCode >= 0x80 {
+				err = &MqttError{
+					ReasonCode: ReasonCode(p.ReasonCode),
+				}
 			}
 		}
 		op.token.complete(err)
@@ -296,12 +299,14 @@ func (c *Client) handlePuback(p *packets.PubackPacket) {
 // handlePubrec processes a PUBREC packet (QoS 2, step 1).
 func (c *Client) handlePubrec(p *packets.PubrecPacket) {
 	if op, ok := c.pending[p.PacketID]; ok {
-		// MQTT v5.0: check for error reason codes
-		if c.opts.ProtocolVersion >= ProtocolV50 && p.ReasonCode >= 0x80 {
-			op.token.complete(&MqttError{ReasonCode: ReasonCode(p.ReasonCode)})
-			delete(c.pending, p.PacketID)
-			c.processPublishQueue()
-			return
+		if c.opts.ProtocolVersion >= ProtocolV50 {
+			op.token.reasonCode = ReasonCode(p.ReasonCode)
+			if p.ReasonCode >= 0x80 {
+				op.token.complete(&MqttError{ReasonCode: ReasonCode(p.ReasonCode)})
+				delete(c.pending, p.PacketID)
+				c.processPublishQueue()
+				return
+			}
 		}
 
 		pubrel := &packets.PubrelPacket{PacketID: p.PacketID, Version: c.opts.ProtocolVersion}
@@ -338,9 +343,12 @@ func (c *Client) handlePubrel(p *packets.PubrelPacket) {
 func (c *Client) handlePubcomp(p *packets.PubcompPacket) {
 	if op, ok := c.pending[p.PacketID]; ok {
 		var err error
-		if c.opts.ProtocolVersion >= ProtocolV50 && p.ReasonCode >= 0x80 {
-			err = &MqttError{
-				ReasonCode: ReasonCode(p.ReasonCode),
+		if c.opts.ProtocolVersion >= ProtocolV50 {
+			op.token.reasonCode = ReasonCode(p.ReasonCode)
+			if p.ReasonCode >= 0x80 {
+				err = &MqttError{
+					ReasonCode: ReasonCode(p.ReasonCode),
+				}
 			}
 		}
 		op.token.complete(err)
@@ -374,6 +382,11 @@ func (c *Client) handleSuback(p *packets.SubackPacket) {
 				}
 				break
 			}
+		}
+
+		// Set reason code from the first return code (Subscribe operates on a single topic)
+		if len(p.ReturnCodes) > 0 {
+			op.token.reasonCode = ReasonCode(p.ReturnCodes[0])
 		}
 
 		// Save subscriptions if successful
@@ -411,6 +424,10 @@ func (c *Client) handleUnsuback(p *packets.UnsubackPacket) {
 	if op, ok := c.pending[p.PacketID]; ok {
 		var err error
 		if c.opts.ProtocolVersion >= ProtocolV50 {
+			// Set reason code from the first reason code (Unsubscribe operates on a single topic)
+			if len(p.ReasonCodes) > 0 {
+				op.token.reasonCode = ReasonCode(p.ReasonCodes[0])
+			}
 			for _, code := range p.ReasonCodes {
 				if code >= 0x80 {
 					err = &MqttError{
@@ -526,41 +543,41 @@ func (c *Client) handleDisconnectPacket(p *packets.DisconnectPacket) {
 
 // disconnectReasonCodeNames maps MQTT v5.0 reason codes to human-readable strings for DISCONNECT packets.
 var disconnectReasonCodeNames = map[ReasonCode]string{
-	ReasonCodeNormalDisconnect:      "Normal disconnect",
-	ReasonCodeDisconnectWithWill:    "Disconnect with Will Message",
-	ReasonCodeUnspecifiedError:      "Unspecified error",
-	ReasonCodeMalformedPacket:       "Malformed Packet",
-	ReasonCodeProtocolError:         "Protocol Error",
-	ReasonCodeImplementationError:   "Implementation specific error",
-	ReasonCodeUnsupportedProtocol:   "Unsupported Protocol Version",
+	ReasonCodeNormalDisconnect:        "Normal disconnect",
+	ReasonCodeDisconnectWithWill:      "Disconnect with Will Message",
+	ReasonCodeUnspecifiedError:        "Unspecified error",
+	ReasonCodeMalformedPacket:         "Malformed Packet",
+	ReasonCodeProtocolError:           "Protocol Error",
+	ReasonCodeImplementationError:     "Implementation specific error",
+	ReasonCodeUnsupportedProtocol:     "Unsupported Protocol Version",
 	ReasonCodeClientIdentifierInvalid: "Client Identifier not valid",
-	ReasonCodeBadUsernameOrPassword: "Bad User Name or Password",
-	ReasonCodeNotAuthorized:         "Not authorized",
-	ReasonCodeServerMovedConnack:    "Server moved (CONNACK)",
-	ReasonCodeServerBusy:            "Server busy",
-	ReasonCodeBanned:                "Banned",
-	ReasonCodeServerShuttingDown:    "Server shutting down",
+	ReasonCodeBadUsernameOrPassword:   "Bad User Name or Password",
+	ReasonCodeNotAuthorized:           "Not authorized",
+	ReasonCodeServerMovedConnack:      "Server moved (CONNACK)",
+	ReasonCodeServerBusy:              "Server busy",
+	ReasonCodeBanned:                  "Banned",
+	ReasonCodeServerShuttingDown:      "Server shutting down",
 	ReasonCodeBadAuthenticationMethod: "Bad authentication method",
-	ReasonCodeKeepAliveTimeout:      "Keep Alive timeout",
-	ReasonCodeSessionTakenOver:      "Session taken over",
-	ReasonCodeTopicAliasExceeded:    "Topic Alias exceeded",
-	ReasonCodeTopicFilterInvalid:    "Topic Filter invalid",
-	ReasonCodeTopicNameInvalid:      "Topic Name invalid",
-	ReasonCodePacketIdentifierInUse: "Packet identifier in use",
-	ReasonCodeReceiveMaximumExceed:  "Receive Maximum exceeded",
-	ReasonCodeTopicAliasInvalid:     "Topic Alias invalid",
-	ReasonCodePacketTooLarge:        "Packet too large",
-	ReasonCodeMessageRateTooHigh:    "Message rate too high",
-	ReasonCodeQuotaExceeded:         "Quota exceeded",
-	ReasonCodeAdministrativeAction:  "Administrative action",
-	ReasonCodePayloadFormatInvalid:  "Payload format invalid",
-	ReasonCodeRetainNotSupported:    "Retain not supported",
-	ReasonCodeQoSNotSupported:       "QoS not supported",
-	ReasonCodeUseAnotherServer:      "Use another server",
-	ReasonCodeServerMoved:           "Server moved",
-	ReasonCodeSharedSubNotSupported: "Shared Subscriptions not supported",
-	ReasonCodeConnectionRateExceed:  "Connection rate exceeded",
-	ReasonCodeMaximumConnectTime:    "Maximum connect time",
-	ReasonCodeSubscriptionIDNotSupp: "Subscription Identifiers not supported",
-	ReasonCodeWildcardSubNotSupp:    "Wildcard Subscriptions not supported",
+	ReasonCodeKeepAliveTimeout:        "Keep Alive timeout",
+	ReasonCodeSessionTakenOver:        "Session taken over",
+	ReasonCodeTopicAliasExceeded:      "Topic Alias exceeded",
+	ReasonCodeTopicFilterInvalid:      "Topic Filter invalid",
+	ReasonCodeTopicNameInvalid:        "Topic Name invalid",
+	ReasonCodePacketIdentifierInUse:   "Packet identifier in use",
+	ReasonCodeReceiveMaximumExceed:    "Receive Maximum exceeded",
+	ReasonCodeTopicAliasInvalid:       "Topic Alias invalid",
+	ReasonCodePacketTooLarge:          "Packet too large",
+	ReasonCodeMessageRateTooHigh:      "Message rate too high",
+	ReasonCodeQuotaExceeded:           "Quota exceeded",
+	ReasonCodeAdministrativeAction:    "Administrative action",
+	ReasonCodePayloadFormatInvalid:    "Payload format invalid",
+	ReasonCodeRetainNotSupported:      "Retain not supported",
+	ReasonCodeQoSNotSupported:         "QoS not supported",
+	ReasonCodeUseAnotherServer:        "Use another server",
+	ReasonCodeServerMoved:             "Server moved",
+	ReasonCodeSharedSubNotSupported:   "Shared Subscriptions not supported",
+	ReasonCodeConnectionRateExceed:    "Connection rate exceeded",
+	ReasonCodeMaximumConnectTime:      "Maximum connect time",
+	ReasonCodeSubscriptionIDNotSupp:   "Subscription Identifiers not supported",
+	ReasonCodeWildcardSubNotSupp:      "Wildcard Subscriptions not supported",
 }

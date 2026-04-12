@@ -34,7 +34,14 @@ func (r ReasonCode) Error() string {
 const (
 	ReasonCodeSuccess                 ReasonCode = 0x00
 	ReasonCodeNormalDisconnect        ReasonCode = 0x00
+	ReasonCodeGrantedQoS0             ReasonCode = 0x00 // SUBACK: Subscription accepted with QoS 0
+	ReasonCodeGrantedQoS1             ReasonCode = 0x01 // SUBACK: Subscription accepted with QoS 1
+	ReasonCodeGrantedQoS2             ReasonCode = 0x02 // SUBACK: Subscription accepted with QoS 2
 	ReasonCodeDisconnectWithWill      ReasonCode = 0x04
+	ReasonCodeNoMatchingSubscribers   ReasonCode = 0x10 // PUBACK/PUBREC: Message accepted but no subscribers matched
+	ReasonCodeNoSubscriptionExisted   ReasonCode = 0x11 // UNSUBACK: No matching subscription existed
+	ReasonCodeContinueAuthentication  ReasonCode = 0x18 // AUTH: Continue the authentication exchange
+	ReasonCodeReAuthenticate          ReasonCode = 0x19 // AUTH: Initiate re-authentication
 	ReasonCodeUnspecifiedError        ReasonCode = 0x80
 	ReasonCodeMalformedPacket         ReasonCode = 0x81
 	ReasonCodeProtocolError           ReasonCode = 0x82
