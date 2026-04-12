@@ -5,6 +5,8 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"flag"
 	"fmt"
 	"log"
 	"log/slog"
@@ -15,22 +17,37 @@ import (
 )
 
 func main() {
-	topic := "test/tls" // Change to the right topic if you're testing on AWS IoT test page.
-	// Get server address from command line or use default
-	server := "tls://localhost:8883"
-	if len(os.Args) > 1 {
-		server = os.Args[1]
-	}
+	var (
+		server   string
+		username string
+		password string
+		caFile   string
+		certFile string
+		keyFile  string
+		insecure bool
+		topic    string
+	)
 
-	// Get credentials from environment or command line
-	username := os.Getenv("MQTT_USERNAME")
-	password := os.Getenv("MQTT_PASSWORD")
+	flag.StringVar(&server, "server", "tls://localhost:8883", "MQTT server address (tls://...)")
+	flag.StringVar(&username, "username", os.Getenv("MQTT_USERNAME"), "Username for authentication")
+	flag.StringVar(&password, "password", os.Getenv("MQTT_PASSWORD"), "Password for authentication")
+	flag.StringVar(&caFile, "ca-file", "", "Path to CA certificate file (PEM)")
+	flag.StringVar(&certFile, "cert-file", "", "Path to client certificate file (PEM) for mTLS")
+	flag.StringVar(&keyFile, "key-file", "", "Path to client private key file (PEM) for mTLS")
+	flag.BoolVar(&insecure, "insecure", false, "Skip server certificate verification (WARNING: UNSAFE)")
+	flag.StringVar(&topic, "topic", "test/tls", "Topic to subscribe and publish to")
+	flag.Parse()
 
-	if len(os.Args) > 2 {
-		username = os.Args[2]
+	// Positional arguments override flags for compatibility with old example usage
+	args := flag.Args()
+	if len(args) > 0 {
+		server = args[0]
 	}
-	if len(os.Args) > 3 {
-		password = os.Args[3]
+	if len(args) > 1 {
+		username = args[1]
+	}
+	if len(args) > 2 {
+		password = args[2]
 	}
 
 	fmt.Printf("Connecting to MQTT server at %s (TLS)...\n", server)
@@ -38,36 +55,52 @@ func main() {
 		fmt.Printf("Using credentials: username=%s\n", username)
 	}
 
+	// Setup TLS configuration
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+
+	if insecure {
+		fmt.Println("⚠️  WARNING: Skipping server certificate verification (InsecureSkipVerify=true)")
+		fmt.Println("   This is UNSAFE and should only be used for local testing.")
+		tlsConfig.InsecureSkipVerify = true
+	}
+
+	if caFile != "" {
+		fmt.Printf("Loading CA certificate from %s...\n", caFile)
+		caCert, err := os.ReadFile(caFile)
+		if err != nil {
+			log.Fatalf("Error reading CA file: %v", err)
+		}
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			log.Fatalf("Failed to parse CA certificate")
+		}
+		tlsConfig.RootCAs = caCertPool
+	}
+
+	if certFile != "" && keyFile != "" {
+		fmt.Printf("Loading client certificate pair (%s, %s)...\n", certFile, keyFile)
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			log.Fatalf("Error loading client key pair: %v", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
 	// Change the log level here if you wish
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	opts := []mq.Option{
-		mq.WithClientID("basicPubSub"),
+		mq.WithClientID("tlsExampleClient"),
 		mq.WithKeepAlive(60 * time.Second),
 		mq.WithLogger(logger),
+		mq.WithTLS(tlsConfig),
 	}
+
 	if username != "" {
 		opts = append(opts, mq.WithCredentials(username, password))
 	}
-
-	// BEGIN - Real Cert
-	// // Load the certificate and private key from files
-	// cert, err := tls.LoadX509KeyPair("private/<CHANGEME>.cert.pem", "private/<CHANGEME>.private.key")
-	// if err != nil {
-	// 	fmt.Printf("Error loading key pair: %v\n", err)
-	// 	return
-	// }
-	// opts = append(opts, mq.WithTLS(&tls.Config{
-	//		Certificates: []tls.Certificate{cert},
-	// }))
-	//
-	// END - Real Cert
-
-	// BEGIN - Unsafe for Testing Only
-	opts = append(opts, mq.WithTLS(&tls.Config{
-		InsecureSkipVerify: true, // WARNING: invalidates TLS security. For testing locally ONLY. Do NOT use in production.
-	}))
-	// END - Unsafe for Testing Only
 
 	// Connect to server
 	client, err := mq.Dial(server, opts...)
