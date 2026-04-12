@@ -418,7 +418,7 @@ func TestCleanSession(t *testing.T) {
 	}
 
 	// Subscribe
-	token := client1.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {})
+	token := client1.Subscribe(topic, 1, func(_ *mq.Client, _ mq.Message) {})
 	if err := token.Wait(context.Background()); err != nil {
 		t.Fatalf("Failed to subscribe: %v", err)
 	}
