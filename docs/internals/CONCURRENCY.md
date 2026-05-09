@@ -25,6 +25,12 @@ The `sessionLock` MUST be held when accessing or modifying the following fields:
 -   `publishQueue`: Slice of buffered publish requests awaiting flow control credits.
 -   `receivedQoS2`: Map of received QoS 2 packet IDs (for exactly-once semantics).
 
+### Lifecycle Tracking
+
+The client uses an atomic counter, `activeLoops`, to track the number of long-running background goroutines (`logicLoop`, `reconnectLoop`, `readLoop`, `writeLoop`). 
+
+This is used by `Disconnect()` to wait for a clean shutdown without leaking helper goroutines. When `Disconnect()` is called, it signals all loops to stop and then polls `activeLoops` until it reaches zero or the timeout is exceeded.
+
 ### `connLock` Protected State
 
 The `connLock` MUST be held when accessing:
@@ -101,6 +107,12 @@ All callbacks are executed asynchronously in their own goroutines. This design p
 | `OnConnectionLost` | **Asynchronous** | Ensures cleanup or alerting logic doesn't delay internal teardown or reconnection attempts. |
 | `OnServerRedirect` | **Asynchronous** | Prevents blocking the processing of CONNACK properties; allows user to decide on reconnection strategy independently. |
 | `MessageHandler` | **Asynchronous** | Critical for high throughput; slow message processing shouldn't block reception of other packets or ACKs. |
+
+### Handler Safety
+
+While handlers are asynchronous, the library provides two mechanisms to prevent them from overwhelming the system:
+1. **`MaxHandlerConcurrency`**: A semaphore-based limit on the number of handler goroutines that can run at once.
+2. **`HandlerTimeout`**: A watchdog that logs a warning and releases the semaphore slot if a handler takes too long. This ensures that a single hung handler cannot permanently reduce the client's processing capacity.
 
 ## Interceptors (Middleware)
 

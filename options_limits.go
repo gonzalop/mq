@@ -1,5 +1,7 @@
 package mq
 
+import "time"
+
 // WithMaxTopicLength sets the maximum allowed topic length.
 // Default is 1024 (MQTT spec maximum is 65535).
 // Set to a lower value to reject topics exceeding your application's needs.
@@ -48,5 +50,15 @@ func WithMaxHandlerConcurrency(concurrency int) Option {
 func WithMaxAuthExchanges(limit uint16) Option {
 	return func(o *clientOptions) {
 		o.MaxAuthExchanges = limit
+	}
+}
+
+// WithHandlerTimeout sets the maximum time a message handler is allowed to run.
+// If the timeout is reached, the handler slot in the concurrency semaphore is
+// released, but the handler goroutine itself cannot be forcibly stopped.
+// 0 = no timeout (default).
+func WithHandlerTimeout(timeout time.Duration) Option {
+	return func(o *clientOptions) {
+		o.HandlerTimeout = timeout
 	}
 }

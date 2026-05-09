@@ -117,6 +117,26 @@ If the server's `ReceiveMaximum` is lower than the number of pending QoS 1/2 mes
 
 ---
 
+## Resource Limits
+
+### Packet ID Exhaustion (`ErrNoPacketIDsAvailable`)
+
+**The Problem**: Your asynchronous operations (Publish QoS 1/2, Subscribe, Unsubscribe) fail with the error `no packet IDs available`.
+
+**What Happens**: MQTT uses a 16-bit identifier (1-65535) for tracking in-flight packets. This error occurs if you have 65,535 operations currently pending acknowledgment from the server.
+
+**Possible Causes**:
+1. **Network Congestion**: The connection is too slow to handle the volume of outgoing messages.
+2. **Server Performance**: The broker is taking too long to acknowledge packets.
+3. **Poison Pill Messages**: A specific packet is causing the server to hang or ignore it, and retries are consuming more IDs.
+
+**Fix**:
+- **Throttle your production**: Don't just `Publish` in a tight loop without waiting for some tokens to complete.
+- **Check server logs**: See if the broker is struggling or rejecting certain topics.
+- **Context Timeouts**: Ensure you use timeouts on your operations so they don't stay "pending" indefinitely if the server is silent.
+
+---
+
 ## Persistence-Specific Issues
 
 For issues specific to persistent sessions (e.g., Poison Pill loops, QoS 2 duplicates), see [docs/persistence.md](persistence.md#troubleshooting-the-poison-pill-loop).

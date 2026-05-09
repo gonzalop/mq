@@ -24,6 +24,9 @@ var (
 	// ErrClientDisconnected is returned when an operation is cancelled because
 	// the client was disconnected or stopped.
 	ErrClientDisconnected = errors.New("client disconnected")
+
+	// ErrNoPacketIDsAvailable is returned when all 65535 packet IDs are in use.
+	ErrNoPacketIDsAvailable = errors.New("no packet IDs available")
 )
 
 // MqttError represents an error returned by the MQTT server, including

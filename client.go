@@ -93,8 +93,9 @@ type Client struct {
 	inFlightCount int                 // Number of QoS 1 special & QoS 2 packets currently in flight (outgoing)
 
 	// Lifecycle
-	connected atomic.Bool
-	wg        sync.WaitGroup
+	connected   atomic.Bool
+	wg          sync.WaitGroup
+	activeLoops atomic.Int32
 
 	// Server capabilities (MQTT v5.0)
 	serverCaps serverCapabilities
@@ -299,10 +300,12 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 	}
 
 	c.wg.Add(1)
+	c.activeLoops.Add(1)
 	go c.logicLoop()
 
 	if options.AutoReconnect {
 		c.wg.Add(1)
+		c.activeLoops.Add(1)
 		go c.reconnectLoop()
 	}
 
@@ -490,6 +493,7 @@ func (c *Client) connect(ctx context.Context) error {
 	}
 
 	c.wg.Add(2)
+	c.activeLoops.Add(2)
 	go c.readLoop()
 	go c.writeLoop()
 
@@ -656,6 +660,7 @@ func (c *Client) buildConnectPacket() *packets.ConnectPacket {
 // readLoop continuously reads packets from the network.
 func (c *Client) readLoop() {
 	defer c.wg.Done()
+	defer c.activeLoops.Add(-1)
 	defer c.handleDisconnect()
 
 	c.connLock.RLock()
@@ -706,6 +711,7 @@ func (c *Client) readLoop() {
 // writeLoop continuously writes packets to the network and handles keepalive.
 func (c *Client) writeLoop() {
 	defer c.wg.Done()
+	defer c.activeLoops.Add(-1)
 
 	var ticker *time.Ticker
 	var tickerCh <-chan time.Time
@@ -927,26 +933,34 @@ func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, pro
 	c.connLock.Unlock()
 
 	// Wait for goroutines with timeout
-	done := make(chan struct{})
-	go func() {
-		c.wg.Wait()
-		close(done)
-	}()
+	deadline := time.Now().Add(5 * time.Second)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
 
-	select {
-	case <-done:
+	for time.Now().Before(deadline) {
+		if c.activeLoops.Load() == 0 {
+			c.opts.Logger.Debug("disconnected successfully")
+			return nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if c.activeLoops.Load() == 0 {
 		c.opts.Logger.Debug("disconnected successfully")
 		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(5 * time.Second):
-		return fmt.Errorf("timeout waiting for goroutines to exit")
 	}
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return fmt.Errorf("timeout waiting for goroutines to exit (%d still running)", c.activeLoops.Load())
 }
 
 // reconnectLoop handles automatic reconnection.
 func (c *Client) reconnectLoop() {
 	defer c.wg.Done()
+	defer c.activeLoops.Add(-1)
 
 	backoff := time.Second
 	maxBackoff := 2 * time.Minute
@@ -954,8 +968,12 @@ func (c *Client) reconnectLoop() {
 	for {
 		select {
 		case <-c.disconnected:
-			// Wait before reconnecting
-			time.Sleep(backoff)
+			// Wait before reconnecting with interruptible sleep
+			select {
+			case <-time.After(backoff):
+			case <-c.stop:
+				return
+			}
 
 			c.reconnectCount.Add(1)
 

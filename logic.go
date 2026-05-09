@@ -11,6 +11,7 @@ import (
 // This avoids the need for mutexes on the pending and subscriptions maps.
 func (c *Client) logicLoop() {
 	defer c.wg.Done()
+	defer c.activeLoops.Add(-1)
 
 	retryTicker := time.NewTicker(5 * time.Second)
 	defer retryTicker.Stop()
@@ -38,6 +39,7 @@ func (c *Client) logicLoop() {
 			for _, req := range c.publishQueue {
 				req.token.complete(ErrClientDisconnected)
 			}
+			c.pending = nil
 			c.publishQueue = nil
 			c.sessionLock.Unlock()
 			return
@@ -246,6 +248,25 @@ func (c *Client) handlePublish(p *packets.PublishPacket) {
 			if c.handlerSem != nil {
 				defer func() { <-c.handlerSem }()
 			}
+
+			if c.opts.HandlerTimeout > 0 {
+				done := make(chan struct{})
+				go func() {
+					h(c, msg)
+					close(done)
+				}()
+
+				select {
+				case <-done:
+					return
+				case <-time.After(c.opts.HandlerTimeout):
+					c.opts.Logger.Warn("message handler exceeded timeout",
+						"topic", msg.Topic,
+						"timeout", c.opts.HandlerTimeout)
+					return
+				}
+			}
+
 			h(c, msg)
 		}()
 	}
@@ -479,6 +500,7 @@ func (c *Client) retryPending() {
 }
 
 // nextID generates the next packet ID (1-65535, cycling).
+// Returns 0 if all possible packet IDs are currently in use.
 func (c *Client) nextID() uint16 {
 	for range 65535 {
 		c.nextPacketID++
@@ -489,10 +511,7 @@ func (c *Client) nextID() uint16 {
 			return c.nextPacketID
 		}
 	}
-	// This should only happen if we have 65535 pending packets.
-	// In that case, we return the next ID anyway as a fallback,
-	// though it will cause a collision.
-	return c.nextPacketID
+	return 0
 }
 
 // handleDisconnectPacket processes a DISCONNECT packet from the server.

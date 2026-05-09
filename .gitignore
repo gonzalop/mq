@@ -3,10 +3,13 @@ examples/auto_reconnect/auto_reconnect
 examples/errors/errors
 examples/local_routing/local_routing
 examples/lwt/lwt
+examples/middleware/middleware
 examples/persistent/persistent
 examples/scram_auth/scram_auth
 examples/simple/simple
 examples/throughput/throughput
+examples/throughput/paho_v3/paho_v3
+examples/throughput/paho_v5/paho_v5
 examples/tls/tls
 examples/topic_aliases/topic_aliases
 examples/v5_properties/v5_properties
@@ -18,11 +21,8 @@ examples/wildcards/wildcards
 *.exe
 *.test
 *.out
-/bin
-/dist
-*.exe
-*.test
-*.out
+coverage.html
+coverage.txt
 
 # IDEs
 .idea/

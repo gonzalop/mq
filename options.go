@@ -58,6 +58,10 @@ type clientOptions struct {
 	// Default is 100. Set to 0 for unlimited (not recommended for production).
 	MaxHandlerConcurrency int
 
+	// HandlerTimeout is the maximum time a message handler is allowed to run.
+	// 0 = no timeout (default).
+	HandlerTimeout time.Duration
+
 	// MaxAuthExchanges limits the number of AUTH packet exchanges per connection.
 	// Default is 10.
 	MaxAuthExchanges uint16
@@ -136,6 +140,20 @@ type clientOptions struct {
 	// Interceptors for message handling and publishing.
 	HandlerInterceptors []HandlerInterceptor
 	PublishInterceptors []PublishInterceptor
+}
+
+// LogValue implements slog.LogValuer to mask sensitive information.
+func (o *clientOptions) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("server", o.Server),
+		slog.String("client_id", o.ClientID),
+		slog.String("username", o.Username),
+		slog.String("password", "***"),
+		slog.Duration("keep_alive", o.KeepAlive),
+		slog.Bool("clean_session", o.CleanSession),
+		slog.Bool("auto_reconnect", o.AutoReconnect),
+		slog.Int("protocol", int(o.ProtocolVersion)),
+	)
 }
 
 const (

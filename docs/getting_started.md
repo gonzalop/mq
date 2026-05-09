@@ -74,10 +74,12 @@ client, err := mq.DialContext(ctx, server, options...)
 - `WithDialer(d ContextDialer)` - Set custom dialer (e.g. for WebSockets or proxy).
 - `WithKeepAlive(duration time.Duration)` - Set MQTT keepalive interval (default: 60s).
 - `WithHandlerInterceptor(interceptor)` - Add an interceptor for incoming messages.
+- `WithHandlerTimeout(duration time.Duration)` - Set maximum time a message handler is allowed to run (default: 0/unlimited).
 - `WithPublishInterceptor(interceptor)` - Add an interceptor for outgoing messages.
 - `WithIncomingQueueSize(size int)` - Set internal incoming buffer size (default: 100).
 - `WithOutgoingQueueSize(size int)` - Set internal outgoing buffer size (default: 1000).
 - `WithLogger(logger)` - Set custom log/slog Logger.
+- `WithMaxHandlerConcurrency(concurrency int)` - Limit the number of simultaneous message handler goroutines (default: 100).
 - `WithMaxIncomingPacket(max int)` - Set maximum incoming packet size (default: 256MB).
 - `WithMaxPacketSize(bytes int)` - Set maximum packet size sent in CONNECT properties (v5.0) and enforce limit locally.
 - `WithMaxPayloadSize(bytes int)` - Set maximum outgoing payload size (default: 256MB).

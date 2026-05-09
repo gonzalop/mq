@@ -361,8 +361,14 @@ func (c *Client) resubscribeAll() {
 
 		// Send one packet for each group
 		for _, g := range groups {
+			packetID := c.nextID()
+			if packetID == 0 {
+				c.opts.Logger.Error("failed to resubscribe: no packet IDs available")
+				return
+			}
+
 			pkt := &packets.SubscribePacket{
-				PacketID:          c.nextID(),
+				PacketID:          packetID,
 				Topics:            g.topics,
 				QoS:               g.qos,
 				NoLocal:           g.noLocal,

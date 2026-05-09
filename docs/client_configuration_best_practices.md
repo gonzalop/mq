@@ -83,10 +83,16 @@ The library uses internal channels for managing packets between the logic loop a
 - **Behavior:** When the limit is reached, the internal processing loop blocks until a handler finishes. This provides natural backpressure but can affect keepalive if handlers are extremely slow.
 - **Tuning:** Increase for high-performance servers with many fast handlers. Decrease for constrained devices. Set to `0` for unlimited (not recommended).
 
+**4. Handler Timeout (`WithHandlerTimeout`)**
+- **Purpose:** Prevents slow or hung message handlers from permanently occupying slots in the concurrency pool.
+- **Behavior:** If a handler exceeds the timeout, the library logs a warning and releases the concurrency slot, allowing other messages to be processed.
+- **Recommendation:** Always set a reasonable timeout (e.g., `5s` or `10s`) if your handlers perform external I/O or database calls.
+
 ```go
-// Example: Limit to 50 concurrent handlers
+// Example: Limit to 50 concurrent handlers with a 5s timeout
 client, err := mq.Dial(server,
     mq.WithMaxHandlerConcurrency(50),
+    mq.WithHandlerTimeout(5 * time.Second),
 )
 ```
 
@@ -512,6 +518,14 @@ logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 client, err := mq.Dial(server,
     mq.WithLogger(logger),
 )
+```
+
+#### Security: Log Sanitization
+The library implements `slog.LogValuer` for its configuration objects. This ensures that sensitive fields like `Password` are automatically masked as `***` when the client options are logged, reducing the risk of accidental credential exposure.
+
+```go
+// Safe logging - the password will not appear in the output
+slog.Info("Client configured", "options", client.Options())
 ```
 
 ### Metrics to Track

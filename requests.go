@@ -76,6 +76,11 @@ func (c *Client) internalPublish(req *publishRequest) {
 	}
 
 	pkt.PacketID = c.nextID()
+	if pkt.PacketID == 0 {
+		c.sessionLock.Unlock()
+		req.token.complete(ErrNoPacketIDsAvailable)
+		return
+	}
 
 	c.pending[pkt.PacketID] = &pendingOp{
 		packet:    pkt,
@@ -109,6 +114,11 @@ func (c *Client) sendPublishLocked(req *publishRequest) bool {
 	pkt := req.packet
 
 	pkt.PacketID = c.nextID()
+	if pkt.PacketID == 0 {
+		c.sessionLock.Unlock()
+		req.token.complete(ErrNoPacketIDsAvailable)
+		return false
+	}
 
 	c.pending[pkt.PacketID] = &pendingOp{
 		packet:    pkt,
@@ -164,6 +174,11 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 	}
 
 	pkt.PacketID = c.nextID()
+	if pkt.PacketID == 0 {
+		c.sessionLock.Unlock()
+		req.token.complete(ErrNoPacketIDsAvailable)
+		return
+	}
 
 	c.pending[pkt.PacketID] = &pendingOp{
 		packet:    pkt,
@@ -241,6 +256,11 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 	}
 
 	pkt.PacketID = c.nextID()
+	if pkt.PacketID == 0 {
+		c.sessionLock.Unlock()
+		req.token.complete(ErrNoPacketIDsAvailable)
+		return
+	}
 
 	c.pending[pkt.PacketID] = &pendingOp{
 		packet:    pkt,
