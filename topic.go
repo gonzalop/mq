@@ -215,7 +215,11 @@ func validatePayloadFormat(payload []byte, props *Properties) error {
 // permissive (all features allowed, QoS 2 max), so calls before the first
 // CONNACK are safe.
 func (c *Client) validatePublishCaps(topic string, payload []byte, opts *PublishOptions) error {
-	caps := c.serverCaps // snapshot; struct copy is atomic enough for this read
+	state := c.connState.Load()
+	if state == nil {
+		return nil
+	}
+	caps := state.caps
 
 	// MaximumQoS: server may only support QoS 0 or 1.
 	if caps.MaximumQoS < opts.QoS {
@@ -255,7 +259,11 @@ func (c *Client) validatePublishCaps(topic string, payload []byte, opts *Publish
 // Called only for MQTT v5.0 connections. The serverCaps zero-value is
 // permissive (all features allowed), so calls before the first CONNACK are safe.
 func (c *Client) validateSubscribeCaps(topic string, qos QoS) error {
-	caps := c.serverCaps // snapshot; struct copy is atomic enough for this read
+	state := c.connState.Load()
+	if state == nil {
+		return nil
+	}
+	caps := state.caps
 
 	// WildcardAvailable: server may prohibit wildcard subscriptions entirely.
 	if !caps.WildcardAvailable {

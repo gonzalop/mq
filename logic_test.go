@@ -32,8 +32,8 @@ func TestHandlePubcomp(t *testing.T) {
 		PacketID: packetID,
 	}
 
-	// Call handlePubcomp
-	c.handlePubcomp(pubcomp)
+	// Call handleAck
+	c.handleAck(pubcomp.PacketID, pubcomp.ReasonCode)
 
 	// Verify operation is removed from pending
 	if _, ok := c.pending[packetID]; ok {
@@ -83,8 +83,8 @@ func TestHandlePubcomp_V5_Error(t *testing.T) {
 		ReasonCode: 0x92, // Packet identifier not found
 	}
 
-	// Call handlePubcomp
-	c.handlePubcomp(pubcomp)
+	// Call handleAck
+	c.handleAck(pubcomp.PacketID, pubcomp.ReasonCode)
 
 	// Verify operation is removed from pending
 	if _, ok := c.pending[packetID]; ok {
@@ -110,6 +110,9 @@ type MockLogicSessionStore struct {
 	deletePendingPublishCalled bool
 	deletedPacketID            uint16
 	deleteError                error
+
+	saveReceivedQoS2Called bool
+	savedPacketID          uint16
 }
 
 func (m *MockLogicSessionStore) SavePendingPublish(_ uint16, _ *PersistedPublish) error {
@@ -131,7 +134,11 @@ func (m *MockLogicSessionStore) DeleteSubscription(_ string) error { return nil 
 func (m *MockLogicSessionStore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {
 	return nil, nil
 }
-func (m *MockLogicSessionStore) SaveReceivedQoS2(_ uint16) error   { return nil }
+func (m *MockLogicSessionStore) SaveReceivedQoS2(packetID uint16) error {
+	m.saveReceivedQoS2Called = true
+	m.savedPacketID = packetID
+	return nil
+}
 func (m *MockLogicSessionStore) DeleteReceivedQoS2(_ uint16) error { return nil }
 func (m *MockLogicSessionStore) LoadReceivedQoS2() (map[uint16]struct{}, error) {
 	return nil, nil
@@ -167,8 +174,8 @@ func TestHandlePubcomp_WithSessionStore(t *testing.T) {
 		PacketID: packetID,
 	}
 
-	// Call handlePubcomp
-	c.handlePubcomp(pubcomp)
+	// Call handleAck
+	c.handleAck(pubcomp.PacketID, pubcomp.ReasonCode)
 
 	// Verify operation is removed from pending
 	if _, ok := c.pending[packetID]; ok {
@@ -215,8 +222,8 @@ func TestHandlePubcomp_WithSessionStore_Error(t *testing.T) {
 		PacketID: packetID,
 	}
 
-	// Call handlePubcomp
-	c.handlePubcomp(pubcomp)
+	// Call handleAck
+	c.handleAck(pubcomp.PacketID, pubcomp.ReasonCode)
 
 	// Verify operation is removed from pending (error in store shouldn't stop processing)
 	if _, ok := c.pending[packetID]; ok {
@@ -226,6 +233,60 @@ func TestHandlePubcomp_WithSessionStore_Error(t *testing.T) {
 	// Verify session store called
 	if !store.deletePendingPublishCalled {
 		t.Error("expected DeletePendingPublish to be called")
+	}
+}
+
+func TestHandleQoS2Duplicate(t *testing.T) {
+	c := &Client{
+		receivedQoS2: make(map[uint16]struct{}),
+		outgoing:     make(chan packets.Packet, 10),
+		stop:         make(chan struct{}),
+		opts:         defaultOptions("tcp://localhost:1883"),
+	}
+
+	packetID := uint16(42)
+
+	// 1. First time - should return false (not a duplicate)
+	if isDup := c.handleQoS2Duplicate(packetID); isDup {
+		t.Error("expected first call to return false")
+	}
+
+	if _, exists := c.receivedQoS2[packetID]; !exists {
+		t.Error("expected packetID to be added to receivedQoS2")
+	}
+
+	// 2. Second time - should return true (is a duplicate)
+	if isDup := c.handleQoS2Duplicate(packetID); !isDup {
+		t.Error("expected second call to return true")
+	}
+
+	// Should have sent a PUBREC
+	select {
+	case pkt := <-c.outgoing:
+		pubrec, ok := pkt.(*packets.PubrecPacket)
+		if !ok {
+			t.Errorf("expected PUBREC packet, got %T", pkt)
+		} else if pubrec.PacketID != packetID {
+			t.Errorf("expected PUBREC with packetID %d, got %d", packetID, pubrec.PacketID)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Error("expected PUBREC to be sent to outgoing channel")
+	}
+
+	// 3. Test with session store
+	store := &MockLogicSessionStore{}
+	c.opts.SessionStore = store
+	packetID2 := uint16(43)
+
+	if isDup := c.handleQoS2Duplicate(packetID2); isDup {
+		t.Error("expected first call for new packet to return false")
+	}
+
+	if !store.saveReceivedQoS2Called {
+		t.Error("expected SaveReceivedQoS2 to be called on session store")
+	}
+	if store.savedPacketID != packetID2 {
+		t.Errorf("expected saved packet ID %d, got %d", packetID2, store.savedPacketID)
 	}
 }
 

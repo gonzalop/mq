@@ -12,30 +12,38 @@ func (c *Client) internalPublish(req *publishRequest) {
 
 	c.sessionLock.Lock()
 
+	state := c.connState.Load()
+	var caps serverCapabilities
+	if state != nil {
+		caps = state.caps
+	} else {
+		caps = extractServerCapabilities(nil)
+	}
+
 	// Validate packet size against server's maximum (fail-fast)
-	if c.serverCaps.MaximumPacketSize > 0 {
+	if caps.MaximumPacketSize > 0 {
 		n, _ := pkt.WriteTo(io.Discard)
 		packetSize := uint32(n)
 
-		if packetSize > c.serverCaps.MaximumPacketSize {
+		if packetSize > caps.MaximumPacketSize {
 			req.token.complete(fmt.Errorf("packet size %d bytes exceeds server maximum %d bytes",
-				packetSize, c.serverCaps.MaximumPacketSize))
+				packetSize, caps.MaximumPacketSize))
 			c.sessionLock.Unlock()
 			return
 		}
 	}
 
 	// Enforce RetainAvailable validation (fail-fast)
-	if pkt.Retain && !c.serverCaps.RetainAvailable {
+	if pkt.Retain && !caps.RetainAvailable {
 		req.token.complete(ErrServerNoRetain)
 		c.sessionLock.Unlock()
 		return
 	}
 
 	// Enforce MaximumQoS validation (fail-fast)
-	if pkt.QoS > c.serverCaps.MaximumQoS {
+	if pkt.QoS > caps.MaximumQoS {
 		req.token.complete(fmt.Errorf("%w: requested QoS %d, server maximum is %d",
-			ErrQoSExceedsServerMax, pkt.QoS, c.serverCaps.MaximumQoS))
+			ErrQoSExceedsServerMax, pkt.QoS, caps.MaximumQoS))
 		c.sessionLock.Unlock()
 		return
 	}
@@ -67,8 +75,8 @@ func (c *Client) internalPublish(req *publishRequest) {
 	}
 
 	// Flow control for QoS > 0
-	if c.serverCaps.ReceiveMaximum > 0 {
-		if c.inFlightCount >= int(c.serverCaps.ReceiveMaximum) {
+	if state != nil && state.caps.ReceiveMaximum > 0 {
+		if c.inFlightCount >= int(state.caps.ReceiveMaximum) {
 			c.publishQueue = append(c.publishQueue, req)
 			c.sessionLock.Unlock()
 			return
@@ -115,7 +123,6 @@ func (c *Client) sendPublishLocked(req *publishRequest) bool {
 
 	pkt.PacketID = c.nextID()
 	if pkt.PacketID == 0 {
-		c.sessionLock.Unlock()
 		req.token.complete(ErrNoPacketIDsAvailable)
 		return false
 	}
@@ -163,12 +170,13 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 
 	// Capability checks for QoS, wildcards, etc. are handled in Subscribe() pre-flight.
 	// We still check packet size here because it depends on the final serialized form.
-	if c.serverCaps.MaximumPacketSize > 0 {
+	state := c.connState.Load()
+	if state != nil && state.caps.MaximumPacketSize > 0 {
 		n, _ := pkt.WriteTo(io.Discard)
 		packetSize := uint32(n)
-		if packetSize > c.serverCaps.MaximumPacketSize {
+		if packetSize > state.caps.MaximumPacketSize {
 			req.token.complete(fmt.Errorf("%w: packet size %d bytes exceeds server maximum %d bytes",
-				ErrPacketExceedsServerMax, packetSize, c.serverCaps.MaximumPacketSize))
+				ErrPacketExceedsServerMax, packetSize, state.caps.MaximumPacketSize))
 			c.sessionLock.Unlock()
 			return
 		}
@@ -245,12 +253,13 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 	c.sessionLock.Lock()
 
 	// Validate packet size against server's maximum
-	if c.serverCaps.MaximumPacketSize > 0 {
+	state := c.connState.Load()
+	if state != nil && state.caps.MaximumPacketSize > 0 {
 		n, _ := pkt.WriteTo(io.Discard)
 		packetSize := uint32(n)
-		if packetSize > c.serverCaps.MaximumPacketSize {
+		if packetSize > state.caps.MaximumPacketSize {
 			req.token.complete(fmt.Errorf("%w: packet size %d bytes exceeds server maximum %d bytes",
-				ErrPacketExceedsServerMax, packetSize, c.serverCaps.MaximumPacketSize))
+				ErrPacketExceedsServerMax, packetSize, state.caps.MaximumPacketSize))
 			c.sessionLock.Unlock()
 			return
 		}

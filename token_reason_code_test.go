@@ -22,7 +22,8 @@ func TestTokenReasonCode_Puback(t *testing.T) {
 		tok := newToken()
 		c.pending[1] = &pendingOp{token: tok}
 
-		c.handlePuback(&packets.PubackPacket{PacketID: 1, ReasonCode: 0x00, Version: 5})
+		p := &packets.PubackPacket{PacketID: 1, ReasonCode: 0x00, Version: 5}
+		c.handleAck(p.PacketID, p.ReasonCode)
 
 		if tok.ReasonCode() != ReasonCodeSuccess {
 			t.Errorf("expected ReasonCodeSuccess, got 0x%02X", tok.ReasonCode())
@@ -37,7 +38,8 @@ func TestTokenReasonCode_Puback(t *testing.T) {
 		tok := newToken()
 		c.pending[1] = &pendingOp{token: tok}
 
-		c.handlePuback(&packets.PubackPacket{PacketID: 1, ReasonCode: 0x10, Version: 5})
+		p := &packets.PubackPacket{PacketID: 1, ReasonCode: 0x10, Version: 5}
+		c.handleAck(p.PacketID, p.ReasonCode)
 
 		if tok.ReasonCode() != ReasonCodeNoMatchingSubscribers {
 			t.Errorf("expected ReasonCodeNoMatchingSubscribers (0x10), got 0x%02X", tok.ReasonCode())
@@ -52,7 +54,8 @@ func TestTokenReasonCode_Puback(t *testing.T) {
 		tok := newToken()
 		c.pending[1] = &pendingOp{token: tok}
 
-		c.handlePuback(&packets.PubackPacket{PacketID: 1, ReasonCode: 0x80, Version: 5})
+		p := &packets.PubackPacket{PacketID: 1, ReasonCode: 0x80, Version: 5}
+		c.handleAck(p.PacketID, p.ReasonCode)
 
 		if tok.ReasonCode() != ReasonCodeUnspecifiedError {
 			t.Errorf("expected ReasonCodeUnspecifiedError (0x80), got 0x%02X", tok.ReasonCode())
@@ -72,7 +75,8 @@ func TestTokenReasonCode_Puback(t *testing.T) {
 		tok := newToken()
 		c.pending[1] = &pendingOp{token: tok}
 
-		c.handlePuback(&packets.PubackPacket{PacketID: 1, ReasonCode: 0x10, Version: 4})
+		p := &packets.PubackPacket{PacketID: 1, ReasonCode: 0x10, Version: 4}
+		c.handleAck(p.PacketID, p.ReasonCode)
 
 		if tok.ReasonCode() != ReasonCodeSuccess {
 			t.Errorf("v3 should leave reason code as default (0x00), got 0x%02X", tok.ReasonCode())
@@ -96,7 +100,8 @@ func TestTokenReasonCode_Pubcomp(t *testing.T) {
 		c.pending[1] = &pendingOp{token: tok, qos: 2}
 		c.inFlightCount = 1
 
-		c.handlePubcomp(&packets.PubcompPacket{PacketID: 1, ReasonCode: 0x00})
+		p := &packets.PubcompPacket{PacketID: 1, ReasonCode: 0x00}
+		c.handleAck(p.PacketID, p.ReasonCode)
 
 		if tok.ReasonCode() != ReasonCodeSuccess {
 			t.Errorf("expected ReasonCodeSuccess, got 0x%02X", tok.ReasonCode())
@@ -109,7 +114,8 @@ func TestTokenReasonCode_Pubcomp(t *testing.T) {
 		c.pending[1] = &pendingOp{token: tok, qos: 2}
 		c.inFlightCount = 1
 
-		c.handlePubcomp(&packets.PubcompPacket{PacketID: 1, ReasonCode: 0x92})
+		p := &packets.PubcompPacket{PacketID: 1, ReasonCode: 0x92}
+		c.handleAck(p.PacketID, p.ReasonCode)
 
 		if tok.ReasonCode() != ReasonCode(0x92) {
 			t.Errorf("expected reason code 0x92, got 0x%02X", tok.ReasonCode())

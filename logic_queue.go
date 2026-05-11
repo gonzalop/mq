@@ -5,10 +5,15 @@ func (c *Client) processPublishQueue() {
 		return
 	}
 
+	state := c.connState.Load()
+	if state == nil {
+		return
+	}
+
 	// Check current in-flight count
-	if c.serverCaps.ReceiveMaximum > 0 {
+	if state.caps.ReceiveMaximum > 0 {
 		// Process queue while we have capacity
-		for len(c.publishQueue) > 0 && c.inFlightCount < int(c.serverCaps.ReceiveMaximum) {
+		for len(c.publishQueue) > 0 && c.inFlightCount < int(state.caps.ReceiveMaximum) {
 			// Peek from queue
 			req := c.publishQueue[0]
 

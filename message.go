@@ -1,5 +1,7 @@
 package mq
 
+import "context"
+
 // Message represents an MQTT message received on a subscribed topic.
 //
 // This struct is designed to be compatible with both MQTT v3.1.1 and v5.0.
@@ -26,4 +28,9 @@ type Message struct {
 	// MQTT v5.0 properties.
 	// This field is nil for MQTT v3.1.1 connections or when no properties are present.
 	Properties *Properties
+
+	// Context for the message handler.
+	// This context is cancelled if the handler exceeds the configured HandlerTimeout
+	// or if the client is disconnected.
+	Context context.Context
 }

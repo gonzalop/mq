@@ -13,7 +13,7 @@ func newTestClient(opts *clientOptions) *Client {
 	if opts == nil {
 		opts = defaultOptions("tcp://localhost:1883")
 	}
-	return &Client{
+	c := &Client{
 		opts:            opts,
 		outgoing:        make(chan packets.Packet, opts.OutgoingQueueSize),
 		incoming:        make(chan packets.Packet, opts.IncomingQueueSize),
@@ -29,6 +29,10 @@ func newTestClient(opts *clientOptions) *Client {
 		disconnected:    make(chan struct{}, 1),
 		publishQueue:    []*publishRequest{},
 	}
+	c.connState.Store(&connectionState{
+		caps: extractServerCapabilities(nil),
+	})
+	return c
 }
 
 // TestQueueProcessingDeadlock verifies that the logicLoop does not deadlock
@@ -42,9 +46,11 @@ func TestQueueProcessingDeadlock(t *testing.T) {
 	c := newTestClient(opts)
 	c.outgoing <- &packets.PingreqPacket{} // Fill it up immediately
 
-	c.serverCaps = serverCapabilities{
-		ReceiveMaximum: 1,
-	}
+	c.connState.Store(&connectionState{
+		caps: serverCapabilities{
+			ReceiveMaximum: 1,
+		},
+	})
 	// Note: We do NOT start writeLoop, so outgoing stays full.
 
 	// 2. Setup State
@@ -114,9 +120,11 @@ func TestQueuedTokensCompletedOnFullChannel(t *testing.T) {
 	c := newTestClient(opts)
 	c.outgoing <- &packets.PingreqPacket{} // Fill it up
 
-	c.serverCaps = serverCapabilities{
-		ReceiveMaximum: 1,
-	}
+	c.connState.Store(&connectionState{
+		caps: serverCapabilities{
+			ReceiveMaximum: 1,
+		},
+	})
 
 	// 2. Add an in-flight message that we will ACK
 	c.pending[1] = &pendingOp{

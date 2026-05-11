@@ -61,11 +61,13 @@ func TestOnServerRedirectCallback(t *testing.T) {
 
 				// Simulate what happens in connect()
 				if connackProps.Presence&packets.PresServerReference != 0 {
-					client.serverReference = connackProps.ServerReference
+					client.connState.Store(&connectionState{
+						serverReference: connackProps.ServerReference,
+					})
 
 					// Invoke callback if configured
 					if client.opts.OnServerRedirect != nil {
-						client.opts.OnServerRedirect(client.serverReference)
+						client.opts.OnServerRedirect(client.ServerReference())
 					}
 				}
 			}
@@ -103,9 +105,11 @@ func TestOnServerRedirectCallbackMultiple(t *testing.T) {
 	client := &Client{opts: opts}
 
 	// First redirect
-	client.serverReference = "mqtt://server1.example.com:1883"
+	client.connState.Store(&connectionState{
+		serverReference: "mqtt://server1.example.com:1883",
+	})
 	if client.opts.OnServerRedirect != nil {
-		client.opts.OnServerRedirect(client.serverReference)
+		client.opts.OnServerRedirect(client.ServerReference())
 	}
 
 	if callCount != 1 {
@@ -116,9 +120,11 @@ func TestOnServerRedirectCallbackMultiple(t *testing.T) {
 	}
 
 	// Second redirect
-	client.serverReference = "mqtt://server2.example.com:1883"
+	client.connState.Store(&connectionState{
+		serverReference: "mqtt://server2.example.com:1883",
+	})
 	if client.opts.OnServerRedirect != nil {
-		client.opts.OnServerRedirect(client.serverReference)
+		client.opts.OnServerRedirect(client.ServerReference())
 	}
 
 	if callCount != 2 {

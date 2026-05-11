@@ -364,7 +364,7 @@ func TestAuthExchangeLimit(t *testing.T) {
 		}
 
 		// B. Keep sending AUTH (Challenge) until limit (default 10)
-		for i := 0; i < 15; i++ {
+		for range 15 {
 			authChallenge := &packets.AuthPacket{
 				Version:    5,
 				ReasonCode: packets.AuthReasonContinue,

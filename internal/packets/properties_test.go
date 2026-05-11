@@ -161,6 +161,47 @@ func compareProperties(a, b *Properties) bool {
 	return reflect.DeepEqual(a, b)
 }
 
+func TestDecodePropertiesErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		buf  []byte
+	}{
+		{
+			name: "Buffer too short for length",
+			buf:  []byte{},
+		},
+		{
+			name: "Buffer too short for data",
+			buf:  []byte{0x05, 0x01, 0x01}, // Length 5, but only 2 bytes of data
+		},
+		{
+			name: "Unsupported property ID",
+			buf:  []byte{0x02, 0xFF, 0x00}, // Length 2, ID 0xFF (unsupported)
+		},
+		{
+			name: "Duplicate property ID",
+			buf:  []byte{0x04, 0x01, 0x01, 0x01, 0x01}, // Length 4, ID 0x01 (PayloadFormatIndicator) twice
+		},
+		{
+			name: "Malformed property (byte)",
+			buf:  []byte{0x01, 0x01}, // Length 1, ID 0x01, missing value
+		},
+		{
+			name: "Malformed property (string)",
+			buf:  []byte{0x02, 0x03, 0x00}, // Length 2, ID 0x03 (ContentType), length prefix 0x0001 but missing byte
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := decodeProperties(tt.buf)
+			if err == nil {
+				t.Error("expected error, got nil")
+			}
+		})
+	}
+}
+
 func TestWillDelayIntervalEncoding(t *testing.T) {
 	props := &Properties{
 		WillDelayInterval: 2,

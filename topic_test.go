@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -333,6 +334,140 @@ func TestTopicMatch_WildcardStartingWithDollar_Compliance(t *testing.T) {
 			result := MatchTopic(tt.filter, tt.topic)
 			if result != tt.match {
 				t.Errorf("MatchTopic(%q, %q) = %v, want %v", tt.filter, tt.topic, result, tt.match)
+			}
+		})
+	}
+}
+
+func TestValidatePublishCaps(t *testing.T) {
+	c := &Client{}
+	c.connState.Store(&connectionState{
+		caps: serverCapabilities{
+			MaximumQoS:        1,
+			RetainAvailable:   false,
+			MaximumPacketSize: 100,
+		},
+	})
+
+	tests := []struct {
+		name    string
+		topic   string
+		qos     QoS
+		retain  bool
+		payload []byte
+		wantErr error
+	}{
+		{
+			name:    "valid qos 1",
+			topic:   "test",
+			qos:     AtLeastOnce,
+			wantErr: nil,
+		},
+		{
+			name:    "invalid qos 2",
+			topic:   "test",
+			qos:     ExactlyOnce,
+			wantErr: ErrQoSExceedsServerMax,
+		},
+		{
+			name:    "invalid retain",
+			topic:   "test",
+			qos:     AtLeastOnce,
+			retain:  true,
+			wantErr: ErrServerNoRetain,
+		},
+		{
+			name:    "packet too large",
+			topic:   "test",
+			qos:     AtLeastOnce,
+			payload: make([]byte, 110),
+			wantErr: ErrPacketExceedsServerMax,
+		},
+		{
+			name:    "packet just right",
+			topic:   "test",
+			qos:     AtLeastOnce,
+			payload: make([]byte, 80), // 2 (topic len) + 4 (topic) + 2 (packet id) + 80 (payload) = 88 < 100
+			wantErr: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := &PublishOptions{QoS: uint8(tt.qos), Retain: tt.retain}
+			err := c.validatePublishCaps(tt.topic, tt.payload, opts)
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Errorf("validatePublishCaps() error = %v, want nil", err)
+				}
+			} else {
+				if err == nil || !errors.Is(err, tt.wantErr) {
+					t.Errorf("validatePublishCaps() error = %v, want %v", err, tt.wantErr)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateSubscribeCaps(t *testing.T) {
+	c := &Client{}
+	c.connState.Store(&connectionState{
+		caps: serverCapabilities{
+			MaximumQoS:                  1,
+			WildcardAvailable:           false,
+			SharedSubscriptionAvailable: false,
+		},
+	})
+
+	tests := []struct {
+		name    string
+		topic   string
+		qos     QoS
+		wantErr error
+	}{
+		{
+			name:    "valid simple",
+			topic:   "test",
+			qos:     AtLeastOnce,
+			wantErr: nil,
+		},
+		{
+			name:    "invalid qos 2",
+			topic:   "test",
+			qos:     ExactlyOnce,
+			wantErr: ErrQoSExceedsServerMax,
+		},
+		{
+			name:    "invalid wildcard plus",
+			topic:   "test/+",
+			qos:     AtLeastOnce,
+			wantErr: ErrServerNoWildcards,
+		},
+		{
+			name:    "invalid wildcard hash",
+			topic:   "test/#",
+			qos:     AtLeastOnce,
+			wantErr: ErrServerNoWildcards,
+		},
+		{
+			name:    "invalid shared sub",
+			topic:   "$share/group/test",
+			qos:     AtLeastOnce,
+			wantErr: ErrServerNoSharedSubs,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := c.validateSubscribeCaps(tt.topic, tt.qos)
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Errorf("validateSubscribeCaps() error = %v, want nil", err)
+				}
+			} else {
+				if err == nil || !errors.Is(err, tt.wantErr) {
+					t.Errorf("validateSubscribeCaps() error = %v, want %v", err, tt.wantErr)
+				}
 			}
 		})
 	}

@@ -18,8 +18,10 @@ func TestSubscribeWithUserProperties(t *testing.T) {
 		pending:       make(map[uint16]*pendingOp),
 		stop:          make(chan struct{}),
 		nextPacketID:  1,
-		serverCaps:    extractServerCapabilities(nil),
 	}
+	c.connState.Store(&connectionState{
+		caps: extractServerCapabilities(nil),
+	})
 
 	topic := "test/topic"
 	handler := func(_ *Client, _ Message) {}
@@ -82,8 +84,10 @@ func TestResubscribeWithUserPropertiesGrouping(t *testing.T) {
 			Logger:          testLogger(),
 		},
 		nextPacketID: 1,
-		serverCaps:   extractServerCapabilities(nil),
 	}
+	c.connState.Store(&connectionState{
+		caps: extractServerCapabilities(nil),
+	})
 
 	// 1. Subscription with User Props A
 	c.subscriptions["topic/A"] = subscriptionEntry{

@@ -18,8 +18,8 @@ func TestSubscribe(t *testing.T) {
 		pending:       make(map[uint16]*pendingOp),
 		stop:          make(chan struct{}),
 		nextPacketID:  1,
-		serverCaps:    extractServerCapabilities(nil),
 	}
+	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
 
 	topic := "test/topic"
 	handler := func(_ *Client, _ Message) {}
@@ -70,8 +70,8 @@ func TestUnsubscribe(t *testing.T) {
 		pending:       make(map[uint16]*pendingOp),
 		stop:          make(chan struct{}),
 		nextPacketID:  1,
-		serverCaps:    extractServerCapabilities(nil),
 	}
+	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
 
 	topic := "test/topic"
 
@@ -112,8 +112,8 @@ func TestResubscribeAll(t *testing.T) {
 		pending:      make(map[uint16]*pendingOp),
 		stop:         make(chan struct{}),
 		nextPacketID: 1,
-		serverCaps:   extractServerCapabilities(nil),
 	}
+	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
 
 	// resubscribeAll now runs and sends packets directly
 	c.resubscribeAll()
@@ -140,8 +140,8 @@ func TestInternalSubscribe(t *testing.T) {
 		pending:       make(map[uint16]*pendingOp),
 		outgoing:      make(chan packets.Packet, 10),
 		nextPacketID:  1,
-		serverCaps:    extractServerCapabilities(nil),
 	}
+	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
 
 	topic := "test/topic"
 	handler := func(_ *Client, _ Message) {}
@@ -191,8 +191,8 @@ func TestInternalUnsubscribe(t *testing.T) {
 		pending:      make(map[uint16]*pendingOp),
 		outgoing:     make(chan packets.Packet, 10),
 		nextPacketID: 10,
-		serverCaps:   extractServerCapabilities(nil),
 	}
+	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
 
 	topics := []string{"test/topic"}
 	pkt := &packets.UnsubscribePacket{
@@ -252,8 +252,8 @@ func TestResubscribeBatching(t *testing.T) {
 				pending:       make(map[uint16]*pendingOp),
 				outgoing:      make(chan packets.Packet, 100),
 				opts:          defaultOptions("tcp://test:1883"),
-				serverCaps:    extractServerCapabilities(nil),
 			}
+			c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
 
 			// Add test subscriptions
 			for i := 0; i < tt.numTopics; i++ {
@@ -331,8 +331,8 @@ func TestResubscribePacketIDs(t *testing.T) {
 		outgoing:      make(chan packets.Packet, 10),
 		opts:          defaultOptions("tcp://test:1883"),
 		nextPacketID:  0,
-		serverCaps:    extractServerCapabilities(nil),
 	}
+	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
 
 	// Add 250 subscriptions (should create 3 batches)
 	for i := range 250 {
@@ -369,8 +369,8 @@ func TestResubscribeTimestamp(t *testing.T) {
 		pending:       make(map[uint16]*pendingOp),
 		outgoing:      make(chan packets.Packet, 10),
 		opts:          defaultOptions("tcp://test:1883"),
-		serverCaps:    extractServerCapabilities(nil),
 	}
+	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
 
 	// Add some subscriptions
 	for i := range 50 {

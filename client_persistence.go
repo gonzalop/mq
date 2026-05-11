@@ -105,12 +105,44 @@ func (c *Client) checkSessionPresent(sessionPresent bool) error {
 // --- Conversion Helpers ---
 
 func (c *Client) convertToPersistedPublish(req *publishRequest) *PersistedPublish {
-	return &PersistedPublish{
-		Topic:   req.packet.Topic,
+	topic := req.packet.OriginalTopic
+	if topic == "" {
+		topic = req.packet.Topic
+	}
+
+	p := &PersistedPublish{
+		Topic:   topic,
 		Payload: req.packet.Payload,
 		QoS:     req.packet.QoS,
 		Retain:  req.packet.Retain,
 	}
+
+	if req.packet.Properties != nil {
+		p.Properties = &PublishProperties{
+			PayloadFormat:   &req.packet.Properties.PayloadFormatIndicator,
+			MessageExpiry:   &req.packet.Properties.MessageExpiryInterval,
+			ResponseTopic:   req.packet.Properties.ResponseTopic,
+			CorrelationData: req.packet.Properties.CorrelationData,
+			ContentType:     req.packet.Properties.ContentType,
+		}
+
+		// Handle optional uint8/uint32 more carefully if they are zero-value but not present
+		if req.packet.Properties.Presence&packets.PresPayloadFormatIndicator == 0 {
+			p.Properties.PayloadFormat = nil
+		}
+		if req.packet.Properties.Presence&packets.PresMessageExpiryInterval == 0 {
+			p.Properties.MessageExpiry = nil
+		}
+
+		if len(req.packet.Properties.UserProperties) > 0 {
+			p.Properties.UserProperties = make(map[string]string, len(req.packet.Properties.UserProperties))
+			for _, up := range req.packet.Properties.UserProperties {
+				p.Properties.UserProperties[up.Key] = up.Value
+			}
+		}
+	}
+
+	return p
 }
 
 func (c *Client) convertFromPersistedPublish(p *PersistedPublish) *pendingOp {
@@ -121,13 +153,49 @@ func (c *Client) convertFromPersistedPublish(p *PersistedPublish) *pendingOp {
 		QoS:      p.QoS,
 		Retain:   p.Retain,
 		PacketID: 0, // Will be set by caller
+		Version:  c.opts.ProtocolVersion,
+	}
+
+	if p.Properties != nil {
+		pkt.Properties = &packets.Properties{
+			ResponseTopic:   p.Properties.ResponseTopic,
+			CorrelationData: p.Properties.CorrelationData,
+			ContentType:     p.Properties.ContentType,
+		}
+
+		if p.Properties.PayloadFormat != nil {
+			pkt.Properties.PayloadFormatIndicator = *p.Properties.PayloadFormat
+			pkt.Properties.Presence |= packets.PresPayloadFormatIndicator
+		}
+		if p.Properties.MessageExpiry != nil {
+			pkt.Properties.MessageExpiryInterval = *p.Properties.MessageExpiry
+			pkt.Properties.Presence |= packets.PresMessageExpiryInterval
+		}
+
+		// Restore presence bits for strings and slices
+		if pkt.Properties.ResponseTopic != "" {
+			pkt.Properties.Presence |= packets.PresResponseTopic
+		}
+		if len(pkt.Properties.CorrelationData) > 0 {
+			pkt.Properties.Presence |= packets.PresCorrelationData
+		}
+		if pkt.Properties.ContentType != "" {
+			pkt.Properties.Presence |= packets.PresContentType
+		}
+
+		if len(p.Properties.UserProperties) > 0 {
+			pkt.Properties.UserProperties = make([]packets.UserProperty, 0, len(p.Properties.UserProperties))
+			for k, v := range p.Properties.UserProperties {
+				pkt.Properties.UserProperties = append(pkt.Properties.UserProperties, packets.UserProperty{Key: k, Value: v})
+			}
+		}
 	}
 
 	return &pendingOp{
 		packet:    pkt,
 		token:     newToken(),
 		qos:       p.QoS,
-		timestamp: time.Now(), // Reset timestamp
+		timestamp: time.Now(), // Reset timestamp for retry logic
 	}
 }
 

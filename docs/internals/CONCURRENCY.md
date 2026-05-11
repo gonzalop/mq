@@ -8,11 +8,13 @@ The `mq` library uses a shared-state concurrency model protected by mutexes. Thi
 
 ## Locking Strategy
 
-The `Client` struct uses two primary locks to protect its state:
+The `Client` struct uses several mechanisms to protect its state:
 
 1.  **`sessionLock` (`sync.Mutex`)**: This is the "inner" lock and protects the core session state.
 2.  **`connLock` (`sync.RWMutex`)**: This protects the network connection and connection status.
-3.  **`receivedAliasesLock` (`sync.RWMutex`)**: This protects the mapping of inbound Topic Aliases (ID -> Topic Name) for MQTT v5.0.
+3.  **`connState` (`atomic.Pointer[connectionState]`)**: This provides a thread-safe, immutable snapshot of connection-time properties and server capabilities (MQTT v5.0).
+4.  **`receivedAliasesLock` (`sync.RWMutex`)**: This protects the mapping of inbound Topic Aliases (ID -> Topic Name) for MQTT v5.0.
+5.  **`topicAliasesLock` (`sync.Mutex`)**: This protects the mapping of outbound Topic Aliases (Topic Name -> ID) for MQTT v5.0.
 
 ### `sessionLock` Protected State
 
@@ -24,12 +26,13 @@ The `sessionLock` MUST be held when accessing or modifying the following fields:
 -   `inFlightCount`: Count of QoS 1 & 2 messages currently in flight.
 -   `publishQueue`: Slice of buffered publish requests awaiting flow control credits.
 -   `receivedQoS2`: Map of received QoS 2 packet IDs (for exactly-once semantics).
+-   `inboundUnacked`: Map of received QoS 1 & 2 packet IDs that are awaiting acknowledgment (used for inbound flow control).
 
 ### Lifecycle Tracking
 
 The client uses an atomic counter, `activeLoops`, to track the number of long-running background goroutines (`logicLoop`, `reconnectLoop`, `readLoop`, `writeLoop`). 
 
-This is used by `Disconnect()` to wait for a clean shutdown without leaking helper goroutines. When `Disconnect()` is called, it signals all loops to stop and then polls `activeLoops` until it reaches zero or the timeout is exceeded.
+This is used by the public `Disconnect()` method to wait for a clean shutdown without leaking helper goroutines. When `Disconnect()` is called, it signals all loops to stop and then polls `activeLoops` until it reaches zero or the timeout is exceeded. Internal disconnections (e.g., due to protocol errors) use a non-blocking path to avoid deadlocking if the disconnect is triggered from within one of these loops.
 
 ### `connLock` Protected State
 
@@ -96,6 +99,7 @@ The `logicLoop` runs in a separate goroutine and handles incoming packets from t
 
 -   **Lock Ordering**: If both locks are needed, `connLock` should generally be acquired *before* `sessionLock` if meaningful, but in practice they protect disjoint sets of state and are rarely held simultaneously.
 -   **No Blocking IO under Lock**: We avoid blocking IO (reading/writing to network) while holding `sessionLock`. Packets are sent via the buffered `outgoing` channel. The `writeLoop` handles the actual socket write.
+-   **Non-Blocking Internal Disconnect**: To prevent deadlocks, internal methods that trigger a client shutdown (like protocol error handlers in the `logicLoop`) must use the non-blocking disconnect path. This allows the calling loop to terminate gracefully after signaling the other loops to stop.
 -   **Callbacks**: User callbacks are invoked in separate goroutines *without* holding `sessionLock`. This ensures that slow or blocking user code does not block the client's internal logic loop or cause deadlocks if the callback calls client methods.
     -   See "Callback Execution" section below for details on each callback.
 
@@ -114,7 +118,7 @@ All callbacks are executed asynchronously in their own goroutines. This design p
 
 While handlers are asynchronous, the library provides two mechanisms to prevent them from overwhelming the system:
 1. **`MaxHandlerConcurrency`**: A semaphore-based limit on the number of handler goroutines that can run at once.
-2. **`HandlerTimeout`**: A watchdog that logs a warning and releases the semaphore slot if a handler takes too long. This ensures that a single hung handler cannot permanently reduce the client's processing capacity.
+2. **`HandlerTimeout`**: A cancelable `context.Context` is provided in the `Message` struct. If the handler takes longer than the configured timeout, the context is canceled. This allows handlers to respond to timeouts and clean up resources. Additionally, a watchdog logs a warning and releases the semaphore slot to ensure that a single hung handler cannot permanently reduce the client's processing capacity.
 
 ## Interceptors (Middleware)
 
@@ -128,4 +132,3 @@ Because they are part of the execution chain, interceptors should be non-blockin
 ## Thread Safety
 
 All public methods of `Client` are thread-safe and can be called concurrently. Internal methods (prefixed with `internal` or `handle`) usually assume the caller holds the necessary locks (check method documentation).
-

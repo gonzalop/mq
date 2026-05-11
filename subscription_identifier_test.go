@@ -66,8 +66,10 @@ func TestWithSubscriptionIdentifier(t *testing.T) {
 				pending:       make(map[uint16]*pendingOp),
 				subscriptions: make(map[string]subscriptionEntry),
 				stop:          make(chan struct{}),
-				serverCaps:    extractServerCapabilities(nil),
 			}
+			c.connState.Store(&connectionState{
+				caps: extractServerCapabilities(nil),
+			})
 
 			// Subscribe with the test subscription ID
 			// Note: internalSubscribe is called directly by Subscribe
@@ -141,8 +143,10 @@ func TestSubscriptionIdentifierMQTTv311(t *testing.T) {
 		pending:       make(map[uint16]*pendingOp),
 		subscriptions: make(map[string]subscriptionEntry),
 		stop:          make(chan struct{}),
-		serverCaps:    extractServerCapabilities(nil),
 	}
+	c.connState.Store(&connectionState{
+		caps: extractServerCapabilities(nil),
+	})
 
 	token := c.Subscribe("test/topic", AtLeastOnce,
 		func(*Client, Message) {},
@@ -230,8 +234,10 @@ func TestResubscribeBatchWithIDs(t *testing.T) {
 		subscriptions: make(map[string]subscriptionEntry),
 		outgoing:      make(chan packets.Packet, 10),
 		pending:       make(map[uint16]*pendingOp),
-		serverCaps:    extractServerCapabilities(nil),
 	}
+	c.connState.Store(&connectionState{
+		caps: extractServerCapabilities(nil),
+	})
 
 	// Add subscriptions with different IDs
 	c.subscriptions["topic/1"] = subscriptionEntry{

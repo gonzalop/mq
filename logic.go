@@ -53,6 +53,7 @@ func (c *Client) internalResetState() {
 	c.sessionLock.Lock()
 	defer c.sessionLock.Unlock()
 	c.receivedQoS2 = make(map[uint16]struct{})
+	c.inboundUnacked = make(map[uint16]struct{})
 }
 
 // handleIncoming processes incoming packets from the server.
@@ -62,7 +63,7 @@ func (c *Client) handleIncoming(pkt packets.Packet) {
 		c.handlePublish(p)
 
 	case *packets.PubackPacket:
-		c.handlePuback(p)
+		c.handleAck(p.PacketID, p.ReasonCode)
 
 	case *packets.PubrecPacket:
 		c.handlePubrec(p)
@@ -71,7 +72,7 @@ func (c *Client) handleIncoming(pkt packets.Packet) {
 		c.handlePubrel(p)
 
 	case *packets.PubcompPacket:
-		c.handlePubcomp(p)
+		c.handleAck(p.PacketID, p.ReasonCode)
 
 	case *packets.SubackPacket:
 		c.handleSuback(p)
@@ -141,13 +142,13 @@ func (c *Client) processTopicAlias(p *packets.PublishPacket) error {
 	// Validate alias ID
 	if aliasID == 0 {
 		c.opts.Logger.Error("server sent invalid topic alias 0")
-		return c.disconnectWithReason(context.Background(), uint8(ReasonCodeTopicAliasInvalid), nil)
+		return c.disconnectWithReason(context.Background(), uint8(ReasonCodeTopicAliasInvalid), nil, false)
 	}
 
 	// Check if server violated our declared maximum
 	if c.opts.TopicAliasMaximum > 0 && aliasID > c.opts.TopicAliasMaximum {
 		c.opts.Logger.Error("server exceeded topic alias maximum", "alias", aliasID, "max", c.opts.TopicAliasMaximum)
-		return c.disconnectWithReason(context.Background(), uint8(ReasonCodeTopicAliasInvalid), nil)
+		return c.disconnectWithReason(context.Background(), uint8(ReasonCodeTopicAliasInvalid), nil, false)
 	}
 
 	if p.Topic == "" {
@@ -158,7 +159,7 @@ func (c *Client) processTopicAlias(p *packets.PublishPacket) error {
 
 		if !exists {
 			c.opts.Logger.Error("server sent unknown topic alias", "alias", aliasID)
-			return c.disconnectWithReason(context.Background(), uint8(ReasonCodeMalformedPacket), nil)
+			return c.disconnectWithReason(context.Background(), uint8(ReasonCodeMalformedPacket), nil, false)
 		}
 
 		p.Topic = topic
@@ -189,7 +190,7 @@ func (c *Client) enforceReceiveMaximum(p *packets.PublishPacket) error {
 		if len(c.inboundUnacked) >= int(limit) {
 			if c.opts.ReceiveMaximumPolicy == LimitPolicyStrict {
 				c.opts.Logger.Error("receive maximum exceeded", "limit", limit)
-				return c.disconnectWithReason(context.Background(), uint8(ReasonCodeReceiveMaximumExceed), nil)
+				return c.disconnectWithReason(context.Background(), uint8(ReasonCodeReceiveMaximumExceed), nil, false)
 			}
 
 			// Ignore policy: log warning once
@@ -269,22 +270,18 @@ func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, h
 				defer func() { <-c.handlerSem }()
 			}
 
+			// Create a context for the handler
+			ctx, cancel := context.WithCancel(context.Background())
 			if c.opts.HandlerTimeout > 0 {
-				done := make(chan struct{})
-				go func() {
-					h(c, msg)
-					close(done)
-				}()
-
-				select {
-				case <-done:
-					return
-				case <-time.After(c.opts.HandlerTimeout):
-					c.opts.Logger.Warn("message handler exceeded timeout", "topic", msg.Topic, "timeout", c.opts.HandlerTimeout)
-					return
-				}
+				ctx, cancel = context.WithTimeout(context.Background(), c.opts.HandlerTimeout)
 			}
+			defer cancel()
 
+			msg.Context = ctx
+
+			// Execute handler. We no longer start a nested goroutine for timeout
+			// to avoid leaks; instead, we rely on the handler to respect the
+			// provided context.
 			h(c, msg)
 		}()
 	}
@@ -309,24 +306,24 @@ func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, h
 	}
 }
 
-// handlePuback processes a PUBACK packet (QoS 1 acknowledgment).
-func (c *Client) handlePuback(p *packets.PubackPacket) {
-	if op, ok := c.pending[p.PacketID]; ok {
+// handleAck processes a PUBACK or PUBCOMP packet.
+func (c *Client) handleAck(packetID uint16, reasonCode uint8) {
+	if op, ok := c.pending[packetID]; ok {
 		var err error
 		if c.opts.ProtocolVersion >= ProtocolV50 {
-			op.token.reasonCode = ReasonCode(p.ReasonCode)
-			if p.ReasonCode >= 0x80 {
+			op.token.reasonCode = ReasonCode(reasonCode)
+			if reasonCode >= 0x80 {
 				err = &MqttError{
-					ReasonCode: ReasonCode(p.ReasonCode),
+					ReasonCode: ReasonCode(reasonCode),
 				}
 			}
 		}
 		op.token.complete(err)
-		delete(c.pending, p.PacketID)
+		delete(c.pending, packetID)
 
 		if c.opts.SessionStore != nil {
-			if err := c.opts.SessionStore.DeletePendingPublish(p.PacketID); err != nil {
-				c.opts.Logger.Warn("failed to delete pending publish", "packet_id", p.PacketID, "error", err)
+			if err := c.opts.SessionStore.DeletePendingPublish(packetID); err != nil {
+				c.opts.Logger.Warn("failed to delete pending publish", "packet_id", packetID, "error", err)
 			}
 		}
 
@@ -375,32 +372,6 @@ func (c *Client) handlePubrel(p *packets.PubrelPacket) {
 		if err := c.opts.SessionStore.DeleteReceivedQoS2(p.PacketID); err != nil {
 			c.opts.Logger.Warn("failed to delete QoS2 ID", "packet_id", p.PacketID, "error", err)
 		}
-	}
-}
-
-// handlePubcomp processes a PUBCOMP packet (QoS 2, step 3).
-func (c *Client) handlePubcomp(p *packets.PubcompPacket) {
-	if op, ok := c.pending[p.PacketID]; ok {
-		var err error
-		if c.opts.ProtocolVersion >= ProtocolV50 {
-			op.token.reasonCode = ReasonCode(p.ReasonCode)
-			if p.ReasonCode >= 0x80 {
-				err = &MqttError{
-					ReasonCode: ReasonCode(p.ReasonCode),
-				}
-			}
-		}
-		op.token.complete(err)
-		delete(c.pending, p.PacketID)
-
-		if c.opts.SessionStore != nil {
-			if err := c.opts.SessionStore.DeletePendingPublish(p.PacketID); err != nil {
-				c.opts.Logger.Warn("failed to delete pending publish", "packet_id", p.PacketID, "error", err)
-			}
-		}
-
-		c.inFlightCount--
-		c.processPublishQueue()
 	}
 }
 

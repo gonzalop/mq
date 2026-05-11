@@ -1,5 +1,7 @@
 package mq
 
+import "slices"
+
 // HandlerInterceptor is a function that wraps a MessageHandler.
 // It allows cross-cutting concerns like logging, metrics, or tracing
 // to be applied to all message processing.
@@ -32,16 +34,16 @@ type PublishInterceptor func(PublishFunc) PublishFunc
 
 // applyHandlerInterceptors wraps a MessageHandler with multiple interceptors.
 func applyHandlerInterceptors(handler MessageHandler, interceptors []HandlerInterceptor) MessageHandler {
-	for i := len(interceptors) - 1; i >= 0; i-- {
-		handler = interceptors[i](handler)
+	for _, interceptor := range slices.Backward(interceptors) {
+		handler = interceptor(handler)
 	}
 	return handler
 }
 
 // applyPublishInterceptors wraps a PublishFunc with multiple interceptors.
 func applyPublishInterceptors(publish PublishFunc, interceptors []PublishInterceptor) PublishFunc {
-	for i := len(interceptors) - 1; i >= 0; i-- {
-		publish = interceptors[i](publish)
+	for _, interceptor := range slices.Backward(interceptors) {
+		publish = interceptor(publish)
 	}
 	return publish
 }

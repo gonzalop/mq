@@ -115,3 +115,34 @@ mq.Dial(uri,
     mq.WithReceiveMaximum(5, mq.LimitPolicyStrict), // Only allow 5 in-flight incoming messages
 )
 ```
+
+---
+
+## 7. Message Context and Cancellation
+
+The `mq` library natively supports context cancellation for message handlers. Every `Message` struct includes a `Context` field that is automatically cancelled if the client disconnects or if the handler exceeds the configured `HandlerTimeout`.
+
+This is incredibly powerful for preventing goroutine leaks when bridging MQTT messages to other slow or potentially blocking systems (like databases, external APIs, or long-running computations).
+
+```go
+client, _ := mq.Dial(uri,
+    mq.WithHandlerTimeout(5 * time.Second), // Global timeout for all handlers
+)
+
+client.Subscribe("orders/new", 1, func(c *mq.Client, msg mq.Message) {
+    // Pass msg.Context to external calls.
+    // If the HTTP request takes longer than 5 seconds, or if the MQTT 
+    // client disconnects, the request will be automatically aborted.
+    req, err := http.NewRequestWithContext(msg.Context, "POST", "https://api.example.com/process", bytes.NewReader(msg.Payload))
+    if err != nil {
+        return
+    }
+    
+    resp, err := http.DefaultClient.Do(req)
+    if err != nil {
+        // err could be context.DeadlineExceeded or context.Canceled
+        return
+    }
+    defer resp.Body.Close()
+})
+```

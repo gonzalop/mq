@@ -47,12 +47,14 @@ func TestMaximumPacketSizeEnforcement(t *testing.T) {
 					ProtocolVersion: ProtocolV50,
 					Logger:          testLogger(),
 				},
-				serverCaps: serverCapabilities{
-					MaximumPacketSize: tt.maxPacketSize,
-				},
 				pending:  make(map[uint16]*pendingOp),
 				outgoing: make(chan packets.Packet, 10),
 			}
+			c.connState.Store(&connectionState{
+				caps: serverCapabilities{
+					MaximumPacketSize: tt.maxPacketSize,
+				},
+			})
 
 			token := &token{done: make(chan struct{})}
 			req := &publishRequest{
@@ -155,13 +157,15 @@ func TestReceiveMaximumEnforcement(t *testing.T) {
 					ProtocolVersion: ProtocolV50,
 					Logger:          testLogger(),
 				},
-				serverCaps: serverCapabilities{
-					ReceiveMaximum: tt.receiveMaximum,
-					MaximumQoS:     2, // Default to allowing everything
-				},
 				pending:  make(map[uint16]*pendingOp),
 				outgoing: make(chan packets.Packet, 100),
 			}
+			c.connState.Store(&connectionState{
+				caps: serverCapabilities{
+					ReceiveMaximum: tt.receiveMaximum,
+					MaximumQoS:     2, // Default to allowing everything
+				},
+			})
 
 			// Add in-flight messages to pending
 			for i := 0; i < tt.inFlightCount; i++ {

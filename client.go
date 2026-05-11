@@ -50,6 +50,28 @@ type serverCapabilities struct {
 	SharedSubscriptionAvailable bool
 }
 
+// connectionState holds MQTT v5.0 server capabilities and connection properties
+// received in CONNACK.
+type connectionState struct {
+	// caps holds the protocol-level capabilities.
+	caps serverCapabilities
+
+	// assignedClientID is the client ID assigned by the server.
+	assignedClientID string
+
+	// serverKeepAlive is the keepalive interval (in seconds) the server wants the client to use.
+	serverKeepAlive uint16
+
+	// sessionExpiry is the session expiry interval (in seconds) the server will use.
+	sessionExpiry uint32
+
+	// responseInfo is the response information provided by the server.
+	responseInfo string
+
+	// serverReference is the server reference URI provided by the server.
+	serverReference string
+}
+
 type subscriptionEntry struct {
 	handler MessageHandler
 	options SubscribeOptions
@@ -97,33 +119,14 @@ type Client struct {
 	wg          sync.WaitGroup
 	activeLoops atomic.Int32
 
-	// Server capabilities (MQTT v5.0)
-	serverCaps serverCapabilities
-
-	// assignedClientID is the client ID assigned by the server when the client
-	// connects with an empty client ID. Only populated for MQTT v5.0 connections.
-	assignedClientID string
-
-	// serverKeepAlive is the keepalive interval (in seconds) that the server
-	// wants the client to use. If set, this overrides the client's requested keepalive.
-	// Only populated for MQTT v5.0 connections when server provides this property.
-	serverKeepAlive uint16
+	// connState holds the server capabilities and connection properties (MQTT v5.0).
+	// It is accessed atomically to prevent race conditions during reconnection.
+	connState atomic.Pointer[connectionState]
 
 	// requestedKeepAlive preserves the original user-requested keepalive value.
 	// This is used to send the same request on reconnection, even if the server
 	// overrode it in a previous connection.
 	requestedKeepAlive time.Duration
-
-	// responseInformation is a string provided by the server that the client can
-	// use as the basis for creating response topics. Only populated for MQTT v5.0
-	// connections when the server provides this property.
-	responseInformation string
-
-	// serverReference is a server URI that the client should use for reconnection.
-	// This is used for server redirects, load balancing, or maintenance scenarios.
-	// Only populated for MQTT v5.0 connections when the server provides this property.
-	// The library does not automatically redirect; users must handle this manually.
-	serverReference string
 
 	// Topic alias management (MQTT v5.0, client → server only)
 	topicAliases     map[string]uint16 // topic → alias ID
@@ -148,7 +151,6 @@ type Client struct {
 
 	// Session expiry interval (MQTT v5.0)
 	requestedSessionExpiry uint32 // Original user request (preserved on reconnect)
-	sessionExpiryInterval  uint32 // Actual value from server (may override request)
 
 	// User Properties received in CONNACK (MQTT v5.0)
 	connackUserProperties map[string]string
@@ -249,8 +251,10 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 		receivedQoS2:    make(map[uint16]struct{}),
 		inboundUnacked:  make(map[uint16]struct{}),
 		disconnected:    make(chan struct{}, 1),
-		serverCaps:      extractServerCapabilities(nil),
 	}
+	c.connState.Store(&connectionState{
+		caps: extractServerCapabilities(nil),
+	})
 
 	if options.MaxHandlerConcurrency > 0 {
 		c.handlerSem = make(chan struct{}, options.MaxHandlerConcurrency)
@@ -711,7 +715,7 @@ func (c *Client) readLoop() {
 				c.opts.Logger.Error("protocol error, disconnecting", "error", err)
 				if c.opts.ProtocolVersion >= ProtocolV50 {
 					// Section 4.13: receiver SHOULD send a DISCONNECT with Reason Code 0x82 (Protocol Error)
-					_ = c.disconnectWithReason(context.Background(), uint8(ReasonCodeProtocolError), nil)
+					_ = c.disconnectWithReason(context.Background(), uint8(ReasonCodeProtocolError), nil, false)
 				}
 			} else {
 				c.opts.Logger.Debug("read error, disconnecting", "error", err)
@@ -921,12 +925,13 @@ func (c *Client) Disconnect(ctx context.Context, opts ...DisconnectOption) error
 	for _, opt := range opts {
 		opt(options)
 	}
-	return c.disconnectWithReason(ctx, uint8(options.ReasonCode), options.Properties)
+	return c.disconnectWithReason(ctx, uint8(options.ReasonCode), options.Properties, true)
 }
 
 // disconnectWithReason is an internal helper that sends a DISCONNECT packet
 // with a specific reason code (MQTT v5.0).
-func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, props *Properties) error {
+// If block is true, it waits for all background loops to exit.
+func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, props *Properties, block bool) error {
 	c.opts.Logger.Debug("disconnecting from server", "reason_code", reasonCode)
 
 	// Mark as disconnected first
@@ -959,6 +964,10 @@ func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, pro
 		c.conn = nil
 	}
 	c.connLock.Unlock()
+
+	if !block {
+		return nil
+	}
 
 	// Wait for goroutines with timeout
 	deadline := time.Now().Add(5 * time.Second)
@@ -1072,7 +1081,10 @@ func (c *Client) reconnectLoop() {
 //	    fmt.Printf("Server assigned ID: %s\n", assignedID)
 //	}
 func (c *Client) AssignedClientID() string {
-	return c.assignedClientID
+	if state := c.connState.Load(); state != nil {
+		return state.assignedClientID
+	}
+	return ""
 }
 
 // ServerKeepAlive returns the keepalive interval (in seconds) that the server
@@ -1101,7 +1113,10 @@ func (c *Client) AssignedClientID() string {
 //	    fmt.Printf("Server overrode keepalive to %d seconds\n", serverKA)
 //	}
 func (c *Client) ServerKeepAlive() uint16 {
-	return c.serverKeepAlive
+	if state := c.connState.Load(); state != nil {
+		return state.serverKeepAlive
+	}
+	return 0
 }
 
 // ServerReference returns the server reference URI provided by the server.
@@ -1144,7 +1159,10 @@ func (c *Client) ServerKeepAlive() uint16 {
 //	    newClient, _ := mq.Dial(ref, mq.WithProtocolVersion(mq.ProtocolV50))
 //	}
 func (c *Client) ServerReference() string {
-	return c.serverReference
+	if state := c.connState.Load(); state != nil {
+		return state.serverReference
+	}
+	return ""
 }
 
 // SessionExpiryInterval returns the session expiry interval (in seconds)
@@ -1174,7 +1192,10 @@ func (c *Client) SessionExpiryInterval() uint32 {
 	if c.opts.ProtocolVersion < ProtocolV50 && !c.opts.CleanSession {
 		return 0xFFFFFFFF
 	}
-	return c.sessionExpiryInterval
+	if state := c.connState.Load(); state != nil {
+		return state.sessionExpiry
+	}
+	return 0
 }
 
 // ResponseInformation returns the response information string provided by the server.
@@ -1205,7 +1226,10 @@ func (c *Client) SessionExpiryInterval() uint32 {
 //	        mq.WithResponseTopic(responseTopic))
 //	}
 func (c *Client) ResponseInformation() string {
-	return c.responseInformation
+	if state := c.connState.Load(); state != nil {
+		return state.responseInfo
+	}
+	return ""
 }
 
 // extractServerCapabilities extracts server capabilities from CONNACK properties.
@@ -1295,15 +1319,21 @@ type ServerCapabilities struct {
 // This is only populated for MQTT v5.0 connections.
 // For v3.1.1 connections, default values are returned.
 func (c *Client) ServerCapabilities() ServerCapabilities {
+	state := c.connState.Load()
+	if state == nil {
+		return ServerCapabilities{}
+	}
+	caps := state.caps
+
 	return ServerCapabilities{
-		MaximumPacketSize:           c.serverCaps.MaximumPacketSize,
-		ReceiveMaximum:              c.serverCaps.ReceiveMaximum,
-		TopicAliasMaximum:           c.serverCaps.TopicAliasMaximum,
-		MaximumQoS:                  c.serverCaps.MaximumQoS,
-		RetainAvailable:             c.serverCaps.RetainAvailable,
-		WildcardAvailable:           c.serverCaps.WildcardAvailable,
-		SubscriptionIDAvailable:     c.serverCaps.SubscriptionIDAvailable,
-		SharedSubscriptionAvailable: c.serverCaps.SharedSubscriptionAvailable,
+		MaximumPacketSize:           caps.MaximumPacketSize,
+		ReceiveMaximum:              caps.ReceiveMaximum,
+		TopicAliasMaximum:           caps.TopicAliasMaximum,
+		MaximumQoS:                  caps.MaximumQoS,
+		RetainAvailable:             caps.RetainAvailable,
+		WildcardAvailable:           caps.WildcardAvailable,
+		SubscriptionIDAvailable:     caps.SubscriptionIDAvailable,
+		SharedSubscriptionAvailable: caps.SharedSubscriptionAvailable,
 	}
 }
 
@@ -1419,30 +1449,39 @@ func (c *Client) performHandshake(ctx context.Context, r io.Reader, w io.Writer)
 
 func (c *Client) processConnackProperties(connack *packets.ConnackPacket) {
 	if c.opts.ProtocolVersion >= ProtocolV50 && connack.Properties != nil {
-		c.serverCaps = extractServerCapabilities(connack.Properties)
+		var oldAssignedID string
+		if oldState := c.connState.Load(); oldState != nil {
+			oldAssignedID = oldState.assignedClientID
+		}
+
+		newState := &connectionState{
+			caps:             extractServerCapabilities(connack.Properties),
+			assignedClientID: oldAssignedID,
+		}
+
 		c.opts.Logger.Debug("received server capabilities",
-			"max_packet_size", c.serverCaps.MaximumPacketSize,
-			"receive_maximum", c.serverCaps.ReceiveMaximum,
-			"max_qos", c.serverCaps.MaximumQoS,
-			"retain_available", c.serverCaps.RetainAvailable)
+			"max_packet_size", newState.caps.MaximumPacketSize,
+			"receive_maximum", newState.caps.ReceiveMaximum,
+			"max_qos", newState.caps.MaximumQoS,
+			"retain_available", newState.caps.RetainAvailable)
 
 		if connack.Properties.Presence&packets.PresAssignedClientIdentifier != 0 {
-			c.assignedClientID = connack.Properties.AssignedClientIdentifier
-			c.opts.ClientID = c.assignedClientID
-			c.opts.Logger.Debug("server assigned client ID", "client_id", c.assignedClientID)
+			newState.assignedClientID = connack.Properties.AssignedClientIdentifier
+			c.opts.ClientID = newState.assignedClientID
+			c.opts.Logger.Debug("server assigned client ID", "client_id", newState.assignedClientID)
 		}
 
 		if connack.Properties.Presence&packets.PresResponseInformation != 0 {
-			c.responseInformation = connack.Properties.ResponseInformation
-			c.opts.Logger.Debug("server provided response information", "response_info", c.responseInformation)
+			newState.responseInfo = connack.Properties.ResponseInformation
+			c.opts.Logger.Debug("server provided response information", "response_info", newState.responseInfo)
 		}
 
 		if connack.Properties.Presence&packets.PresServerReference != 0 {
-			c.serverReference = connack.Properties.ServerReference
-			c.opts.Logger.Debug("server provided redirect reference", "server_reference", c.serverReference)
+			newState.serverReference = connack.Properties.ServerReference
+			c.opts.Logger.Debug("server provided redirect reference", "server_reference", newState.serverReference)
 
 			if c.opts.OnServerRedirect != nil {
-				go c.opts.OnServerRedirect(c.serverReference)
+				go c.opts.OnServerRedirect(newState.serverReference)
 			}
 		}
 
@@ -1460,28 +1499,28 @@ func (c *Client) processConnackProperties(connack *packets.ConnackPacket) {
 		}
 
 		if connack.Properties.Presence&packets.PresServerKeepAlive != 0 {
-			c.serverKeepAlive = connack.Properties.ServerKeepAlive
-			c.opts.KeepAlive = time.Duration(c.serverKeepAlive) * time.Second
+			newState.serverKeepAlive = connack.Properties.ServerKeepAlive
+			c.opts.KeepAlive = time.Duration(newState.serverKeepAlive) * time.Second
 			c.opts.Logger.Debug("server overrode keepalive",
 				"requested", uint16(c.requestedKeepAlive.Seconds()),
-				"server_keepalive", c.serverKeepAlive)
-		} else {
-			c.serverKeepAlive = 0
-			c.opts.Logger.Debug("server accepted keepalive",
-				"keepalive", uint16(c.requestedKeepAlive.Seconds()))
+				"server_keepalive", newState.serverKeepAlive)
 		}
 
 		if connack.Properties.Presence&packets.PresSessionExpiryInterval != 0 {
-			c.sessionExpiryInterval = connack.Properties.SessionExpiryInterval
+			newState.sessionExpiry = connack.Properties.SessionExpiryInterval
 			c.opts.Logger.Debug("server set session expiry",
 				"requested", c.requestedSessionExpiry,
-				"actual", c.sessionExpiryInterval)
+				"actual", newState.sessionExpiry)
 		} else if c.opts.SessionExpirySet {
-			c.sessionExpiryInterval = c.requestedSessionExpiry
-			c.opts.Logger.Debug("server accepted session expiry",
-				"interval", c.sessionExpiryInterval)
+			newState.sessionExpiry = c.requestedSessionExpiry
 		}
 
+		// Update the connection state atomically
+		c.connState.Store(newState)
+
+		// Note: User properties are currently kept in Client for convenience,
+		// but they are not accessed concurrently in a way that risks races
+		// during normal operation (only updated here).
 		if len(connack.Properties.UserProperties) > 0 {
 			c.connackUserProperties = make(map[string]string)
 			for _, up := range connack.Properties.UserProperties {
@@ -1491,7 +1530,9 @@ func (c *Client) processConnackProperties(connack *packets.ConnackPacket) {
 		}
 	} else {
 		// Use default capabilities for older protocols or if no properties sent
-		c.serverCaps = extractServerCapabilities(nil)
+		c.connState.Store(&connectionState{
+			caps: extractServerCapabilities(nil),
+		})
 		c.connackUserProperties = nil
 	}
 }

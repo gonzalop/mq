@@ -54,7 +54,7 @@ func TestMqttError_v5_v3_Compatibility(t *testing.T) {
 		c.pending[1] = &pendingOp{token: tok}
 
 		puback := &packets.PubackPacket{PacketID: 1, ReasonCode: 0x80, Version: 5}
-		c.handlePuback(puback)
+		c.handleAck(puback.PacketID, puback.ReasonCode)
 
 		err := tok.Error()
 		if err == nil {
@@ -73,7 +73,7 @@ func TestMqttError_v5_v3_Compatibility(t *testing.T) {
 		// In v3, the byte at offset 2 is not a reason code (packet is shorter)
 		// But our internal struct might have it. Let's ensure logic uses version.
 		puback := &packets.PubackPacket{PacketID: 1, ReasonCode: 0x80, Version: 4}
-		c.handlePuback(puback)
+		c.handleAck(puback.PacketID, puback.ReasonCode)
 
 		if err := tok.Error(); err != nil {
 			t.Errorf("Expected nil error for v3 PUBACK, got %v", err)

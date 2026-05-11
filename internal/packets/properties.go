@@ -110,13 +110,58 @@ type Properties struct {
 	SharedSubscriptionAvailable     bool
 }
 
+type propType uint8
+
+const (
+	typeByte propType = iota
+	typeTwoByte
+	typeFourByte
+	typeString
+	typeBinary
+	typeVarInt
+	typeUser
+)
+
+type propInfo struct {
+	presence uint32
+	kind     propType
+}
+
+var propertyTable = [256]propInfo{
+	PropPayloadFormatIndicator:          {PresPayloadFormatIndicator, typeByte},
+	PropMessageExpiryInterval:           {PresMessageExpiryInterval, typeFourByte},
+	PropContentType:                     {PresContentType, typeString},
+	PropResponseTopic:                   {PresResponseTopic, typeString},
+	PropCorrelationData:                 {PresCorrelationData, typeBinary},
+	PropSubscriptionIdentifier:          {0, typeVarInt},
+	PropSessionExpiryInterval:           {PresSessionExpiryInterval, typeFourByte},
+	PropAssignedClientIdentifier:        {PresAssignedClientIdentifier, typeString},
+	PropServerKeepAlive:                 {PresServerKeepAlive, typeTwoByte},
+	PropAuthenticationMethod:            {PresAuthenticationMethod, typeString},
+	PropAuthenticationData:              {PresAuthenticationData, typeBinary},
+	PropRequestProblemInformation:       {PresRequestProblemInformation, typeByte},
+	PropWillDelayInterval:               {PresWillDelayInterval, typeFourByte},
+	PropRequestResponseInformation:      {PresRequestResponseInformation, typeByte},
+	PropResponseInformation:             {PresResponseInformation, typeString},
+	PropServerReference:                 {PresServerReference, typeString},
+	PropReasonString:                    {PresReasonString, typeString},
+	PropReceiveMaximum:                  {PresReceiveMaximum, typeTwoByte},
+	PropTopicAliasMaximum:               {PresTopicAliasMaximum, typeTwoByte},
+	PropTopicAlias:                      {PresTopicAlias, typeTwoByte},
+	PropMaximumQoS:                      {PresMaximumQoS, typeByte},
+	PropRetainAvailable:                 {PresRetainAvailable, typeByte},
+	PropUserProperty:                    {0, typeUser},
+	PropMaximumPacketSize:               {PresMaximumPacketSize, typeFourByte},
+	PropWildcardSubscriptionAvailable:   {PresWildcardSubscriptionAvailable, typeByte},
+	PropSubscriptionIdentifierAvailable: {PresSubscriptionIdentifierAvailable, typeByte},
+	PropSharedSubscriptionAvailable:     {PresSharedSubscriptionAvailable, typeByte},
+}
+
 // encodeProperties serializes the properties into the MQTT v5 format.
-// Returns the bytes of the "Properties" section (Length + Props).
 func encodeProperties(p *Properties) []byte {
 	if p == nil {
-		return []byte{0x00} // Length 0
+		return []byte{0x00}
 	}
-	// Pre-allocate a reasonable guess to avoid initial re-allocations
 	return appendProperties(make([]byte, 0, 64), p)
 }
 
@@ -127,7 +172,6 @@ func appendProperties(dst []byte, p *Properties) []byte {
 	}
 
 	startLen := len(dst)
-	// optimistically assume 1 byte length (len < 128)
 	dst = append(dst, 0)
 	propsStart := len(dst)
 
@@ -136,27 +180,21 @@ func appendProperties(dst []byte, p *Properties) []byte {
 	dst = p.appendStringOrBinary(dst)
 	dst = p.appendSpecial(dst)
 
-	// Calculate length of the properties data
 	propLen := len(dst) - propsStart
-
 	if propLen < 128 {
 		dst[startLen] = byte(propLen)
 		return dst
 	}
 
-	// If it doesn't fit, in 1 byte...
 	lenBuf := encodeVarInt(propLen)
-	lenDiff := len(lenBuf) - 1 // we already have 1 byte reserved
-
+	lenDiff := len(lenBuf) - 1
 	dst = append(dst, make([]byte, lenDiff)...)
 	copy(dst[propsStart+lenDiff:], dst[propsStart:propsStart+propLen])
 	copy(dst[startLen:], lenBuf)
-
 	return dst
 }
 
 // decodeProperties reads the properties from the buffer.
-// Returns the properties and the number of bytes read (including length).
 func decodeProperties(buf []byte) (*Properties, int, error) {
 	if len(buf) == 0 {
 		return nil, 0, fmt.Errorf("buffer too short for properties length")
@@ -177,55 +215,144 @@ func decodeProperties(buf []byte) (*Properties, int, error) {
 	}
 
 	p := &Properties{}
-	slice := buf[n:totalLen] // View into the properties data
+	slice := buf[n:totalLen]
 	offset := 0
 
 	for offset < len(slice) {
 		id := slice[offset]
 		offset++
 
-		// Try numeric
-		nProp, ok, err := p.decodeNumeric(id, slice[offset:])
-		if err != nil {
-			return nil, 0, err
-		}
-		if ok {
-			offset += nProp
-			continue
+		info := propertyTable[id]
+		if info.kind == 0 && id != PropPayloadFormatIndicator {
+			if id > 0x2A || (id > 0x03 && id < 0x08) || id == 0x0A || (id > 0x0B && id < 0x11) {
+				return nil, 0, fmt.Errorf("unsupported property ID: 0x%02x", id)
+			}
 		}
 
-		// Try bool
-		nProp, ok, err = p.decodeBool(id, slice[offset:])
-		if err != nil {
-			return nil, 0, err
-		}
-		if ok {
-			offset += nProp
-			continue
+		if info.presence != 0 && p.Presence&info.presence != 0 {
+			return nil, 0, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
 		}
 
-		// Try string/binary
-		nProp, ok, err = p.decodeStringOrBinary(id, slice[offset:])
-		if err != nil {
-			return nil, 0, err
-		}
-		if ok {
-			offset += nProp
-			continue
+		data := slice[offset:]
+		var readN int
+
+		switch info.kind {
+		case typeByte:
+			if len(data) < 1 {
+				return nil, 0, fmt.Errorf("malformed property 0x%02x", id)
+			}
+			val := data[0]
+			readN = 1
+			switch id {
+			case PropPayloadFormatIndicator:
+				p.PayloadFormatIndicator = val
+			case PropRequestProblemInformation:
+				p.RequestProblemInformation = val
+			case PropRequestResponseInformation:
+				p.RequestResponseInformation = val
+			case PropMaximumQoS:
+				p.MaximumQoS = val
+			case PropRetainAvailable:
+				p.RetainAvailable = val != 0
+			case PropWildcardSubscriptionAvailable:
+				p.WildcardSubscriptionAvailable = val != 0
+			case PropSubscriptionIdentifierAvailable:
+				p.SubscriptionIdentifierAvailable = val != 0
+			case PropSharedSubscriptionAvailable:
+				p.SharedSubscriptionAvailable = val != 0
+			}
+		case typeTwoByte:
+			if len(data) < 2 {
+				return nil, 0, fmt.Errorf("malformed property 0x%02x", id)
+			}
+			val := binary.BigEndian.Uint16(data)
+			readN = 2
+			switch id {
+			case PropServerKeepAlive:
+				p.ServerKeepAlive = val
+			case PropReceiveMaximum:
+				p.ReceiveMaximum = val
+			case PropTopicAliasMaximum:
+				p.TopicAliasMaximum = val
+			case PropTopicAlias:
+				p.TopicAlias = val
+			}
+		case typeFourByte:
+			if len(data) < 4 {
+				return nil, 0, fmt.Errorf("malformed property 0x%02x", id)
+			}
+			val := binary.BigEndian.Uint32(data)
+			readN = 4
+			switch id {
+			case PropMessageExpiryInterval:
+				p.MessageExpiryInterval = val
+			case PropSessionExpiryInterval:
+				p.SessionExpiryInterval = val
+			case PropWillDelayInterval:
+				p.WillDelayInterval = val
+			case PropMaximumPacketSize:
+				p.MaximumPacketSize = val
+			}
+		case typeString:
+			s, n, err := decodeString(data)
+			if err != nil {
+				return nil, 0, err
+			}
+			readN = n
+			switch id {
+			case PropContentType:
+				p.ContentType = s
+			case PropResponseTopic:
+				p.ResponseTopic = s
+			case PropAssignedClientIdentifier:
+				p.AssignedClientIdentifier = s
+			case PropAuthenticationMethod:
+				p.AuthenticationMethod = s
+			case PropResponseInformation:
+				p.ResponseInformation = s
+			case PropServerReference:
+				p.ServerReference = s
+			case PropReasonString:
+				p.ReasonString = s
+			}
+		case typeBinary:
+			b, n, err := decodeBinary(data)
+			if err != nil {
+				return nil, 0, err
+			}
+			readN = n
+			switch id {
+			case PropCorrelationData:
+				p.CorrelationData = b
+			case PropAuthenticationData:
+				p.AuthenticationData = b
+			}
+		case typeVarInt:
+			val, n, err := decodeVarIntBuf(data)
+			if err != nil {
+				return nil, 0, err
+			}
+			readN = n
+			p.SubscriptionIdentifier = append(p.SubscriptionIdentifier, val)
+		case typeUser:
+			k, nK, err := decodeString(data)
+			if err != nil {
+				return nil, 0, err
+			}
+			v, nV, err := decodeString(data[nK:])
+			if err != nil {
+				return nil, 0, err
+			}
+			readN = nK + nV
+			p.UserProperties = append(p.UserProperties, UserProperty{Key: k, Value: v})
+		default:
+			return nil, 0, fmt.Errorf("unsupported property ID: 0x%02x", id)
 		}
 
-		// Try special
-		nProp, ok, err = p.decodeSpecial(id, slice[offset:])
-		if err != nil {
-			return nil, 0, err
+		if info.presence != 0 {
+			p.Presence |= info.presence
 		}
-		if ok {
-			offset += nProp
-			continue
-		}
-
-		// Unknown
-		return nil, 0, fmt.Errorf("unsupported property ID: 0x%02x", id)
+		offset += readN
 	}
 
 	return p, totalLen, nil
@@ -352,319 +479,14 @@ func (p *Properties) appendStringOrBinary(dst []byte) []byte {
 }
 
 func (p *Properties) appendSpecial(dst []byte) []byte {
-	if len(p.SubscriptionIdentifier) > 0 {
-		for _, id := range p.SubscriptionIdentifier {
-			dst = append(dst, PropSubscriptionIdentifier)
-			dst = appendVarInt(dst, id)
-		}
+	for _, id := range p.SubscriptionIdentifier {
+		dst = append(dst, PropSubscriptionIdentifier)
+		dst = appendVarInt(dst, id)
 	}
-	if len(p.UserProperties) > 0 {
-		for _, up := range p.UserProperties {
-			dst = append(dst, PropUserProperty)
-			dst = appendString(dst, up.Key)
-			dst = appendString(dst, up.Value)
-		}
+	for _, up := range p.UserProperties {
+		dst = append(dst, PropUserProperty)
+		dst = appendString(dst, up.Key)
+		dst = appendString(dst, up.Value)
 	}
 	return dst
-}
-
-func (p *Properties) decodeNumeric(id byte, data []byte) (int, bool, error) {
-	switch id {
-	case PropPayloadFormatIndicator:
-		if p.Presence&PresPayloadFormatIndicator != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 1 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.PayloadFormatIndicator = data[0]
-		p.Presence |= PresPayloadFormatIndicator
-		return 1, true, nil
-	case PropMessageExpiryInterval:
-		if p.Presence&PresMessageExpiryInterval != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 4 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.MessageExpiryInterval = binary.BigEndian.Uint32(data)
-		p.Presence |= PresMessageExpiryInterval
-		return 4, true, nil
-	case PropSessionExpiryInterval:
-		if p.Presence&PresSessionExpiryInterval != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 4 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.SessionExpiryInterval = binary.BigEndian.Uint32(data)
-		p.Presence |= PresSessionExpiryInterval
-		return 4, true, nil
-	case PropServerKeepAlive:
-		if p.Presence&PresServerKeepAlive != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 2 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.ServerKeepAlive = binary.BigEndian.Uint16(data)
-		p.Presence |= PresServerKeepAlive
-		return 2, true, nil
-	case PropRequestProblemInformation:
-		if p.Presence&PresRequestProblemInformation != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 1 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.RequestProblemInformation = data[0]
-		p.Presence |= PresRequestProblemInformation
-		return 1, true, nil
-	case PropWillDelayInterval:
-		if p.Presence&PresWillDelayInterval != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 4 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.WillDelayInterval = binary.BigEndian.Uint32(data)
-		p.Presence |= PresWillDelayInterval
-		return 4, true, nil
-	case PropRequestResponseInformation:
-		if p.Presence&PresRequestResponseInformation != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 1 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.RequestResponseInformation = data[0]
-		p.Presence |= PresRequestResponseInformation
-		return 1, true, nil
-	case PropReceiveMaximum:
-		if p.Presence&PresReceiveMaximum != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 2 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.ReceiveMaximum = binary.BigEndian.Uint16(data)
-		p.Presence |= PresReceiveMaximum
-		return 2, true, nil
-	case PropTopicAliasMaximum:
-		if p.Presence&PresTopicAliasMaximum != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 2 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.TopicAliasMaximum = binary.BigEndian.Uint16(data)
-		p.Presence |= PresTopicAliasMaximum
-		return 2, true, nil
-	case PropTopicAlias:
-		if p.Presence&PresTopicAlias != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 2 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.TopicAlias = binary.BigEndian.Uint16(data)
-		p.Presence |= PresTopicAlias
-		return 2, true, nil
-	case PropMaximumQoS:
-		if p.Presence&PresMaximumQoS != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 1 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.MaximumQoS = data[0]
-		p.Presence |= PresMaximumQoS
-		return 1, true, nil
-	case PropMaximumPacketSize:
-		if p.Presence&PresMaximumPacketSize != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 4 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.MaximumPacketSize = binary.BigEndian.Uint32(data)
-		p.Presence |= PresMaximumPacketSize
-		return 4, true, nil
-	}
-	return 0, false, nil
-}
-
-func (p *Properties) decodeBool(id byte, data []byte) (int, bool, error) {
-	switch id {
-	case PropRetainAvailable:
-		if p.Presence&PresRetainAvailable != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 1 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.RetainAvailable = data[0] != 0
-		p.Presence |= PresRetainAvailable
-		return 1, true, nil
-	case PropWildcardSubscriptionAvailable:
-		if p.Presence&PresWildcardSubscriptionAvailable != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 1 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.WildcardSubscriptionAvailable = data[0] != 0
-		p.Presence |= PresWildcardSubscriptionAvailable
-		return 1, true, nil
-	case PropSubscriptionIdentifierAvailable:
-		if p.Presence&PresSubscriptionIdentifierAvailable != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 1 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.SubscriptionIdentifierAvailable = data[0] != 0
-		p.Presence |= PresSubscriptionIdentifierAvailable
-		return 1, true, nil
-	case PropSharedSubscriptionAvailable:
-		if p.Presence&PresSharedSubscriptionAvailable != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		if len(data) < 1 {
-			return 0, false, fmt.Errorf("malformed property 0x%02x", id)
-		}
-		p.SharedSubscriptionAvailable = data[0] != 0
-		p.Presence |= PresSharedSubscriptionAvailable
-		return 1, true, nil
-	}
-	return 0, false, nil
-}
-
-func (p *Properties) decodeStringOrBinary(id byte, data []byte) (int, bool, error) {
-	switch id {
-	case PropContentType:
-		if p.Presence&PresContentType != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		s, n, err := decodeString(data)
-		if err != nil {
-			return 0, false, err
-		}
-		p.ContentType = s
-		p.Presence |= PresContentType
-		return n, true, nil
-	case PropResponseTopic:
-		if p.Presence&PresResponseTopic != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		s, n, err := decodeString(data)
-		if err != nil {
-			return 0, false, err
-		}
-		p.ResponseTopic = s
-		p.Presence |= PresResponseTopic
-		return n, true, nil
-	case PropCorrelationData:
-		if p.Presence&PresCorrelationData != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		b, n, err := decodeBinary(data)
-		if err != nil {
-			return 0, false, err
-		}
-		p.CorrelationData = b
-		p.Presence |= PresCorrelationData
-		return n, true, nil
-	case PropAssignedClientIdentifier:
-		if p.Presence&PresAssignedClientIdentifier != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		s, n, err := decodeString(data)
-		if err != nil {
-			return 0, false, err
-		}
-		p.AssignedClientIdentifier = s
-		p.Presence |= PresAssignedClientIdentifier
-		return n, true, nil
-	case PropAuthenticationMethod:
-		if p.Presence&PresAuthenticationMethod != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		s, n, err := decodeString(data)
-		if err != nil {
-			return 0, false, err
-		}
-		p.AuthenticationMethod = s
-		p.Presence |= PresAuthenticationMethod
-		return n, true, nil
-	case PropAuthenticationData:
-		if p.Presence&PresAuthenticationData != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		b, n, err := decodeBinary(data)
-		if err != nil {
-			return 0, false, err
-		}
-		p.AuthenticationData = b
-		p.Presence |= PresAuthenticationData
-		return n, true, nil
-	case PropResponseInformation:
-		if p.Presence&PresResponseInformation != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		s, n, err := decodeString(data)
-		if err != nil {
-			return 0, false, err
-		}
-		p.ResponseInformation = s
-		p.Presence |= PresResponseInformation
-		return n, true, nil
-	case PropServerReference:
-		if p.Presence&PresServerReference != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		s, n, err := decodeString(data)
-		if err != nil {
-			return 0, false, err
-		}
-		p.ServerReference = s
-		p.Presence |= PresServerReference
-		return n, true, nil
-	case PropReasonString:
-		if p.Presence&PresReasonString != 0 {
-			return 0, false, fmt.Errorf("protocol error: duplicate property 0x%02x", id)
-		}
-		s, n, err := decodeString(data)
-		if err != nil {
-			return 0, false, err
-		}
-		p.ReasonString = s
-		p.Presence |= PresReasonString
-		return n, true, nil
-	}
-	return 0, false, nil
-}
-
-func (p *Properties) decodeSpecial(id byte, data []byte) (int, bool, error) {
-	switch id {
-	case PropUserProperty:
-		k, nK, err := decodeString(data)
-		if err != nil {
-			return 0, false, err
-		}
-		v, nV, err := decodeString(data[nK:])
-		if err != nil {
-			return 0, false, err
-		}
-		p.UserProperties = append(p.UserProperties, UserProperty{Key: k, Value: v})
-		return nK + nV, true, nil
-	case PropSubscriptionIdentifier:
-		val, n, err := decodeVarIntBuf(data)
-		if err != nil {
-			return 0, false, err
-		}
-		p.SubscriptionIdentifier = append(p.SubscriptionIdentifier, val)
-		return n, true, nil
-	}
-	return 0, false, nil
 }

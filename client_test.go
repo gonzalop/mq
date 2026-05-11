@@ -2,6 +2,7 @@ package mq
 
 import (
 	"errors"
+	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -87,7 +88,7 @@ func TestAssignedClientID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client := &Client{}
-			client.assignedClientID = tt.assignedID
+			client.connState.Store(&connectionState{assignedClientID: tt.assignedID})
 
 			got := client.AssignedClientID()
 			if got != tt.want {
@@ -153,7 +154,7 @@ func TestServerKeepAlive(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client := &Client{}
-			client.serverKeepAlive = tt.keepalive
+			client.connState.Store(&connectionState{serverKeepAlive: tt.keepalive})
 
 			got := client.ServerKeepAlive()
 			if got != tt.want {
@@ -193,7 +194,7 @@ func TestServerKeepAliveUpdatesClientOptions(t *testing.T) {
 
 	// Server overrides to 30s
 	serverKA := uint16(30)
-	client.serverKeepAlive = serverKA
+	client.connState.Store(&connectionState{serverKeepAlive: serverKA})
 	client.opts.KeepAlive = time.Duration(serverKA) * time.Second
 
 	// Verify client's keepalive was updated
@@ -253,7 +254,7 @@ func TestServerReference(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client := &Client{}
-			client.serverReference = tt.serverRef
+			client.connState.Store(&connectionState{serverReference: tt.serverRef})
 
 			got := client.ServerReference()
 			if got != tt.want {
@@ -297,7 +298,9 @@ func TestServerReferenceNoAutoRedirect(t *testing.T) {
 	// Verify that the library does NOT automatically redirect
 	// This is a documentation test to ensure the behavior is clear
 	client := &Client{}
-	client.serverReference = "mqtt://other-server.example.com:1883"
+	client.connState.Store(&connectionState{
+		serverReference: "mqtt://other-server.example.com:1883",
+	})
 
 	// Getting the reference should not trigger any action
 	ref := client.ServerReference()
@@ -344,7 +347,9 @@ func TestResponseInformation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client := &Client{}
-			client.responseInformation = tt.respInfo
+			client.connState.Store(&connectionState{
+				responseInfo: tt.respInfo,
+			})
 
 			got := client.ResponseInformation()
 			if got != tt.want {
@@ -387,7 +392,9 @@ func TestResponseInformationDefault(t *testing.T) {
 func TestResponseInformationUsage(t *testing.T) {
 	// Example of how to use response information
 	client := &Client{}
-	client.responseInformation = "tenant-a/client-123/"
+	client.connState.Store(&connectionState{
+		responseInfo: "tenant-a/client-123/",
+	})
 
 	respInfo := client.ResponseInformation()
 	if respInfo == "" {
@@ -516,14 +523,18 @@ func TestServerCapabilities(t *testing.T) {
 	client := &Client{}
 
 	// Set some capabilities
-	client.serverCaps.MaximumPacketSize = 1024 * 1024
-	client.serverCaps.ReceiveMaximum = 100
-	client.serverCaps.TopicAliasMaximum = 10
-	client.serverCaps.MaximumQoS = 1
-	client.serverCaps.RetainAvailable = false
-	client.serverCaps.WildcardAvailable = true
-	client.serverCaps.SubscriptionIDAvailable = true
-	client.serverCaps.SharedSubscriptionAvailable = false
+	client.connState.Store(&connectionState{
+		caps: serverCapabilities{
+			MaximumPacketSize:           1024 * 1024,
+			ReceiveMaximum:              100,
+			TopicAliasMaximum:           10,
+			MaximumQoS:                  1,
+			RetainAvailable:             false,
+			WildcardAvailable:           true,
+			SubscriptionIDAvailable:     true,
+			SharedSubscriptionAvailable: false,
+		},
+	})
 
 	// Get public capabilities
 	caps := client.ServerCapabilities()
@@ -684,6 +695,96 @@ func TestClientIDValidation(t *testing.T) {
 	}
 }
 
+func TestValidateConnack(t *testing.T) {
+	tests := []struct {
+		name       string
+		version    uint8
+		returnCode uint8
+		reasonStr  string
+		wantErr    error
+	}{
+		{
+			name:       "v3 accepted",
+			version:    ProtocolV311,
+			returnCode: packets.ConnAccepted,
+			wantErr:    nil,
+		},
+		{
+			name:       "v3 identifier rejected",
+			version:    ProtocolV311,
+			returnCode: packets.ConnRefusedIdentifierRejected,
+			wantErr:    ErrIdentifierRejected,
+		},
+		{
+			name:       "v5 accepted",
+			version:    ProtocolV50,
+			returnCode: packets.ConnAccepted,
+			wantErr:    nil,
+		},
+		{
+			name:       "v5 quota exceeded",
+			version:    ProtocolV50,
+			returnCode: 0x97, // Quota exceeded
+			wantErr:    ErrConnectionRefused,
+		},
+		{
+			name:       "v5 with reason string",
+			version:    ProtocolV50,
+			returnCode: 0x87, // Not authorized
+			reasonStr:  "invalid credentials",
+			wantErr:    ErrConnectionRefused,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Client{
+				opts: &clientOptions{
+					ProtocolVersion: tt.version,
+				},
+			}
+
+			conn, _ := net.Pipe()
+			defer conn.Close()
+
+			connack := &packets.ConnackPacket{
+				ReturnCode: tt.returnCode,
+			}
+			if tt.reasonStr != "" {
+				connack.Properties = &packets.Properties{
+					ReasonString: tt.reasonStr,
+					Presence:     packets.PresReasonString,
+				}
+			}
+
+			err := c.validateConnack(conn, connack)
+
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Errorf("validateConnack() error = %v, want nil", err)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("validateConnack() error = nil, want %v", tt.wantErr)
+				} else if !errors.Is(err, tt.wantErr) {
+					t.Errorf("validateConnack() error = %v, want %v", err, tt.wantErr)
+				}
+
+				if tt.version == ProtocolV50 && tt.reasonStr != "" {
+					var mqttErr *MqttError
+					if errors.As(err, &mqttErr) {
+						if mqttErr.Message != tt.reasonStr {
+							t.Errorf("MqttError.Message = %q, want %q", mqttErr.Message, tt.reasonStr)
+						}
+					} else {
+						t.Errorf("expected MqttError, got %T", err)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestSessionExpiryInterval_V311(t *testing.T) {
 	tests := []struct {
 		name string
@@ -742,7 +843,7 @@ func TestSessionExpiryInterval_V311(t *testing.T) {
 			}
 
 			if opts.SessionExpirySet {
-				client.sessionExpiryInterval = opts.SessionExpiryInterval
+				client.connState.Store(&connectionState{sessionExpiry: opts.SessionExpiryInterval})
 			}
 
 			got := client.SessionExpiryInterval()
