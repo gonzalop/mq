@@ -140,6 +140,14 @@ type clientOptions struct {
 	// Interceptors for message handling and publishing.
 	HandlerInterceptors []HandlerInterceptor
 	PublishInterceptors []PublishInterceptor
+
+	// ReconnectBackoff is the initial interval to wait before reconnecting.
+	// Default is 1 second.
+	ReconnectBackoff time.Duration
+
+	// MaxReconnectBackoff is the maximum interval to wait before reconnecting.
+	// Default is 2 minutes.
+	MaxReconnectBackoff time.Duration
 }
 
 // LogValue implements slog.LogValuer to mask sensitive information.
@@ -887,5 +895,8 @@ func defaultOptions(server string) *clientOptions {
 
 		MaxHandlerConcurrency: 100,
 		MaxAuthExchanges:      10,
+
+		ReconnectBackoff:    1 * time.Second,
+		MaxReconnectBackoff: 2 * time.Minute,
 	}
 }

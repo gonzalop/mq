@@ -206,3 +206,74 @@ func validatePayloadFormat(payload []byte, props *Properties) error {
 	}
 	return nil
 }
+
+// validatePublishCaps enforces server capabilities declared in the CONNACK packet
+// against the proposed publish operation. Returns a sentinel error (ErrServer*)
+// if the operation would violate a server restriction.
+//
+// Called only for MQTT v5.0 connections. The serverCaps zero-value is
+// permissive (all features allowed, QoS 2 max), so calls before the first
+// CONNACK are safe.
+func (c *Client) validatePublishCaps(topic string, payload []byte, opts *PublishOptions) error {
+	caps := c.serverCaps // snapshot; struct copy is atomic enough for this read
+
+	// MaximumQoS: server may only support QoS 0 or 1.
+	if caps.MaximumQoS < opts.QoS {
+		return fmt.Errorf("%w: requested QoS %d, server maximum is %d",
+			ErrQoSExceedsServerMax, opts.QoS, caps.MaximumQoS)
+	}
+
+	// RetainAvailable: some servers (e.g. load-balanced clusters) disallow retained messages.
+	if !caps.RetainAvailable && opts.Retain {
+		return ErrServerNoRetain
+	}
+
+	// MaximumPacketSize: conservatively estimate the serialized packet size.
+	// Actual size = fixed header (≥2 B) + topic length field (2 B) + topic +
+	//               packet ID (2 B, QoS ≥ 1) + properties + payload.
+	// We omit the fixed header to keep the estimate simple; this means we may
+	// allow a packet that is 1-4 bytes over the limit, but we never block a
+	// valid packet.
+	if caps.MaximumPacketSize > 0 {
+		estimated := uint32(2 + len(topic) + len(payload))
+		if opts.QoS > 0 {
+			estimated += 2 // packet identifier
+		}
+		if estimated > caps.MaximumPacketSize {
+			return fmt.Errorf("%w: estimated size %d bytes, server maximum is %d",
+				ErrPacketExceedsServerMax, estimated, caps.MaximumPacketSize)
+		}
+	}
+
+	return nil
+}
+
+// validateSubscribeCaps enforces server capabilities declared in the CONNACK packet
+// against the proposed subscribe operation. Returns a sentinel error (ErrServer*)
+// if the operation would violate a server restriction.
+//
+// Called only for MQTT v5.0 connections. The serverCaps zero-value is
+// permissive (all features allowed), so calls before the first CONNACK are safe.
+func (c *Client) validateSubscribeCaps(topic string, qos QoS) error {
+	caps := c.serverCaps // snapshot; struct copy is atomic enough for this read
+
+	// WildcardAvailable: server may prohibit wildcard subscriptions entirely.
+	if !caps.WildcardAvailable {
+		if strings.Contains(topic, "+") || strings.Contains(topic, "#") {
+			return ErrServerNoWildcards
+		}
+	}
+
+	// SharedSubscriptionAvailable: server may not support $share/ topics.
+	if !caps.SharedSubscriptionAvailable && strings.HasPrefix(topic, "$share/") {
+		return ErrServerNoSharedSubs
+	}
+
+	// MaximumQoS: server may only support QoS 0 or 1.
+	if caps.MaximumQoS < uint8(qos) {
+		return fmt.Errorf("%w: requested QoS %d, server maximum is %d",
+			ErrQoSExceedsServerMax, uint8(qos), caps.MaximumQoS)
+	}
+
+	return nil
+}

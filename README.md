@@ -119,8 +119,11 @@ client, _ := mq.Dial(uri, mq.WithPublishInterceptor(func(next mq.PublishFunc) mq
 
 - **[Getting Started](docs/getting_started.md)**: Detailed guide on Connecting, Publishing, Subscribing, and Options.
 - **[Best Practices](./docs/client_configuration_best_practices.md)**: Production-grade configuration guide (Security, Resource Limits, Session Management). A **MUST**-read.
-- **[Troubleshooting](./docs/troubleshooting.md)**: Solutions for common issues like client ID thrashing, zombie messages, and flow control.
 - **[Persistence](./docs/persistence.md)**: Detailed guide on configuring durable sessions across restarts.
+- **[Interceptors](./docs/interceptors.md)**: Guide on using middleware for logging, metrics, and tracing.
+- **[Enhanced Authentication](./docs/auth.md)**: Deep dive into MQTT 5.0 challenge-response mechanisms.
+- **[Advanced Patterns](./docs/patterns.md)**: Best practices for Request/Response, Topic Aliases, and Flow Control.
+- **[Troubleshooting](./docs/troubleshooting.md)**: Solutions for common issues like client ID thrashing, zombie messages, and flow control.
 - **[Internals](./docs/internals/CONCURRENCY.md)**: Deep dive into the library's concurrency model.
 - **Compliance**: [MQTT 3.1.1](./docs/MQTT_3.1.1_Compliance.md) and [MQTT 5.0](./docs/MQTT_5.0_Compliance.md) compliance reports.
 

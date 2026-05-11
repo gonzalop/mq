@@ -17,6 +17,7 @@ func TestSharedSubscriptionNoLocalValidation(t *testing.T) {
 		opts:          defaultOptions("tcp://localhost:1883"),
 		subscriptions: make(map[string]subscriptionEntry),
 		pending:       make(map[uint16]*pendingOp),
+		serverCaps:    extractServerCapabilities(nil),
 	}
 	// Simple logger
 	c.opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))

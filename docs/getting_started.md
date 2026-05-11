@@ -66,6 +66,7 @@ client, err := mq.DialContext(ctx, server, options...)
 ### Connection Options
 - `WithAutoReconnect(bool)` - Enable/disable auto-reconnect (default: true).
 - `WithAutoProtocolVersion(bool)` - Enable/disable automatic protocol version negotiation (default: true).
+- `WithAuthenticator(authenticator)` - Set custom authenticator for MQTT v5.0 Enhanced Authentication. See **[Enhanced Authentication](auth.md)** for details.
 - `WithCleanSession(bool)` - Set clean session flag (default: true).
 - `WithClientID(id string)` - Set client identifier.
 - `WithConnectTimeout(duration time.Duration)` - Set connection timeout (default: 30s).
@@ -73,9 +74,9 @@ client, err := mq.DialContext(ctx, server, options...)
 - `WithDefaultPublishHandler(handler)` - Set fallback handler for unexpected messages.
 - `WithDialer(d ContextDialer)` - Set custom dialer (e.g. for WebSockets or proxy).
 - `WithKeepAlive(duration time.Duration)` - Set MQTT keepalive interval (default: 60s).
-- `WithHandlerInterceptor(interceptor)` - Add an interceptor for incoming messages.
+- `WithHandlerInterceptor(interceptor)` - Add an interceptor for incoming messages. See **[Interceptors](interceptors.md)** for detailed usage.
 - `WithHandlerTimeout(duration time.Duration)` - Set maximum time a message handler is allowed to run (default: 0/unlimited).
-- `WithPublishInterceptor(interceptor)` - Add an interceptor for outgoing messages.
+- `WithPublishInterceptor(interceptor)` - Add an interceptor for outgoing messages. See **[Interceptors](interceptors.md)** for detailed usage.
 - `WithIncomingQueueSize(size int)` - Set internal incoming buffer size (default: 100).
 - `WithOutgoingQueueSize(size int)` - Set internal outgoing buffer size (default: 1000).
 - `WithLogger(logger)` - Set custom log/slog Logger.
@@ -95,6 +96,8 @@ client, err := mq.DialContext(ctx, server, options...)
 - `WithReceiveMaximum(max uint16, policy LimitPolicy)` - Set maximum concurrent unacknowledged messages (Flow Control) (v5.0).
   - `mq.LimitPolicyIgnore` (Default/Recommended) - Log warning on overflow.
   - `mq.LimitPolicyStrict` - Disconnect on overflow.
+- `WithReconnectBackoff(duration time.Duration)` - Set the initial backoff for reconnection (default: 1s).
+- `WithMaxReconnectBackoff(duration time.Duration)` - Set the maximum backoff for reconnection (default: 2m).
 - `WithRequestProblemInformation(bool)` - Request extended error details (v5.0).
 - `WithRequestResponseInformation(bool)` - Request response topic info (v5.0).
 - `WithSessionExpiryInterval(seconds)` - Set session expiration time (v5.0).
@@ -119,6 +122,8 @@ client, err := mq.Dial("tcp://localhost:1883",
 ## Interceptors (Middleware)
 
 The library supports an interceptor pattern (middleware) for both incoming and outgoing messages. This is useful for cross-cutting concerns like logging, metrics, or tracing (OpenTelemetry).
+
+For a detailed guide and more examples, see **[Interceptors & Middleware](interceptors.md)**.
 
 ```go
 // Handler Interceptor (Incoming)
@@ -154,6 +159,9 @@ token := client.Publish(topic, payload, options...)
 - `WithRetain(bool)` - Set retain flag. Default is false.
 
 ### MQTT v5.0 Options
+
+For details on advanced patterns using these options, see **[MQTT 5.0 Advanced Patterns](patterns.md)**.
+
 - `WithAlias()` - Enable topic alias optimization (Client-side).
 - `WithContentType(contentType string)` - Set MIME content type.
 - `WithCorrelationData(data []byte)` - Set correlation data for matching requests/responses.

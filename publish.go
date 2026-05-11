@@ -235,6 +235,17 @@ func (c *Client) basePublish(topic string, payload []byte, opts ...PublishOption
 		return tok
 	}
 
+	// Enforce server capabilities (MQTT v5.0 only, and only after a CONNACK has
+	// been received — serverCaps defaults are permissive, so this is safe to run
+	// before the first connect as well).
+	if c.opts.ProtocolVersion >= ProtocolV50 {
+		if err := c.validatePublishCaps(topic, payload, pubOpts); err != nil {
+			tok := newToken()
+			tok.complete(err)
+			return tok
+		}
+	}
+
 	pkt := &packets.PublishPacket{
 		Topic:      topic,
 		Payload:    payload,

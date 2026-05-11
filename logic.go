@@ -97,116 +97,141 @@ func (c *Client) handleIncoming(pkt packets.Packet) {
 
 // handlePublish processes an incoming PUBLISH packet.
 func (c *Client) handlePublish(p *packets.PublishPacket) {
-	// Handle topic alias if present (MQTT v5.0 only)
-	if c.opts.ProtocolVersion >= ProtocolV50 && p.Properties != nil && p.Properties.Presence&packets.PresTopicAlias != 0 {
-		aliasID := p.Properties.TopicAlias
-
-		// Validate alias ID
-		if aliasID == 0 {
-			c.opts.Logger.Error("server sent invalid topic alias 0")
-			// Protocol error - disconnect
-			if c.opts.ProtocolVersion >= ProtocolV50 {
-				_ = c.disconnectWithReason(context.Background(), uint8(ReasonCodeTopicAliasInvalid), nil)
-			} else {
-				_ = c.Disconnect(context.Background())
-			}
-			return
-		}
-
-		// Check if server violated our declared maximum
-		if c.opts.TopicAliasMaximum > 0 && aliasID > c.opts.TopicAliasMaximum {
-			c.opts.Logger.Error("server exceeded topic alias maximum",
-				"alias", aliasID,
-				"max", c.opts.TopicAliasMaximum)
-			// Protocol error - disconnect
-			if c.opts.ProtocolVersion >= ProtocolV50 {
-				_ = c.disconnectWithReason(context.Background(), uint8(ReasonCodeTopicAliasInvalid), nil)
-			} else {
-				_ = c.Disconnect(context.Background())
-			}
-			return
-		}
-
-		if p.Topic == "" {
-			// Alias-only message - resolve to topic
-			c.receivedAliasesLock.RLock()
-			topic, exists := c.receivedAliases[aliasID]
-			c.receivedAliasesLock.RUnlock()
-
-			if !exists {
-				c.opts.Logger.Error("server sent unknown topic alias", "alias", aliasID)
-				// Protocol error - disconnect
-				if c.opts.ProtocolVersion >= ProtocolV50 {
-					if err := c.disconnectWithReason(context.Background(), uint8(ReasonCodeMalformedPacket), nil); err != nil {
-						c.opts.Logger.Error("failed to disconnect client", "error", err)
-					}
-				} else {
-					_ = c.Disconnect(context.Background())
-				}
-				return
-			}
-
-			p.Topic = topic
-			c.opts.Logger.Debug("resolved topic alias", "alias", aliasID, "topic", topic)
-		} else {
-			// Both topic and alias - register the mapping
-			c.receivedAliasesLock.Lock()
-			c.receivedAliases[aliasID] = p.Topic
-			c.receivedAliasesLock.Unlock()
-			c.opts.Logger.Debug("registered topic alias", "alias", aliasID, "topic", p.Topic)
-		}
+	// 1. Process Topic Alias (MQTT v5.0)
+	if err := c.processTopicAlias(p); err != nil {
+		c.opts.Logger.Error("failed to process topic alias", "error", err)
+		return
 	}
 
-	// Check receive maximum (MQTT v5.0) for QoS 1 and 2
-	if c.opts.ProtocolVersion >= ProtocolV50 && p.QoS > 0 {
-		if _, exists := c.inboundUnacked[p.PacketID]; !exists {
-			// New message. Check if we have capacity.
-			limit := c.opts.ReceiveMaximum
-			if limit == 0 {
-				limit = 65535
-			}
-			if len(c.inboundUnacked) >= int(limit) {
-				if c.opts.ReceiveMaximumPolicy == LimitPolicyStrict {
-					c.opts.Logger.Error("receive maximum exceeded", "limit", limit)
-					_ = c.disconnectWithReason(context.Background(), uint8(ReasonCodeReceiveMaximumExceed), nil)
-					return
-				}
-
-				// Ignore policy: log warning once
-				if !c.receiveMaxExceededLogged {
-					c.opts.Logger.Warn("receive maximum exceeded, ignoring (server is misbehaving)", "limit", limit)
-					c.receiveMaxExceededLogged = true
-				}
-			}
-			c.inboundUnacked[p.PacketID] = struct{}{}
-		}
+	// 2. Enforce Receive Maximum (MQTT v5.0)
+	if err := c.enforceReceiveMaximum(p); err != nil {
+		c.opts.Logger.Error("failed to enforce receive maximum", "error", err)
+		return
 	}
 
-	// For QoS 2, check if we've already received this packet
-	if p.QoS == 2 {
-		if _, exists := c.receivedQoS2[p.PacketID]; exists {
-			// Duplicate QoS 2 message - send PUBREC but don't deliver again
-			select {
-			case c.outgoing <- &packets.PubrecPacket{PacketID: p.PacketID}:
-			case <-c.stop:
-			default:
-			}
-			return
-		}
-		c.receivedQoS2[p.PacketID] = struct{}{}
-
-		// Persist QoS 2 ID
-		if c.opts.SessionStore != nil {
-			if err := c.opts.SessionStore.SaveReceivedQoS2(p.PacketID); err != nil {
-				c.opts.Logger.Warn("failed to persist QoS2 ID", "packet_id", p.PacketID, "error", err)
-			}
-		}
+	// 3. Handle QoS 2 Duplicate Detection
+	if p.QoS == 2 && c.handleQoS2Duplicate(p.PacketID) {
+		return
 	}
 
-	// Find matching handlers
+	// 4. Find matching handlers
+	handlers := c.matchHandlers(p.Topic)
+
+	msg := Message{
+		Topic:      p.Topic,
+		Payload:    p.Payload,
+		QoS:        QoS(p.QoS),
+		Retained:   p.Retain,
+		Duplicate:  p.Dup,
+		Properties: toPublicProperties(p.Properties),
+	}
+
+	// 5. Dispatch to handlers and acknowledge
+	c.dispatchAndAcknowledge(p, msg, handlers)
+}
+
+// processTopicAlias handles MQTT v5.0 topic alias validation and resolution.
+func (c *Client) processTopicAlias(p *packets.PublishPacket) error {
+	if c.opts.ProtocolVersion < ProtocolV50 || p.Properties == nil || p.Properties.Presence&packets.PresTopicAlias == 0 {
+		return nil
+	}
+
+	aliasID := p.Properties.TopicAlias
+
+	// Validate alias ID
+	if aliasID == 0 {
+		c.opts.Logger.Error("server sent invalid topic alias 0")
+		return c.disconnectWithReason(context.Background(), uint8(ReasonCodeTopicAliasInvalid), nil)
+	}
+
+	// Check if server violated our declared maximum
+	if c.opts.TopicAliasMaximum > 0 && aliasID > c.opts.TopicAliasMaximum {
+		c.opts.Logger.Error("server exceeded topic alias maximum", "alias", aliasID, "max", c.opts.TopicAliasMaximum)
+		return c.disconnectWithReason(context.Background(), uint8(ReasonCodeTopicAliasInvalid), nil)
+	}
+
+	if p.Topic == "" {
+		// Alias-only message - resolve to topic
+		c.receivedAliasesLock.RLock()
+		topic, exists := c.receivedAliases[aliasID]
+		c.receivedAliasesLock.RUnlock()
+
+		if !exists {
+			c.opts.Logger.Error("server sent unknown topic alias", "alias", aliasID)
+			return c.disconnectWithReason(context.Background(), uint8(ReasonCodeMalformedPacket), nil)
+		}
+
+		p.Topic = topic
+		c.opts.Logger.Debug("resolved topic alias", "alias", aliasID, "topic", topic)
+	} else {
+		// Both topic and alias - register the mapping
+		c.receivedAliasesLock.Lock()
+		c.receivedAliases[aliasID] = p.Topic
+		c.receivedAliasesLock.Unlock()
+		c.opts.Logger.Debug("registered topic alias", "alias", aliasID, "topic", p.Topic)
+	}
+
+	return nil
+}
+
+// enforceReceiveMaximum checks if the incoming message exceeds the client's flow control limits.
+func (c *Client) enforceReceiveMaximum(p *packets.PublishPacket) error {
+	if c.opts.ProtocolVersion < ProtocolV50 || p.QoS == 0 {
+		return nil
+	}
+
+	if _, exists := c.inboundUnacked[p.PacketID]; !exists {
+		// New message. Check if we have capacity.
+		limit := c.opts.ReceiveMaximum
+		if limit == 0 {
+			limit = 65535
+		}
+		if len(c.inboundUnacked) >= int(limit) {
+			if c.opts.ReceiveMaximumPolicy == LimitPolicyStrict {
+				c.opts.Logger.Error("receive maximum exceeded", "limit", limit)
+				return c.disconnectWithReason(context.Background(), uint8(ReasonCodeReceiveMaximumExceed), nil)
+			}
+
+			// Ignore policy: log warning once
+			if !c.receiveMaxExceededLogged {
+				c.opts.Logger.Warn("receive maximum exceeded, ignoring (server is misbehaving)", "limit", limit)
+				c.receiveMaxExceededLogged = true
+			}
+		}
+		c.inboundUnacked[p.PacketID] = struct{}{}
+	}
+
+	return nil
+}
+
+// handleQoS2Duplicate checks if a QoS 2 message has already been received.
+// Returns true if it's a duplicate (processing should stop).
+func (c *Client) handleQoS2Duplicate(packetID uint16) bool {
+	if _, exists := c.receivedQoS2[packetID]; exists {
+		// Duplicate QoS 2 message - send PUBREC but don't deliver again
+		select {
+		case c.outgoing <- &packets.PubrecPacket{PacketID: packetID}:
+		case <-c.stop:
+		default:
+		}
+		return true
+	}
+	c.receivedQoS2[packetID] = struct{}{}
+
+	// Persist QoS 2 ID
+	if c.opts.SessionStore != nil {
+		if err := c.opts.SessionStore.SaveReceivedQoS2(packetID); err != nil {
+			c.opts.Logger.Warn("failed to persist QoS2 ID", "packet_id", packetID, "error", err)
+		}
+	}
+	return false
+}
+
+// matchHandlers finds all handlers that match the given topic.
+func (c *Client) matchHandlers(topic string) []MessageHandler {
 	var handlers []MessageHandler
 	for filter, entry := range c.subscriptions {
-		if MatchTopic(filter, p.Topic) {
+		if MatchTopic(filter, topic) {
 			if entry.handler != nil {
 				handlers = append(handlers, entry.handler)
 			}
@@ -221,16 +246,11 @@ func (c *Client) handlePublish(p *packets.PublishPacket) {
 			handlers = append(handlers, c.opts.DefaultPublishHandler)
 		}
 	}
+	return handlers
+}
 
-	msg := Message{
-		Topic:      p.Topic,
-		Payload:    p.Payload,
-		QoS:        QoS(p.QoS),
-		Retained:   p.Retain,
-		Duplicate:  p.Dup,
-		Properties: toPublicProperties(p.Properties),
-	}
-
+// dispatchAndAcknowledge calls the handlers and sends the appropriate MQTT acknowledgment.
+func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, handlers []MessageHandler) {
 	// Call handlers in separate goroutines (don't block logicLoop)
 	for _, handler := range handlers {
 		h := handler // Capture for goroutine
@@ -260,9 +280,7 @@ func (c *Client) handlePublish(p *packets.PublishPacket) {
 				case <-done:
 					return
 				case <-time.After(c.opts.HandlerTimeout):
-					c.opts.Logger.Warn("message handler exceeded timeout",
-						"topic", msg.Topic,
-						"timeout", c.opts.HandlerTimeout)
+					c.opts.Logger.Warn("message handler exceeded timeout", "topic", msg.Topic, "timeout", c.opts.HandlerTimeout)
 					return
 				}
 			}
@@ -502,6 +520,10 @@ func (c *Client) retryPending() {
 // nextID generates the next packet ID (1-65535, cycling).
 // Returns 0 if all possible packet IDs are currently in use.
 func (c *Client) nextID() uint16 {
+	if len(c.pending) >= 65535 {
+		return 0
+	}
+
 	for range 65535 {
 		c.nextPacketID++
 		if c.nextPacketID == 0 {

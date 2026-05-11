@@ -27,15 +27,15 @@ func (c *Client) internalPublish(req *publishRequest) {
 
 	// Enforce RetainAvailable validation (fail-fast)
 	if pkt.Retain && !c.serverCaps.RetainAvailable {
-		req.token.complete(fmt.Errorf("server does not support retained messages"))
+		req.token.complete(ErrServerNoRetain)
 		c.sessionLock.Unlock()
 		return
 	}
 
 	// Enforce MaximumQoS validation (fail-fast)
 	if pkt.QoS > c.serverCaps.MaximumQoS {
-		req.token.complete(fmt.Errorf("qos %d exceeds server maximum %d",
-			pkt.QoS, c.serverCaps.MaximumQoS))
+		req.token.complete(fmt.Errorf("%w: requested QoS %d, server maximum is %d",
+			ErrQoSExceedsServerMax, pkt.QoS, c.serverCaps.MaximumQoS))
 		c.sessionLock.Unlock()
 		return
 	}
@@ -161,13 +161,14 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 
 	c.sessionLock.Lock()
 
-	// Validate packet size against server's maximum
+	// Capability checks for QoS, wildcards, etc. are handled in Subscribe() pre-flight.
+	// We still check packet size here because it depends on the final serialized form.
 	if c.serverCaps.MaximumPacketSize > 0 {
 		n, _ := pkt.WriteTo(io.Discard)
 		packetSize := uint32(n)
 		if packetSize > c.serverCaps.MaximumPacketSize {
-			req.token.complete(fmt.Errorf("SUBSCRIBE packet size %d bytes exceeds server maximum %d bytes",
-				packetSize, c.serverCaps.MaximumPacketSize))
+			req.token.complete(fmt.Errorf("%w: packet size %d bytes exceeds server maximum %d bytes",
+				ErrPacketExceedsServerMax, packetSize, c.serverCaps.MaximumPacketSize))
 			c.sessionLock.Unlock()
 			return
 		}
@@ -248,8 +249,8 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 		n, _ := pkt.WriteTo(io.Discard)
 		packetSize := uint32(n)
 		if packetSize > c.serverCaps.MaximumPacketSize {
-			req.token.complete(fmt.Errorf("UNSUBSCRIBE packet size %d bytes exceeds server maximum %d bytes",
-				packetSize, c.serverCaps.MaximumPacketSize))
+			req.token.complete(fmt.Errorf("%w: packet size %d bytes exceeds server maximum %d bytes",
+				ErrPacketExceedsServerMax, packetSize, c.serverCaps.MaximumPacketSize))
 			c.sessionLock.Unlock()
 			return
 		}

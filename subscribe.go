@@ -190,6 +190,18 @@ func (c *Client) Subscribe(topic string, qos QoS, handler MessageHandler, opts .
 		return tok
 	}
 
+	// Enforce server capabilities (MQTT v5.0 only). Runs before building the
+	// packet so that callers get a fast, inspectable error rather than a server
+	// disconnect. Prevents the poison-pill reconnect loop caused by a wildcard
+	// subscription when WildcardAvailable=false.
+	if c.opts.ProtocolVersion >= ProtocolV50 {
+		if err := c.validateSubscribeCaps(topic, qos); err != nil {
+			tok := newToken()
+			tok.complete(err)
+			return tok
+		}
+	}
+
 	pkt := &packets.SubscribePacket{
 		PacketID:          0, // Assigned by internalSubscribe
 		Topics:            []string{topic},
@@ -361,6 +373,46 @@ func (c *Client) resubscribeAll() {
 
 		// Send one packet for each group
 		for _, g := range groups {
+			// Skip resubscription if it violates server capabilities
+			if c.opts.ProtocolVersion >= ProtocolV50 {
+				validTopics := make([]string, 0, len(g.topics))
+				validQoS := make([]uint8, 0, len(g.qos))
+				var validNoLocal []bool
+				var validRetainAsPublished []bool
+				var validRetainHandling []uint8
+
+				if len(g.noLocal) > 0 {
+					validNoLocal = make([]bool, 0, len(g.noLocal))
+					validRetainAsPublished = make([]bool, 0, len(g.retainAsPublished))
+					validRetainHandling = make([]uint8, 0, len(g.retainHandling))
+				}
+
+				for j, topic := range g.topics {
+					if err := c.validateSubscribeCaps(topic, QoS(g.qos[j])); err != nil {
+						c.opts.Logger.Warn("skipping resubscription: violates server capabilities",
+							"topic", topic,
+							"error", err)
+						continue
+					}
+					validTopics = append(validTopics, topic)
+					validQoS = append(validQoS, g.qos[j])
+					if len(g.noLocal) > 0 {
+						validNoLocal = append(validNoLocal, g.noLocal[j])
+						validRetainAsPublished = append(validRetainAsPublished, g.retainAsPublished[j])
+						validRetainHandling = append(validRetainHandling, g.retainHandling[j])
+					}
+				}
+
+				if len(validTopics) == 0 {
+					continue
+				}
+				g.topics = validTopics
+				g.qos = validQoS
+				g.noLocal = validNoLocal
+				g.retainAsPublished = validRetainAsPublished
+				g.retainHandling = validRetainHandling
+			}
+
 			packetID := c.nextID()
 			if packetID == 0 {
 				c.opts.Logger.Error("failed to resubscribe: no packet IDs available")

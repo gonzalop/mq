@@ -249,6 +249,7 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 		receivedQoS2:    make(map[uint16]struct{}),
 		inboundUnacked:  make(map[uint16]struct{}),
 		disconnected:    make(chan struct{}, 1),
+		serverCaps:      extractServerCapabilities(nil),
 	}
 
 	if options.MaxHandlerConcurrency > 0 {
@@ -396,19 +397,7 @@ func (c *Client) connect(ctx context.Context) error {
 		return fmt.Errorf("MQTT requires a non-empty ClientID when CleanSession is false")
 	}
 
-	if c.requestedKeepAlive == 0 {
-		c.requestedKeepAlive = c.opts.KeepAlive
-	}
-
-	if c.requestedSessionExpiry == 0 && c.opts.SessionExpirySet {
-		c.requestedSessionExpiry = c.opts.SessionExpiryInterval
-	}
-
-	c.resetAllTopicAliases()
-
-	c.receivedAliasesLock.Lock()
-	c.receivedAliases = make(map[uint16]string)
-	c.receivedAliasesLock.Unlock()
+	c.prepareConnectionState()
 
 	conn, err := c.dialServer(ctx)
 	if err != nil {
@@ -423,51 +412,92 @@ func (c *Client) connect(ctx context.Context) error {
 	cr := &countingReader{Reader: conn, c: c}
 	cw := &countingWriter{Writer: conn, c: c}
 
-	connectPkt := c.buildConnectPacket()
-	if _, err := connectPkt.WriteTo(cw); err != nil {
+	// 1. Send CONNECT
+	if err := c.sendConnectPacket(cw); err != nil {
 		conn.Close()
-		return fmt.Errorf("failed to send CONNECT: %w", err)
+		return err
 	}
-	c.packetsSent.Add(1)
 
-	// Handshake (CONNACK / AUTH)
+	// 2. Handshake (CONNACK / AUTH)
 	connack, err := c.performHandshake(ctx, cr, cw)
 	if err != nil {
 		return err
 	}
 
-	if connack.ReturnCode != packets.ConnAccepted {
-		conn.Close()
-
-		if c.opts.ProtocolVersion >= ProtocolV50 {
-			err := &MqttError{
-				ReasonCode: ReasonCode(connack.ReturnCode),
-				Parent:     ErrConnectionRefused,
-			}
-			if connack.Properties != nil && connack.Properties.Presence&packets.PresReasonString != 0 {
-				err.Message = connack.Properties.ReasonString
-			}
-			return err
-		}
-
-		switch connack.ReturnCode {
-		case packets.ConnRefusedUnacceptableProtocol:
-			return ErrUnacceptableProtocolVersion
-		case packets.ConnRefusedIdentifierRejected:
-			return ErrIdentifierRejected
-		case packets.ConnRefusedServerUnavailable:
-			return ErrServerUnavailable
-		case packets.ConnRefusedBadUsernameOrPassword:
-			return ErrBadUsernameOrPassword
-		case packets.ConnRefusedNotAuthorized:
-			return ErrNotAuthorized
-		default:
-			return fmt.Errorf("%w: code %d", ErrConnectionRefused, connack.ReturnCode)
-		}
+	// 3. Validate CONNACK
+	if err := c.validateConnack(conn, connack); err != nil {
+		return err
 	}
 
+	// 4. Initialize Session
+	c.finalizeConnection(connack)
+
+	return nil
+}
+
+// prepareConnectionState resets internal state before a connection attempt.
+func (c *Client) prepareConnectionState() {
+	if c.requestedKeepAlive == 0 {
+		c.requestedKeepAlive = c.opts.KeepAlive
+	}
+	if c.requestedSessionExpiry == 0 && c.opts.SessionExpirySet {
+		c.requestedSessionExpiry = c.opts.SessionExpiryInterval
+	}
+
+	c.resetAllTopicAliases()
+	c.receivedAliasesLock.Lock()
+	c.receivedAliases = make(map[uint16]string)
+	c.receivedAliasesLock.Unlock()
+}
+
+// sendConnectPacket builds and sends the CONNECT packet.
+func (c *Client) sendConnectPacket(w io.Writer) error {
+	connectPkt := c.buildConnectPacket()
+	if _, err := connectPkt.WriteTo(w); err != nil {
+		return fmt.Errorf("failed to send CONNECT: %w", err)
+	}
+	c.packetsSent.Add(1)
+	return nil
+}
+
+// validateConnack checks the CONNACK return code and returns a detailed error if rejected.
+func (c *Client) validateConnack(conn net.Conn, connack *packets.ConnackPacket) error {
+	if connack.ReturnCode == packets.ConnAccepted {
+		return nil
+	}
+
+	conn.Close()
+
+	if c.opts.ProtocolVersion >= ProtocolV50 {
+		err := &MqttError{
+			ReasonCode: ReasonCode(connack.ReturnCode),
+			Parent:     ErrConnectionRefused,
+		}
+		if connack.Properties != nil && connack.Properties.Presence&packets.PresReasonString != 0 {
+			err.Message = connack.Properties.ReasonString
+		}
+		return err
+	}
+
+	switch connack.ReturnCode {
+	case packets.ConnRefusedUnacceptableProtocol:
+		return ErrUnacceptableProtocolVersion
+	case packets.ConnRefusedIdentifierRejected:
+		return ErrIdentifierRejected
+	case packets.ConnRefusedServerUnavailable:
+		return ErrServerUnavailable
+	case packets.ConnRefusedBadUsernameOrPassword:
+		return ErrBadUsernameOrPassword
+	case packets.ConnRefusedNotAuthorized:
+		return ErrNotAuthorized
+	default:
+		return fmt.Errorf("%w: code %d", ErrConnectionRefused, connack.ReturnCode)
+	}
+}
+
+// finalizeConnection processes CONNACK properties and starts background loops.
+func (c *Client) finalizeConnection(connack *packets.ConnackPacket) {
 	// Reset keepalive to requested value before processing server override
-	// If server doesn't send ServerKeepAlive, we should use the requested value
 	c.opts.KeepAlive = c.requestedKeepAlive
 
 	c.processConnackProperties(connack)
@@ -479,7 +509,6 @@ func (c *Client) connect(ctx context.Context) error {
 	}
 
 	c.opts.Logger.Debug("connection established", "server", c.opts.Server)
-
 	c.connected.Store(true)
 
 	if c.opts.Authenticator != nil {
@@ -498,7 +527,6 @@ func (c *Client) connect(ctx context.Context) error {
 	go c.writeLoop()
 
 	c.opts.Logger.Debug("client started", "client_id", c.opts.ClientID)
-	return nil
 }
 
 // dialServer establishes a TCP, TLS, or custom connection to the MQTT server.
@@ -962,8 +990,14 @@ func (c *Client) reconnectLoop() {
 	defer c.wg.Done()
 	defer c.activeLoops.Add(-1)
 
-	backoff := time.Second
-	maxBackoff := 2 * time.Minute
+	backoff := c.opts.ReconnectBackoff
+	maxBackoff := c.opts.MaxReconnectBackoff
+	if backoff == 0 {
+		backoff = time.Second
+	}
+	if maxBackoff == 0 {
+		maxBackoff = 2 * time.Minute
+	}
 
 	for {
 		select {
@@ -994,7 +1028,10 @@ func (c *Client) reconnectLoop() {
 				continue
 			}
 
-			backoff = time.Second
+			backoff = c.opts.ReconnectBackoff
+			if backoff == 0 {
+				backoff = time.Second
+			}
 
 			if c.opts.CleanSession {
 				c.internalResetState()

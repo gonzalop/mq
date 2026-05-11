@@ -18,6 +18,7 @@ func TestSubscribe(t *testing.T) {
 		pending:       make(map[uint16]*pendingOp),
 		stop:          make(chan struct{}),
 		nextPacketID:  1,
+		serverCaps:    extractServerCapabilities(nil),
 	}
 
 	topic := "test/topic"
@@ -69,6 +70,7 @@ func TestUnsubscribe(t *testing.T) {
 		pending:       make(map[uint16]*pendingOp),
 		stop:          make(chan struct{}),
 		nextPacketID:  1,
+		serverCaps:    extractServerCapabilities(nil),
 	}
 
 	topic := "test/topic"
@@ -110,6 +112,7 @@ func TestResubscribeAll(t *testing.T) {
 		pending:      make(map[uint16]*pendingOp),
 		stop:         make(chan struct{}),
 		nextPacketID: 1,
+		serverCaps:   extractServerCapabilities(nil),
 	}
 
 	// resubscribeAll now runs and sends packets directly
@@ -137,6 +140,7 @@ func TestInternalSubscribe(t *testing.T) {
 		pending:       make(map[uint16]*pendingOp),
 		outgoing:      make(chan packets.Packet, 10),
 		nextPacketID:  1,
+		serverCaps:    extractServerCapabilities(nil),
 	}
 
 	topic := "test/topic"
@@ -187,6 +191,7 @@ func TestInternalUnsubscribe(t *testing.T) {
 		pending:      make(map[uint16]*pendingOp),
 		outgoing:     make(chan packets.Packet, 10),
 		nextPacketID: 10,
+		serverCaps:   extractServerCapabilities(nil),
 	}
 
 	topics := []string{"test/topic"}
@@ -247,6 +252,7 @@ func TestResubscribeBatching(t *testing.T) {
 				pending:       make(map[uint16]*pendingOp),
 				outgoing:      make(chan packets.Packet, 100),
 				opts:          defaultOptions("tcp://test:1883"),
+				serverCaps:    extractServerCapabilities(nil),
 			}
 
 			// Add test subscriptions
@@ -325,6 +331,7 @@ func TestResubscribePacketIDs(t *testing.T) {
 		outgoing:      make(chan packets.Packet, 10),
 		opts:          defaultOptions("tcp://test:1883"),
 		nextPacketID:  0,
+		serverCaps:    extractServerCapabilities(nil),
 	}
 
 	// Add 250 subscriptions (should create 3 batches)
@@ -362,6 +369,7 @@ func TestResubscribeTimestamp(t *testing.T) {
 		pending:       make(map[uint16]*pendingOp),
 		outgoing:      make(chan packets.Packet, 10),
 		opts:          defaultOptions("tcp://test:1883"),
+		serverCaps:    extractServerCapabilities(nil),
 	}
 
 	// Add some subscriptions

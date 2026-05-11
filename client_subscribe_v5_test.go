@@ -18,6 +18,7 @@ func TestSubscribeWithUserProperties(t *testing.T) {
 		pending:       make(map[uint16]*pendingOp),
 		stop:          make(chan struct{}),
 		nextPacketID:  1,
+		serverCaps:    extractServerCapabilities(nil),
 	}
 
 	topic := "test/topic"
@@ -81,6 +82,7 @@ func TestResubscribeWithUserPropertiesGrouping(t *testing.T) {
 			Logger:          testLogger(),
 		},
 		nextPacketID: 1,
+		serverCaps:   extractServerCapabilities(nil),
 	}
 
 	// 1. Subscription with User Props A

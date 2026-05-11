@@ -27,6 +27,30 @@ var (
 
 	// ErrNoPacketIDsAvailable is returned when all 65535 packet IDs are in use.
 	ErrNoPacketIDsAvailable = errors.New("no packet IDs available")
+
+	// Server capability violation errors (MQTT v5.0).
+	// These are returned by Publish or Subscribe when the requested operation
+	// violates a capability the server declared in its CONNACK packet.
+
+	// ErrServerNoWildcards is returned when subscribing with a wildcard topic
+	// filter ('+' or '#') but the server declared WildcardSubscriptionAvailable=false.
+	ErrServerNoWildcards = errors.New("mqtt: server does not support wildcard subscriptions")
+
+	// ErrServerNoRetain is returned when publishing with Retain=true but the
+	// server declared RetainAvailable=false.
+	ErrServerNoRetain = errors.New("mqtt: server does not support retained messages")
+
+	// ErrServerNoSharedSubs is returned when subscribing to a shared subscription
+	// topic ($share/...) but the server declared SharedSubscriptionAvailable=false.
+	ErrServerNoSharedSubs = errors.New("mqtt: server does not support shared subscriptions")
+
+	// ErrQoSExceedsServerMax is returned when publishing or subscribing with a
+	// QoS level higher than the server's declared MaximumQoS.
+	ErrQoSExceedsServerMax = errors.New("mqtt: QoS level exceeds server maximum")
+
+	// ErrPacketExceedsServerMax is returned when a packet's estimated size
+	// exceeds the server's declared MaximumPacketSize.
+	ErrPacketExceedsServerMax = errors.New("mqtt: packet size exceeds server maximum")
 )
 
 // MqttError represents an error returned by the MQTT server, including

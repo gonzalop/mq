@@ -82,10 +82,12 @@ It is important to distinguish between **Outbound** and **Inbound** flow control
 The `logicLoop` runs in a separate goroutine and handles incoming packets from the `incoming` channel (populated by `readLoop`).
 
 1.  When a packet arrives (e.g., `PUBACK`, `SUBACK`), `logicLoop` acquires `sessionLock`.
-2.  For `PUBLISH` packets:
-    -   If a Topic Alias is used, it acquires `receivedAliasesLock` (Read or Write) to resolve or register the alias.
-    -   It checks `ReceiveMaximum` to ensure the server isn't exceeding our capacity.
-3.  It processes the packet (updates `pending`, `inFlightCount`, `subscriptions`).
+2.  For `PUBLISH` packets, the `logicLoop` orchestrates processing through a sequence of modular helpers:
+    -   **`processTopicAlias`**: Resolves or registers v5.0 topic aliases (acquires `receivedAliasesLock`).
+    -   **`enforceReceiveMaximum`**: Validates inbound flow control against the client's `ReceiveMaximum`.
+    -   **`handleQoS2Duplicate`**: Ensures exactly-once delivery by checking the `receivedQoS2` map and persistence store.
+    -   **`dispatchAndAcknowledge`**: Manages handler execution and sends MQTT acknowledgments (`PUBACK`/`PUBREC`).
+3.  It processes acknowledgment packets (updates `pending`, `inFlightCount`, `subscriptions`).
 4.  If a `PUBACK`/`PUBCOMP` frees up a flow control slot, it drains the `publishQueue` (sending queued messages).
 5.  It releases `sessionLock`.
 6.  It completes the associated `Token` (which notifies the user).
@@ -126,3 +128,4 @@ Because they are part of the execution chain, interceptors should be non-blockin
 ## Thread Safety
 
 All public methods of `Client` are thread-safe and can be called concurrently. Internal methods (prefixed with `internal` or `handle`) usually assume the caller holds the necessary locks (check method documentation).
+

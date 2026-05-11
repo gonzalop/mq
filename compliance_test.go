@@ -79,6 +79,7 @@ func TestCompliance_PacketID_Reuse(t *testing.T) {
 	c := &Client{
 		pending:      make(map[uint16]*pendingOp),
 		nextPacketID: 10,
+		serverCaps:   extractServerCapabilities(nil),
 	}
 
 	// Occupy ID 11
@@ -178,6 +179,7 @@ func TestCompliance_QoS2_Retransmission(t *testing.T) {
 		opts: &clientOptions{
 			Logger: defaultOptions("").Logger,
 		},
+		serverCaps: extractServerCapabilities(nil),
 	}
 
 	// Setup a QoS 2 publish in pending state
@@ -282,6 +284,7 @@ func TestCompliance_Resubscribe_Options_Persistence(t *testing.T) {
 		subscriptions: make(map[string]subscriptionEntry),
 		pending:       make(map[uint16]*pendingOp),
 		outgoing:      make(chan packets.Packet, 10),
+		serverCaps:    extractServerCapabilities(nil),
 	}
 
 	// Subscribe with special options
