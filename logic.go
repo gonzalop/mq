@@ -2,6 +2,7 @@ package mq
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/gonzalop/mq/internal/packets"
@@ -40,9 +41,22 @@ func (c *Client) logicLoop() {
 				req.token.complete(ErrClientDisconnected)
 			}
 			c.pending = nil
+			c.pendingOrder = nil
 			c.publishQueue = nil
 			c.sessionLock.Unlock()
 			return
+		}
+	}
+}
+
+// removePending removes a packet ID from both pending and pendingOrder.
+// Assumes sessionLock is HELD.
+func (c *Client) removePending(packetID uint16) {
+	delete(c.pending, packetID)
+	for i, id := range c.pendingOrder {
+		if id == packetID {
+			c.pendingOrder = append(c.pendingOrder[:i], c.pendingOrder[i+1:]...)
+			break
 		}
 	}
 }
@@ -252,11 +266,20 @@ func (c *Client) matchHandlers(topic string) []MessageHandler {
 
 // dispatchAndAcknowledge calls the handlers and sends the appropriate MQTT acknowledgment.
 func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, handlers []MessageHandler) {
-	// Call handlers in separate goroutines (don't block logicLoop)
+	if len(handlers) == 0 {
+		c.sendAck(p)
+		return
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(len(handlers))
+
+	// Call handlers in separate goroutines
 	for _, handler := range handlers {
 		h := handler // Capture for goroutine
 
 		go func() {
+			defer wg.Done()
 			// Acquire semaphore if configured
 			if c.handlerSem != nil {
 				select {
@@ -277,24 +300,29 @@ func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, h
 			defer cancel()
 
 			msg.Context = ctx
-
-			// Execute handler. We no longer start a nested goroutine for timeout
-			// to avoid leaks; instead, we rely on the handler to respect the
-			// provided context.
 			h(c, msg)
 		}()
 	}
 
+	// Wait for all handlers and then acknowledge
+	go func() {
+		wg.Wait()
+		c.sendAck(p)
+	}()
+}
+
+func (c *Client) sendAck(p *packets.PublishPacket) {
 	switch p.QoS {
 	case 1:
 		select {
 		case c.outgoing <- &packets.PubackPacket{PacketID: p.PacketID}:
-			// Successfully queued PUBACK, remove from tracking
+			c.sessionLock.Lock()
 			delete(c.inboundUnacked, p.PacketID)
+			c.sessionLock.Unlock()
 		case <-c.stop:
 		default:
-			// If we can't send PUBACK right now, it stays in in-flight
-			// and will be retried (or handled) when we have capacity.
+			// If we can't send PUBACK right now, it will be retried (or handled)
+			// when we have capacity.
 		}
 	case 2:
 		select {
@@ -318,7 +346,7 @@ func (c *Client) handleAck(packetID uint16, reasonCode uint8) {
 			}
 		}
 		op.token.complete(err)
-		delete(c.pending, packetID)
+		c.removePending(packetID)
 
 		if c.opts.SessionStore != nil {
 			if err := c.opts.SessionStore.DeletePendingPublish(packetID); err != nil {
@@ -338,7 +366,7 @@ func (c *Client) handlePubrec(p *packets.PubrecPacket) {
 			op.token.reasonCode = ReasonCode(p.ReasonCode)
 			if p.ReasonCode >= 0x80 {
 				op.token.complete(&MqttError{ReasonCode: ReasonCode(p.ReasonCode)})
-				delete(c.pending, p.PacketID)
+				c.removePending(p.PacketID)
 				c.processPublishQueue()
 				return
 			}
@@ -424,7 +452,7 @@ func (c *Client) handleSuback(p *packets.SubackPacket) {
 		}
 
 		op.token.complete(err)
-		delete(c.pending, p.PacketID)
+		c.removePending(p.PacketID)
 	}
 }
 
@@ -447,7 +475,7 @@ func (c *Client) handleUnsuback(p *packets.UnsubackPacket) {
 			}
 		}
 		op.token.complete(err)
-		delete(c.pending, p.PacketID)
+		c.removePending(p.PacketID)
 
 		// Delete subscriptions from store
 		if c.opts.SessionStore != nil {
@@ -466,7 +494,12 @@ func (c *Client) handleUnsuback(p *packets.UnsubackPacket) {
 func (c *Client) retryPending() {
 	now := time.Now()
 
-	for _, op := range c.pending {
+	for _, packetID := range c.pendingOrder {
+		op, ok := c.pending[packetID]
+		if !ok {
+			continue
+		}
+
 		if now.Sub(op.timestamp) > 10*time.Second {
 			// Resend with DUP flag if it's a PUBLISH
 			if pub, ok := op.packet.(*packets.PublishPacket); ok {

@@ -96,6 +96,7 @@ func (c *Client) internalPublish(req *publishRequest) {
 		qos:       pkt.QoS,
 		timestamp: time.Now(),
 	}
+	c.pendingOrder = append(c.pendingOrder, pkt.PacketID)
 
 	if pkt.QoS > 0 {
 		c.inFlightCount++
@@ -133,6 +134,7 @@ func (c *Client) sendPublishLocked(req *publishRequest) bool {
 		qos:       pkt.QoS,
 		timestamp: time.Now(),
 	}
+	c.pendingOrder = append(c.pendingOrder, pkt.PacketID)
 
 	select {
 	case c.outgoing <- pkt:
@@ -194,6 +196,7 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 		token:     req.token,
 		timestamp: time.Now(),
 	}
+	c.pendingOrder = append(c.pendingOrder, pkt.PacketID)
 
 	// Register before receiving SUBACK to avoid racing
 	// with the server since it might sent messages right away
@@ -277,6 +280,9 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 		token:     req.token,
 		timestamp: time.Now(),
 	}
+	c.pendingOrder = append(c.pendingOrder, pkt.PacketID)
+
+	c.opts.Logger.Debug("unsubscribing", "packet_id", pkt.PacketID, "topics", req.topics)
 
 	for _, topic := range req.topics {
 		delete(c.subscriptions, topic)
