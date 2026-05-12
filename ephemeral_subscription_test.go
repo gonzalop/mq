@@ -43,7 +43,7 @@ func TestEphemeralSubscription(t *testing.T) {
 	store := &MockPersistenceStore{}
 
 	// Setup client with mock store
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts:          defaultOptions("tcp://test:1883"),
 		subscriptions: make(map[string]subscriptionEntry),
 		pending:       make(map[uint16]*pendingOp),

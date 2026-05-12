@@ -15,7 +15,7 @@ func TestHandlerInterceptor(t *testing.T) {
 		}
 	}
 
-	client := &Client{
+	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			HandlerInterceptors: []HandlerInterceptor{interceptor},
 		},

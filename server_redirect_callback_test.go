@@ -48,7 +48,7 @@ func TestOnServerRedirectCallback(t *testing.T) {
 				}
 			}
 
-			client := &Client{
+			client := &Client{trie: newTopicTrie(),
 				opts: opts,
 			}
 
@@ -102,7 +102,7 @@ func TestOnServerRedirectCallbackMultiple(t *testing.T) {
 		lastURI = serverURI
 	}
 
-	client := &Client{opts: opts}
+	client := &Client{trie: newTopicTrie(), opts: opts}
 
 	// First redirect
 	client.connState.Store(&connectionState{

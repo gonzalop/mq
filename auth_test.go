@@ -37,7 +37,7 @@ func (t *tokenAuthenticator) Complete() error {
 func TestAuthenticatorInCONNECT(t *testing.T) {
 	auth := &tokenAuthenticator{token: "test-token-123"}
 
-	client := &Client{
+	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Authenticator:   auth,
@@ -65,7 +65,7 @@ func TestAuthenticatorInCONNECT(t *testing.T) {
 func TestHandleAuth(t *testing.T) {
 	auth := &tokenAuthenticator{token: "test-token"}
 
-	client := &Client{
+	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Authenticator:   auth,
@@ -85,7 +85,9 @@ func TestHandleAuth(t *testing.T) {
 		Version: 5,
 	}
 
-	client.handleAuth(authPkt)
+	for _, p := range client.handleAuth(authPkt) {
+		client.outgoing <- p
+	}
 
 	// Verify response was sent
 	select {
@@ -116,7 +118,7 @@ func TestHandleAuth(t *testing.T) {
 func TestReauthenticate(t *testing.T) {
 	auth := &tokenAuthenticator{token: "refresh-token"}
 
-	client := &Client{
+	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Authenticator:   auth,
@@ -185,7 +187,7 @@ func TestReauthenticateErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := &Client{
+			client := &Client{trie: newTopicTrie(),
 				opts: &clientOptions{
 					ProtocolVersion: tt.version,
 					Authenticator:   tt.auth,
@@ -418,7 +420,7 @@ func TestAuthExchangeLimit(t *testing.T) {
 func TestHandleAuth_LimitEnforcement(t *testing.T) {
 	auth := &tokenAuthenticator{token: "test-token"}
 
-	client := &Client{
+	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion:  ProtocolV50,
 			Authenticator:    auth,
@@ -432,19 +434,19 @@ func TestHandleAuth_LimitEnforcement(t *testing.T) {
 
 	// First challenge
 	authPkt := &packets.AuthPacket{ReasonCode: packets.AuthReasonContinue, Version: 5}
-	client.handleAuth(authPkt)
+	_ = client.handleAuth(authPkt)
 	if client.authExchangeCount.Load() != 1 {
 		t.Errorf("expected count 1, got %d", client.authExchangeCount.Load())
 	}
 
 	// Second challenge
-	client.handleAuth(authPkt)
+	_ = client.handleAuth(authPkt)
 	if client.authExchangeCount.Load() != 2 {
 		t.Errorf("expected count 2, got %d", client.authExchangeCount.Load())
 	}
 
 	// Third challenge - should exceed limit (2)
-	client.handleAuth(authPkt)
+	_ = client.handleAuth(authPkt)
 
 	// Should be disconnected (IsConnected will be false)
 	if client.IsConnected() {
@@ -455,7 +457,7 @@ func TestHandleAuth_LimitEnforcement(t *testing.T) {
 func TestHandleAuth_SuccessReset(t *testing.T) {
 	auth := &tokenAuthenticator{token: "test-token"}
 
-	client := &Client{
+	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion:  ProtocolV50,
 			Authenticator:    auth,
@@ -472,7 +474,7 @@ func TestHandleAuth_SuccessReset(t *testing.T) {
 		Version:    5,
 	}
 
-	client.handleAuth(successPkt)
+	_ = client.handleAuth(successPkt)
 
 	if client.authExchangeCount.Load() != 0 {
 		t.Errorf("expected count reset to 0, got %d", client.authExchangeCount.Load())

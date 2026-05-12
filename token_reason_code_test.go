@@ -11,7 +11,7 @@ func TestTokenReasonCode_Puback(t *testing.T) {
 	setupV5Client := func() *Client {
 		opts := defaultOptions("tcp://localhost:1883")
 		opts.ProtocolVersion = ProtocolV50
-		return &Client{
+		return &Client{trie: newTopicTrie(),
 			pending: make(map[uint16]*pendingOp),
 			opts:    opts,
 		}
@@ -68,7 +68,7 @@ func TestTokenReasonCode_Puback(t *testing.T) {
 	t.Run("v3 does not set reason code", func(t *testing.T) {
 		opts := defaultOptions("tcp://localhost:1883")
 		opts.ProtocolVersion = ProtocolV311
-		c := &Client{
+		c := &Client{trie: newTopicTrie(),
 			pending: make(map[uint16]*pendingOp),
 			opts:    opts,
 		}
@@ -88,7 +88,7 @@ func TestTokenReasonCode_Pubcomp(t *testing.T) {
 	setupV5Client := func() *Client {
 		opts := defaultOptions("tcp://localhost:1883")
 		opts.ProtocolVersion = ProtocolV50
-		return &Client{
+		return &Client{trie: newTopicTrie(),
 			pending: make(map[uint16]*pendingOp),
 			opts:    opts,
 		}
@@ -130,7 +130,7 @@ func TestTokenReasonCode_Pubrec(t *testing.T) {
 	setupV5Client := func() *Client {
 		opts := defaultOptions("tcp://localhost:1883")
 		opts.ProtocolVersion = ProtocolV50
-		return &Client{
+		return &Client{trie: newTopicTrie(),
 			pending:  make(map[uint16]*pendingOp),
 			opts:     opts,
 			outgoing: make(chan packets.Packet, 10),
@@ -192,7 +192,7 @@ func TestTokenReasonCode_Suback(t *testing.T) {
 	setupV5Client := func() *Client {
 		opts := defaultOptions("tcp://localhost:1883")
 		opts.ProtocolVersion = ProtocolV50
-		return &Client{
+		return &Client{trie: newTopicTrie(),
 			pending:       make(map[uint16]*pendingOp),
 			subscriptions: make(map[string]subscriptionEntry),
 			opts:          opts,
@@ -256,7 +256,7 @@ func TestTokenReasonCode_Suback(t *testing.T) {
 	t.Run("v3 granted QoS", func(t *testing.T) {
 		opts := defaultOptions("tcp://localhost:1883")
 		opts.ProtocolVersion = ProtocolV311
-		c := &Client{
+		c := &Client{trie: newTopicTrie(),
 			pending:       make(map[uint16]*pendingOp),
 			subscriptions: make(map[string]subscriptionEntry),
 			opts:          opts,
@@ -277,7 +277,7 @@ func TestTokenReasonCode_Unsuback(t *testing.T) {
 	setupV5Client := func() *Client {
 		opts := defaultOptions("tcp://localhost:1883")
 		opts.ProtocolVersion = ProtocolV50
-		return &Client{
+		return &Client{trie: newTopicTrie(),
 			pending: make(map[uint16]*pendingOp),
 			opts:    opts,
 		}

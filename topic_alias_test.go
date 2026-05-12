@@ -95,7 +95,7 @@ func TestApplyTopicAlias(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &Client{
+			c := &Client{trie: newTopicTrie(),
 				opts: &clientOptions{
 					ProtocolVersion: ProtocolV50,
 					Logger:          testLogger(),
@@ -146,7 +146,7 @@ func TestApplyTopicAlias(t *testing.T) {
 }
 
 func TestTopicAliasReconnectionClearing(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		maxAliases:   50,
 		nextAliasID:  10,
 		topicAliases: map[string]uint16{"topic1": 1, "topic2": 2},
@@ -170,7 +170,7 @@ func TestTopicAliasReconnectionClearing(t *testing.T) {
 
 func TestHandleIncomingTopicAlias(t *testing.T) {
 	t.Run("register and resolve alias", func(t *testing.T) {
-		c := &Client{
+		c := &Client{trie: newTopicTrie(),
 			opts: &clientOptions{
 				ProtocolVersion: ProtocolV50,
 				Logger:          testLogger(),
@@ -212,7 +212,7 @@ func TestHandleIncomingTopicAlias(t *testing.T) {
 	})
 
 	t.Run("invalid alias 0", func(t *testing.T) {
-		c := &Client{
+		c := &Client{trie: newTopicTrie(),
 			opts: &clientOptions{
 				ProtocolVersion: ProtocolV50,
 				Logger:          testLogger(),
@@ -235,7 +235,7 @@ func TestHandleIncomingTopicAlias(t *testing.T) {
 	})
 
 	t.Run("server exceeds TopicAliasMaximum", func(t *testing.T) {
-		c := &Client{
+		c := &Client{trie: newTopicTrie(),
 			opts: &clientOptions{
 				ProtocolVersion:   ProtocolV50,
 				TopicAliasMaximum: 5,
@@ -258,7 +258,7 @@ func TestHandleIncomingTopicAlias(t *testing.T) {
 	})
 
 	t.Run("unknown alias", func(t *testing.T) {
-		c := &Client{
+		c := &Client{trie: newTopicTrie(),
 			opts: &clientOptions{
 				ProtocolVersion: ProtocolV50,
 				Logger:          testLogger(),

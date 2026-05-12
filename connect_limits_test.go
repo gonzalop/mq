@@ -63,7 +63,7 @@ func TestConnectPacketLimits(t *testing.T) {
 				opt(options)
 			}
 
-			c := &Client{
+			c := &Client{trie: newTopicTrie(),
 				opts:               options,
 				requestedKeepAlive: options.KeepAlive,
 			}

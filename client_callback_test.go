@@ -9,7 +9,7 @@ import (
 
 func TestAsyncCallbacks(t *testing.T) {
 	// specific test to ensure user callbacks don't block logicLoop
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			Logger:          testLogger(),
 			ProtocolVersion: ProtocolV50,
@@ -30,10 +30,10 @@ func TestAsyncCallbacks(t *testing.T) {
 		close(callbackDone)
 	}
 
-	c.subscriptions["test/topic"] = subscriptionEntry{
+	c.addSubscriptionLocked("test/topic", subscriptionEntry{
 		handler: handler,
 		qos:     0,
-	}
+	})
 
 	// Simulate incoming PUBLISH
 	pkt := &packets.PublishPacket{
@@ -49,7 +49,7 @@ func TestAsyncCallbacks(t *testing.T) {
 	start := time.Now()
 
 	// This should return immediately because callback is goroutine'd
-	c.handleIncoming(pkt)
+	c.sendPackets(c.handleIncoming(pkt))
 
 	duration := time.Since(start)
 

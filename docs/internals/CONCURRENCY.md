@@ -4,13 +4,13 @@ This document describes the concurrency model used in the `mq` library.
 
 ## Overview
 
-The `mq` library uses a shared-state concurrency model protected by mutexes. This design allows for high throughput, particularly for publishing, by enabling concurrent access to the publish queue and session state while maintaining thread safety.
+The `mq` library uses a shared-state concurrency model optimized for high throughput and low latency. The core of the library is a single-threaded "Logic Loop" that manages state transitions, while I/O and user callbacks are handled in separate, concurrent goroutines.
 
 ## Locking Strategy
 
 The `Client` struct uses several mechanisms to protect its state:
 
-1.  **`sessionLock` (`sync.Mutex`)**: This is the "inner" lock and protects the core session state.
+1.  **`sessionLock` (`sync.Mutex`)**: This protects the core session state. It is held only for short-lived, in-memory state updates.
 2.  **`connLock` (`sync.RWMutex`)**: This protects the network connection and connection status.
 3.  **`connState` (`atomic.Pointer[connectionState]`)**: This provides a thread-safe, immutable snapshot of connection-time properties and server capabilities (MQTT v5.0).
 4.  **`receivedAliasesLock` (`sync.RWMutex`)**: This protects the mapping of inbound Topic Aliases (ID -> Topic Name) for MQTT v5.0.
@@ -32,23 +32,20 @@ The `sessionLock` MUST be held when accessing or modifying the following fields:
 
 The client uses an atomic counter, `activeLoops`, to track the number of long-running background goroutines (`logicLoop`, `reconnectLoop`, `readLoop`, `writeLoop`). 
 
-This is used by the public `Disconnect()` method to wait for a clean shutdown without leaking helper goroutines. When `Disconnect()` is called, it signals all loops to stop and then polls `activeLoops` until it reaches zero or the timeout is exceeded. Internal disconnections (e.g., due to protocol errors) use a non-blocking path to avoid deadlocking if the disconnect is triggered from within one of these loops.
+This is used by the public `Disconnect()` method to wait for a clean shutdown without leaking helper goroutines.
 
-### `connLock` Protected State
+## The Logic Loop (`logicLoop`)
 
-The `connLock` MUST be held when accessing:
+The `logicLoop` is the single-threaded state machine that manages the client's internal state. By confining state changes to this loop, we minimize lock contention and prevent complex race conditions.
 
--   `conn`: The underlying network connection (`net.Conn`).
--   `connected`: Boolean flag indicating connection status.
--   `lastDisconnectReason`: Stores the reason for the last disconnection.
+1.  **Incoming Packets**: When a packet arrives from the `readLoop`, the `logicLoop` invokes `handleIncoming`.
+2.  **Functional Handling**: Internal handler methods (`handlePublish`, `handleAck`, etc.) process the state changes and return a slice of `[]packets.Packet` representing the necessary response (e.g., a `PUBACK`).
+3.  **Non-blocking Outbound**: The `logicLoop` calls the `sendPackets` helper to dispatch these responses to the `outgoing` channel.
+4.  **Lock Isolation**: Most state updates happen within the handlers (under `sessionLock`), but the actual network I/O (via `sendPackets`) and the execution of user callbacks happen **outside** the critical path of the logic loop.
 
-### `receivedAliasesLock` Protected State
+### `sendPackets` Strategy
 
-This lock guards the `receivedAliases` map, which stores the mapping between Topic Alias IDs and their corresponding topic names for incoming messages. It uses an `RWMutex` because reads (resolving an alias) are much more frequent than writes (registering a new alias).
-
-### Atomic Statistics
-
-Client statistics (`PacketsSent`, `BytesReceived`, etc.) are stored using `atomic` types (e.g., `atomic.Uint64`). They can be accessed safely from any goroutine via `client.GetStats()` without acquiring any of the main locks. This ensures that monitoring does not contend with the critical path.
+The `sendPackets` helper uses a non-blocking `select` when sending to the `outgoing` channel. If the channel is full, the packet is dropped (and will be retransmitted later if it's a QoS 1 or 2 packet). This ensures that a stalled `writeLoop` (due to network backpressure) cannot block the `logicLoop`, allowing it to continue processing ACKs from the server and freeing up resources.
 
 ## Request Flow
 
@@ -60,75 +57,50 @@ Client statistics (`PacketsSent`, `BytesReceived`, etc.) are stored using `atomi
     -   It assigns a PacketID (if QoS > 0).
     -   It adds the operation to `pending`.
     -   It releases `sessionLock`.
-    -   It sends the packet to the `outgoing` channel (which is processed by `writeLoop`).
+    -   It sends the packet to the `outgoing` channel.
 4.  If window is full:
     -   It appends the request to `publishQueue`.
     -   It releases `sessionLock`.
 
-### Flow Control
+### Incoming Packets
 
-It is important to distinguish between **Outbound** and **Inbound** flow control:
+1.  The `readLoop` parses a packet and sends it to the `incoming` channel.
+2.  The `logicLoop` receives the packet and calls `handleIncoming(pkt)`.
+3.  `handleIncoming` dispatches to specific handlers:
+    -   **`handlePublish`**: Finds matching handlers using the **Radix Tree** (`topicTrie`), dispatches them asynchronously, and returns a `PUBACK`/`PUBREC`.
+    -   **`handleAck`**: Removes the original packet from `pending`, decrements `inFlightCount`, and attempts to drain the `publishQueue`.
+4.  The `logicLoop` sends any returned response packets using `sendPackets`.
 
--   **Outbound (Client Publishing)**: Managed by `inFlightCount`, `ReceiveMaximum` (server's limit), and the `publishQueue`. This ensures we don't flood the server.
--   **Inbound (Server Publishing)**: Managed by `ReceiveMaximum` (client's limit). The client enforces this strict limit when processing incoming packets in `logicLoop` (under `sessionLock`). If the server violates it, the client may disconnect with a protocol error.
+## Topic Routing (Radix Tree)
 
-### Subscribing (`Subscribe`, `Unsubscribe`)
-
-1.  The method acquires `sessionLock`.
-2.  It assigns a PacketID.
-3.  It updates `pending` map.
-4.  It releases `sessionLock`.
-5.  It sends the packet to the `outgoing` channel.
-
-### Incoming Packets (`logicLoop`)
-
-The `logicLoop` runs in a separate goroutine and handles incoming packets from the `incoming` channel (populated by `readLoop`).
-
-1.  When a packet arrives (e.g., `PUBACK`, `SUBACK`), `logicLoop` acquires `sessionLock`.
-2.  For `PUBLISH` packets, the `logicLoop` orchestrates processing through a sequence of modular helpers:
-    -   **`processTopicAlias`**: Resolves or registers v5.0 topic aliases (acquires `receivedAliasesLock`).
-    -   **`enforceReceiveMaximum`**: Validates inbound flow control against the client's `ReceiveMaximum`.
-    -   **`handleQoS2Duplicate`**: Ensures exactly-once delivery by checking the `receivedQoS2` map and persistence store.
-    -   **`dispatchAndAcknowledge`**: Manages handler execution and sends MQTT acknowledgments (`PUBACK`/`PUBREC`).
-3.  It processes acknowledgment packets (updates `pending`, `inFlightCount`, `subscriptions`).
-4.  If a `PUBACK`/`PUBCOMP` frees up a flow control slot, it drains the `publishQueue` (sending queued messages).
-5.  It releases `sessionLock`.
-6.  It completes the associated `Token` (which notifies the user).
+Subscription matching is performed using a high-performance **Radix Tree** (`topicTrie`). 
+- **Efficiency**: Matching complexity is O(K) where K is the number of levels in the topic, rather than O(N) where N is the number of subscriptions.
+- **Concurrent Handlers**: The trie supports multiple handlers for the same topic filter. If multiple handlers are registered for the same filter, all will be executed.
+- **Unsubscribe**: Unsubscribing from a topic filter removes **all** handlers associated with that specific filter.
 
 ## Deadlock Prevention
 
--   **Lock Ordering**: If both locks are needed, `connLock` should generally be acquired *before* `sessionLock` if meaningful, but in practice they protect disjoint sets of state and are rarely held simultaneously.
--   **No Blocking IO under Lock**: We avoid blocking IO (reading/writing to network) while holding `sessionLock`. Packets are sent via the buffered `outgoing` channel. The `writeLoop` handles the actual socket write.
--   **Non-Blocking Internal Disconnect**: To prevent deadlocks, internal methods that trigger a client shutdown (like protocol error handlers in the `logicLoop`) must use the non-blocking disconnect path. This allows the calling loop to terminate gracefully after signaling the other loops to stop.
--   **Callbacks**: User callbacks are invoked in separate goroutines *without* holding `sessionLock`. This ensures that slow or blocking user code does not block the client's internal logic loop or cause deadlocks if the callback calls client methods.
-    -   See "Callback Execution" section below for details on each callback.
+-   **No Blocking IO under Lock**: We never perform network I/O or disk I/O (via `SessionStore`) while holding a mutex.
+-   **Async Callbacks**: All user callbacks are invoked in separate goroutines.
+-   **Lock Ordering**: The library maintains a strict hierarchy to prevent circular waits.
 
-## Callback Execution
+## Reliability and Fail-Fast
 
-All callbacks are executed asynchronously in their own goroutines. This design prevents user code from blocking the critical `logicLoop` or network I/O, and prevents deadlocks if the callback calls client methods (e.g. `Subscribe` inside `OnConnect`).
+### User Callbacks and Panics
+
+In accordance with Go's "fail-fast" philosophy, the library **does not** wrap user-facing callbacks (`MessageHandler`, `OnConnect`, `OnConnectionLost`, etc.) in recovery blocks.
+
+If a user-provided handler panics, it will propagate up and terminate the entire application. This ensures that logic errors in user code are not silenced and can be caught early during development. Users who require the client to survive handler panics are responsible for implementing their own `recover()` logic within their handlers.
+
+### Callback Execution
 
 | Callback | Execution Mode | Rationale |
 | :--- | :--- | :--- |
-| `OnConnect` | **Asynchronous** | Allows implementing complex setup logic (subscriptions, publishing) without blocking the connection flow. |
-| `OnConnectionLost` | **Asynchronous** | Ensures cleanup or alerting logic doesn't delay internal teardown or reconnection attempts. |
-| `OnServerRedirect` | **Asynchronous** | Prevents blocking the processing of CONNACK properties; allows user to decide on reconnection strategy independently. |
-| `MessageHandler` | **Asynchronous** | Critical for high throughput; slow message processing shouldn't block reception of other packets or ACKs. |
+| `OnConnect` | **Asynchronous** | Allows setup logic (subscriptions, publishing) without blocking connection. |
+| `OnConnectionLost` | **Asynchronous** | Ensures cleanup logic doesn't delay reconnection. |
+| `MessageHandler` | **Asynchronous** | Prevents slow processing from blocking the `logicLoop` or ACKs. |
 
 ### Handler Safety
 
-While handlers are asynchronous, the library provides two mechanisms to prevent them from overwhelming the system:
-1. **`MaxHandlerConcurrency`**: A semaphore-based limit on the number of handler goroutines that can run at once.
-2. **`HandlerTimeout`**: A cancelable `context.Context` is provided in the `Message` struct. If the handler takes longer than the configured timeout, the context is canceled. This allows handlers to respond to timeouts and clean up resources. Additionally, a watchdog logs a warning and releases the semaphore slot to ensure that a single hung handler cannot permanently reduce the client's processing capacity.
-
-## Interceptors (Middleware)
-
-Interceptors are executed synchronously within the goroutine that invokes the wrapped function:
-
-- **Handler Interceptors**: Executed within the asynchronous goroutine spawned for the `MessageHandler`. They do not block the `logicLoop`.
-- **Publish Interceptors**: Executed within the caller's goroutine when `client.Publish` is called.
-
-Because they are part of the execution chain, interceptors should be non-blocking and efficient to avoid introducing latency in message processing or publishing.
-
-## Thread Safety
-
-All public methods of `Client` are thread-safe and can be called concurrently. Internal methods (prefixed with `internal` or `handle`) usually assume the caller holds the necessary locks (check method documentation).
+- **`MaxHandlerConcurrency`**: Limits the number of concurrent handler goroutines.
+- **`HandlerTimeout`**: Automatically cancels the `Message.Context` if a handler exceeds its time limit.

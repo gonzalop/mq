@@ -14,15 +14,18 @@ func newTestClient(opts *clientOptions) *Client {
 		opts = defaultOptions("tcp://localhost:1883")
 	}
 	c := &Client{
-		opts:            opts,
-		outgoing:        make(chan packets.Packet, opts.OutgoingQueueSize),
-		incoming:        make(chan packets.Packet, opts.IncomingQueueSize),
-		packetReceived:  make(chan struct{}, 1),
-		pingPendingCh:   make(chan struct{}, 1),
-		stop:            make(chan struct{}),
-		pending:         make(map[uint16]*pendingOp),
-		subscriptions:   make(map[string]subscriptionEntry),
-		receivedQoS2:    make(map[uint16]struct{}),
+		trie:     newTopicTrie(),
+		opts:     opts,
+		outgoing: make(chan packets.Packet, opts.OutgoingQueueSize),
+		incoming: make(chan packets.Packet, opts.IncomingQueueSize),
+
+		packetReceived: make(chan struct{}, 1),
+		pingPendingCh:  make(chan struct{}, 1),
+		stop:           make(chan struct{}),
+		pending:        make(map[uint16]*pendingOp),
+		subscriptions:  make(map[string]subscriptionEntry),
+		receivedQoS2:   make(map[uint16]struct{}),
+
 		inboundUnacked:  make(map[uint16]struct{}),
 		topicAliases:    make(map[string]uint16),
 		receivedAliases: make(map[uint16]string),
@@ -93,6 +96,14 @@ func TestQueueProcessingDeadlock(t *testing.T) {
 		// Give it a tiny bit of time to process the ACK and get stuck
 		time.Sleep(50 * time.Millisecond)
 
+		// Verify that the queued message is STILL in the queue (since it couldn't be sent)
+		// We do this before closing stop to avoid logicLoop clearing the queue
+		c.sessionLock.Lock()
+		if len(c.publishQueue) != 1 {
+			t.Errorf("expected 1 message in publishQueue, got %d", len(c.publishQueue))
+		}
+		c.sessionLock.Unlock()
+
 		// Close stop channel to signal exit
 		close(c.stop)
 
@@ -103,15 +114,15 @@ func TestQueueProcessingDeadlock(t *testing.T) {
 
 	select {
 	case <-done:
-		t.Log("Test passed: logicLoop exited cleanly")
+		t.Log("Test passed: logicLoop exited cleanly (didn't block on full channel)")
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("Test timed out: logicLoop is deadlocked trying to send to full outgoing channel")
+		t.Fatal("Test timed out: logicLoop blocked despite non-blocking send refactor")
 	}
 }
 
-// TestQueuedTokensCompletedOnFullChannel verifies that tokens for queued messages
-// are completed (with an error) when sendPublishLocked fails due to a full outgoing channel.
-func TestQueuedTokensCompletedOnFullChannel(t *testing.T) {
+// TestQueuedMessagesStayInQueueOnFullChannel verifies that messages remain in the
+// publish queue if the outgoing channel is full, instead of being dropped or blocking.
+func TestQueuedMessagesStayInQueueOnFullChannel(t *testing.T) {
 	// 1. Setup Client with a full outgoing channel
 	opts := defaultOptions("tcp://localhost:1883")
 	opts.ReceiveMaximum = 1
@@ -134,7 +145,7 @@ func TestQueuedTokensCompletedOnFullChannel(t *testing.T) {
 	}
 	c.inFlightCount = 1
 
-	// 3. Add a queued message that we want to move to outgoing
+	// 3. Add a queued message
 	token := newToken()
 	queuedReq := &publishRequest{
 		packet: &packets.PublishPacket{Topic: "queued", QoS: 1, Payload: []byte("data")},
@@ -146,24 +157,32 @@ func TestQueuedTokensCompletedOnFullChannel(t *testing.T) {
 	c.wg.Add(1)
 	go c.logicLoop()
 
-	// 5. Trigger the move from queue to outgoing
-	// Send a PUBACK for packet 1. This decreases inFlightCount to 0 and calls processPublishQueue.
+	// 5. Trigger queue processing
 	c.incoming <- &packets.PubackPacket{PacketID: 1}
 
-	// 6. Verify that the token for the queued message COMPLETES.
-	// Without the fix, this will block forever because sendPublishLocked blocks on outgoing.
-	select {
-	case <-token.Done():
-		if token.Error() == nil {
-			t.Error("Expected error because outgoing channel was full, got nil")
-		}
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("DEADLOCK: Queued token never completed because sendPublishLocked blocked on full channel")
-	}
+	// 6. Verify liveness
+	done := make(chan struct{})
+	go func() {
+		time.Sleep(50 * time.Millisecond)
 
-	// Cleanup
-	close(c.stop)
-	c.wg.Wait()
+		// 7. Verify message is still in queue
+		c.sessionLock.Lock()
+		if len(c.publishQueue) != 1 {
+			t.Errorf("expected message to remain in queue, but it was removed")
+		}
+		c.sessionLock.Unlock()
+
+		close(c.stop)
+		c.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("logicLoop blocked while processing queue with full channel")
+	}
 }
 
 // TestQueuedTokensCompletedOnShutdown verifies that tokens for messages still in the

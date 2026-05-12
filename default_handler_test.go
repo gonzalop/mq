@@ -19,7 +19,7 @@ func TestDefaultPublishHandler(t *testing.T) {
 		close(handlerCalled)
 	}
 
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			DefaultPublishHandler: defaultHandler,
 			Logger:                testLogger(),
@@ -37,7 +37,7 @@ func TestDefaultPublishHandler(t *testing.T) {
 	}
 
 	// Process the incoming packet
-	c.handleIncoming(pkt)
+	c.sendPackets(c.handleIncoming(pkt))
 
 	// Wait for handler to be called
 	select {
@@ -66,7 +66,7 @@ func TestDefaultHandlerNotCalledIfSubscriptionExists(t *testing.T) {
 		close(subCalled)
 	}
 
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			DefaultPublishHandler: defaultHandler,
 			Logger:                testLogger(),
@@ -76,7 +76,7 @@ func TestDefaultHandlerNotCalledIfSubscriptionExists(t *testing.T) {
 	}
 
 	// Register a subscription
-	c.subscriptions["subscribed/topic"] = subscriptionEntry{handler: subHandler}
+	c.addSubscriptionLocked("subscribed/topic", subscriptionEntry{handler: subHandler})
 
 	// Create a publish packet that MATCHES the subscription
 	pkt := &packets.PublishPacket{
@@ -87,7 +87,7 @@ func TestDefaultHandlerNotCalledIfSubscriptionExists(t *testing.T) {
 	}
 
 	// Process the incoming packet
-	c.handleIncoming(pkt)
+	c.sendPackets(c.handleIncoming(pkt))
 
 	// Verify only subscription handler is called
 	select {

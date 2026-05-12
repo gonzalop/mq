@@ -76,7 +76,7 @@ func TestCompliance_Connect_Validation(t *testing.T) {
 
 // TestCompliance_PacketID_Reuse verifies that Packet IDs are not reused while in flight.
 func TestCompliance_PacketID_Reuse(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		pending:      make(map[uint16]*pendingOp),
 		nextPacketID: 10,
 	}
@@ -175,7 +175,7 @@ func TestCompliance_ProtocolError_Disconnect(t *testing.T) {
 
 // TestCompliance_QoS2_Retransmission verifies correct QoS 2 flow retransmission (PUBREL vs PUBLISH).
 func TestCompliance_QoS2_Retransmission(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		pending:  make(map[uint16]*pendingOp),
 		outgoing: make(chan packets.Packet, 10),
 		opts: &clientOptions{
@@ -202,9 +202,11 @@ func TestCompliance_QoS2_Retransmission(t *testing.T) {
 	c.pendingOrder = append(c.pendingOrder, 100)
 
 	// Simulate receiving PUBREC
-	// The handler should send PUBREL and update state
+	// The handler should return PUBREL
 	pubrec := &packets.PubrecPacket{PacketID: 100}
-	c.handlePubrec(pubrec)
+	for _, p := range c.handlePubrec(pubrec) {
+		c.outgoing <- p
+	}
 
 	// Backdate timestamp again to trigger retryPending
 	c.pending[100].timestamp = time.Now().Add(-20 * time.Second)
@@ -220,7 +222,9 @@ func TestCompliance_QoS2_Retransmission(t *testing.T) {
 	}
 
 	// Simulate timeout and retry
-	c.retryPending()
+	for _, p := range c.retryPending() {
+		c.outgoing <- p
+	}
 
 	// Expect PUBREL to be resent (in second phase of QoS 2)
 	select {
@@ -240,7 +244,7 @@ func TestCompliance_QoS2_Retransmission(t *testing.T) {
 // TestCompliance_AssignedClientID_Persistence verifies that a server-assigned ClientID
 // is persisted in options for future reconnections.
 func TestCompliance_AssignedClientID_Persistence(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			ClientID:        "", // Empty initially
@@ -281,7 +285,7 @@ func TestCompliance_AssignedClientID_Persistence(t *testing.T) {
 // TestCompliance_Resubscribe_Options_Persistence verifies that subscription options
 // (NoLocal, etc.) are preserved across reconnections.
 func TestCompliance_Resubscribe_Options_Persistence(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Logger:          defaultOptions("").Logger,

@@ -14,7 +14,7 @@ import (
 // TestOperationsAfterDisconnect verifies behavior when calling methods on a disconnected client.
 func TestOperationsAfterDisconnect(t *testing.T) {
 	// Setup client with mock options
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: defaultOptions("tcp://localhost:1883"),
 		stop: make(chan struct{}),
 	}
@@ -34,7 +34,7 @@ func TestConcurrentSafety(_ *testing.T) {
 	// This mainly tests that the API methods don't race on themselves.
 	// Without a running loop, they block or error safeley.
 
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts:         defaultOptions("tcp://localhost:1883"),
 		stop:         make(chan struct{}),
 		outgoing:     make(chan packets.Packet, 100),
@@ -87,7 +87,7 @@ func TestAssignedClientID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := &Client{}
+			client := &Client{trie: newTopicTrie()}
 			client.connState.Store(&connectionState{assignedClientID: tt.assignedID})
 
 			got := client.AssignedClientID()
@@ -120,7 +120,7 @@ func TestAssignedClientIDExtraction(t *testing.T) {
 
 func TestAssignedClientIDDefault(t *testing.T) {
 	// Client with no assigned ID should return empty string
-	client := &Client{}
+	client := &Client{trie: newTopicTrie()}
 
 	got := client.AssignedClientID()
 	if got != "" {
@@ -153,7 +153,7 @@ func TestServerKeepAlive(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := &Client{}
+			client := &Client{trie: newTopicTrie()}
 			client.connState.Store(&connectionState{serverKeepAlive: tt.keepalive})
 
 			got := client.ServerKeepAlive()
@@ -186,7 +186,7 @@ func TestServerKeepAliveExtraction(t *testing.T) {
 
 func TestServerKeepAliveUpdatesClientOptions(t *testing.T) {
 	// Simulate what happens in connect() when server overrides keepalive
-	client := &Client{
+	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			KeepAlive: 60 * time.Second, // Client requested 60s
 		},
@@ -210,7 +210,7 @@ func TestServerKeepAliveUpdatesClientOptions(t *testing.T) {
 
 func TestServerKeepAliveDefault(t *testing.T) {
 	// Client with no server keepalive should return 0
-	client := &Client{}
+	client := &Client{trie: newTopicTrie()}
 
 	got := client.ServerKeepAlive()
 	if got != 0 {
@@ -253,7 +253,7 @@ func TestServerReference(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := &Client{}
+			client := &Client{trie: newTopicTrie()}
 			client.connState.Store(&connectionState{serverReference: tt.serverRef})
 
 			got := client.ServerReference()
@@ -286,7 +286,7 @@ func TestServerReferenceExtraction(t *testing.T) {
 
 func TestServerReferenceDefault(t *testing.T) {
 	// Client with no server reference should return empty string
-	client := &Client{}
+	client := &Client{trie: newTopicTrie()}
 
 	got := client.ServerReference()
 	if got != "" {
@@ -297,7 +297,7 @@ func TestServerReferenceDefault(t *testing.T) {
 func TestServerReferenceNoAutoRedirect(t *testing.T) {
 	// Verify that the library does NOT automatically redirect
 	// This is a documentation test to ensure the behavior is clear
-	client := &Client{}
+	client := &Client{trie: newTopicTrie()}
 	client.connState.Store(&connectionState{
 		serverReference: "mqtt://other-server.example.com:1883",
 	})
@@ -346,7 +346,7 @@ func TestResponseInformation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := &Client{}
+			client := &Client{trie: newTopicTrie()}
 			client.connState.Store(&connectionState{
 				responseInfo: tt.respInfo,
 			})
@@ -381,7 +381,7 @@ func TestResponseInformationExtraction(t *testing.T) {
 
 func TestResponseInformationDefault(t *testing.T) {
 	// Client with no response information should return empty string
-	client := &Client{}
+	client := &Client{trie: newTopicTrie()}
 
 	got := client.ResponseInformation()
 	if got != "" {
@@ -391,7 +391,7 @@ func TestResponseInformationDefault(t *testing.T) {
 
 func TestResponseInformationUsage(t *testing.T) {
 	// Example of how to use response information
-	client := &Client{}
+	client := &Client{trie: newTopicTrie()}
 	client.connState.Store(&connectionState{
 		responseInfo: "tenant-a/client-123/",
 	})
@@ -520,7 +520,7 @@ func TestExtractServerCapabilities(t *testing.T) {
 
 func TestServerCapabilities(t *testing.T) {
 	// Create a mock client with server capabilities
-	client := &Client{}
+	client := &Client{trie: newTopicTrie()}
 
 	// Set some capabilities
 	client.connState.Store(&connectionState{
@@ -568,7 +568,7 @@ func TestServerCapabilities(t *testing.T) {
 
 func TestServerCapabilitiesDefault(t *testing.T) {
 	// Client with no capabilities set (all zeros)
-	client := &Client{}
+	client := &Client{trie: newTopicTrie()}
 
 	caps := client.ServerCapabilities()
 
@@ -738,7 +738,7 @@ func TestValidateConnack(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &Client{
+			c := &Client{trie: newTopicTrie(),
 				opts: &clientOptions{
 					ProtocolVersion: tt.version,
 				},
@@ -838,7 +838,7 @@ func TestSessionExpiryInterval_V311(t *testing.T) {
 				opt(opts)
 			}
 
-			client := &Client{
+			client := &Client{trie: newTopicTrie(),
 				opts: opts,
 			}
 

@@ -8,7 +8,7 @@ import (
 )
 
 func TestSubscribeWithUserProperties(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Logger:          testLogger(),
@@ -75,7 +75,7 @@ func TestSubscribeWithUserProperties(t *testing.T) {
 }
 
 func TestResubscribeWithUserPropertiesGrouping(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		subscriptions: make(map[string]subscriptionEntry),
 		pending:       make(map[uint16]*pendingOp),
 		outgoing:      make(chan packets.Packet, 10),

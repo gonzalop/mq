@@ -21,7 +21,7 @@ func TestKeepAliveTimeout(t *testing.T) {
 
 	// Create client with very short keepalive for fast test
 	keepalive := 200 * time.Millisecond
-	client := &Client{
+	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			KeepAlive:       keepalive,
 			Server:          "tcp://test:1883",
@@ -80,7 +80,7 @@ func TestKeepAliveTimeoutPrevented(t *testing.T) {
 
 	// Create client with short keepalive
 	keepalive := 200 * time.Millisecond
-	client := &Client{
+	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			KeepAlive:       keepalive,
 			Server:          "tcp://test:1883",
@@ -137,7 +137,7 @@ func TestKeepAlivePINGREQSent(_ *testing.T) {
 
 	// Create client with short keepalive
 	keepalive := 200 * time.Millisecond
-	client := &Client{
+	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			KeepAlive:       keepalive,
 			Server:          "tcp://test:1883",
@@ -194,7 +194,7 @@ func TestKeepAliveWriteDoesNotResetTimeout(t *testing.T) {
 
 	// Create client with short keepalive
 	keepalive := 200 * time.Millisecond
-	client := &Client{
+	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			KeepAlive:       keepalive,
 			Server:          "tcp://test:1883",
@@ -266,7 +266,7 @@ func TestKeepAlivePINGREQWithQoS0Publishing(t *testing.T) {
 
 	// Create client with short keepalive
 	keepalive := 400 * time.Millisecond
-	client := &Client{
+	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			KeepAlive:       keepalive,
 			Server:          "tcp://test:1883",
@@ -372,7 +372,7 @@ func TestKeepAliveZeroDisabled(t *testing.T) {
 	defer clientConn.Close()
 
 	// Create client with keepalive disabled
-	client := &Client{
+	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			KeepAlive:       0, // Disabled
 			Server:          "tcp://test:1883",

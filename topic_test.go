@@ -268,7 +268,7 @@ func TestDefaultLimitsWhenNotSet(t *testing.T) {
 
 // TestClientValidationIntegration verifies that Client methods correctly use validation.
 func TestClientValidationIntegration(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: defaultOptions("tcp://localhost:1883"),
 	}
 
@@ -340,7 +340,7 @@ func TestTopicMatch_WildcardStartingWithDollar_Compliance(t *testing.T) {
 }
 
 func TestValidatePublishCaps(t *testing.T) {
-	c := &Client{}
+	c := &Client{trie: newTopicTrie()}
 	c.connState.Store(&connectionState{
 		caps: serverCapabilities{
 			MaximumQoS:        1,
@@ -410,7 +410,7 @@ func TestValidatePublishCaps(t *testing.T) {
 }
 
 func TestValidateSubscribeCaps(t *testing.T) {
-	c := &Client{}
+	c := &Client{trie: newTopicTrie()}
 	c.connState.Store(&connectionState{
 		caps: serverCapabilities{
 			MaximumQoS:                  1,

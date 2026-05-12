@@ -11,32 +11,57 @@ A lightweight, idiomatic MQTT client library for Go with full support for v3.1.1
 - **MQTT v3.1.1 & v5.0**: Full support for both protocol versions
   - **Unified API**: Write modern v5-style code (Properties, Reason Codes) that automatically degrades on v3 servers.
   - **Auto-Negotiation**: Automatically falls back to v3.1.1 if v5.0 is not supported by the server.
-- **Auto-Reconnect**: Built-in exponential backoff (see [examples/auto_reconnect](./examples/auto_reconnect))
-- **Persistence**: Optional Durable Session Persistence (CleanSession=false) (see [docs/persistence.md](docs/persistence.md))
-- **Transport**: TCP and TLS directly, WebSockets via `WithDialer` (see [examples/websocket](./examples/websocket))
+- **High Performance**:
+  - **Radix Tree Routing**: O(K) topic matching for high-subscription environments.
+  - **Non-blocking I/O**: Core state machine uses a non-blocking logic loop to maximize throughput.
+- **Persistence**: Durable Session Persistence (CleanSession=false) with incremental disk storage and optional asynchronous background worker (see [docs/persistence.md](docs/persistence.md)).
+- **Auto-Reconnect**: Built-in exponential backoff (see [Examples](./examples))
+- **Transport**: TCP and TLS directly, WebSockets via `WithDialer` (see [Examples](./examples))
 - **Middleware/Interceptors**: Intercept inbound/outbound messages for logging, metrics, or tracing.
-- **Optimized**: High throughput, low memory footprint
-- **Thread-Safe**: Safe for concurrent use
 - **Context Awareness**: `context.Context` support for cancellation/timeouts
 - **MQTT v5.0 Features**:
-  - **Message Properties**: Content Type, User Properties (see [examples/v5_properties](./examples/v5_properties)), Request/Response (see [examples/v5_request_response](./examples/v5_request_response)), Message Expiry
+  - **Message Properties**: Content Type, User Properties, Request/Response, Message Expiry
   - **Connection Config**: Session Expiry, Request Problem/Response Info, User Properties
-  - **Bandwidth**: Topic Aliases (Client & Server) (see [examples/topic_aliases](./examples/topic_aliases))
+  - **Bandwidth**: Topic Aliases (Client & Server)
   - **Flow Control**: Receive Maximum, Max Packet Size
   - **Subscription**: NoLocal, RetainAsPublished, RetainHandling, Shared Subscriptions
 
-All features are tested with an extensive unit and integration test suite.
+For code demonstrations of these features, see the **[Examples Index](examples/README.md)**.
 
-## Performance (updated with mosquitto v2.1.0 test results)
+## Performance
 
-The `mq` library is built for high-performance scenarios, consistently outperforming other Go MQTT clients in throughput and resource efficiency. Key highlights from our benchmarks include:
-
-- **Throughput**: Up to **3x faster** than Paho v5 and **4x faster** than Paho v3 in high-concurrency scenarios. Peak publish rates exceed **1.3 million messages per second** with end-to-end delivery of over **710,000 msg/s** (Mosquitto v2.1.0).
-- **Reliability**: **100% message delivery** in all tests, while Paho clients frequently dropped messages or stalled due to internal deadlocks under high load.
-- **Memory Efficiency**: **10x lower memory allocation** compared to Paho v5 (108 MiB vs 1,137 MiB in 50-worker small-packet workloads).
-- **GC Overhead**: Significantly fewer garbage collection cycles (e.g., 56 vs 723 for Paho v5), resulting in more predictable latencies and higher stability.
+The library is designed for high-concurrency environments:
+- **Throughput**: Up to **3x faster** than Paho v5 in high-concurrency scenarios, with peak rates exceeding **1.3M msg/s**.
+- **Radix Tree Routing**: O(K) topic matching for high-subscription environments.
+- **Non-blocking I/O**: Core state machine uses a non-blocking logic loop to maximize throughput.
+- **Efficiency**: **10x lower memory allocation** and significantly reduced GC overhead compared to alternative libraries.
 
 For a detailed comparative analysis, see the **[Performance Analysis Report](docs/PERFORMANCE_ANALYSIS.md)**.
+
+## Safety and Resilience
+
+In accordance with Go's "fail-fast" philosophy, the library does not catch panics in user-provided callbacks. If a handler panics, the entire process will terminate to prevent running in an inconsistent state.
+
+### Panic Recovery via Middleware
+
+If you require process-level resilience, you can implement a recovery interceptor:
+
+```go
+recoveryInterceptor := func(next mq.MessageHandler) mq.MessageHandler {
+    return func(c *mq.Client, m mq.Message) {
+        defer func() {
+            if r := recover(); r != nil {
+                c.Options().Logger.Error("Recovered from panic in handler", 
+                    "topic", m.Topic, "error", r)
+            }
+        }()
+        next(c, m)
+    }
+}
+
+client.Subscribe("sensors/#", mq.AtMostOnce, handler, 
+    mq.WithHandlerInterceptor(recoveryInterceptor))
+```
 
 ## Installation
 
@@ -45,8 +70,6 @@ go get github.com/gonzalop/mq
 ```
 
 ## Quick Start
-
-For a detailed walkthrough of connecting, publishing, and subscribing, see the **[Getting Started & Usage Guide](docs/getting_started.md)**.
 
 ```go
 package main
@@ -75,86 +98,32 @@ func main() {
     defer client.Disconnect(context.Background())
 
     // Subscribe to a topic
-    token := client.Subscribe("sensors/+/temperature", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+    client.Subscribe("sensors/+/temperature", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
         fmt.Printf("Topic: %s, Payload: %s\n", msg.Topic, string(msg.Payload))
     })
 
-    // Wait for subscription
-    if err := token.Wait(context.Background()); err != nil {
-        slog.Error("Subscription failed", "error", err)
-        os.Exit(1)
-    }
-
     // Publish a message
-    pubToken := client.Publish("sensors/living-room/temperature", []byte("22.5"), mq.WithQoS(mq.AtLeastOnce))
-    pubToken.Wait(context.Background())
-
-    time.Sleep(2 * time.Second)
+    token := client.Publish("sensors/living-room/temperature", []byte("22.5"), mq.WithQoS(mq.AtLeastOnce))
+    
+    // Wait for acknowledgment
+    if err := token.Wait(context.Background()); err != nil {
+        fmt.Printf("Publish failed: %v\n", err)
+    }
 }
 ```
 
-## Middleware / Interceptors
-
-The library supports an interceptor pattern (middleware) for both incoming and outgoing messages. This is perfect for cross-cutting concerns like logging, metrics, or OpenTelemetry tracing.
-
-```go
-// Incoming message logging
-client, _ := mq.Dial(uri, mq.WithHandlerInterceptor(func(next mq.MessageHandler) mq.MessageHandler {
-    return func(c *mq.Client, m mq.Message) {
-        log.Printf("Received: %s", m.Topic)
-        next(c, m)
-    }
-}))
-
-// Outgoing message tracing
-client, _ := mq.Dial(uri, mq.WithPublishInterceptor(func(next mq.PublishFunc) mq.PublishFunc {
-    return func(topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
-        // Add tracing or modify payload
-        return next(topic, payload, opts...)
-    }
-}))
-```
-
 ## Documentation
-
-- **[Getting Started](docs/getting_started.md)**: Detailed guide on Connecting, Publishing, Subscribing, and Options.
-- **[Best Practices](./docs/client_configuration_best_practices.md)**: Production-grade configuration guide (Security, Resource Limits, Session Management). A **MUST**-read.
-- **[Persistence](./docs/persistence.md)**: Detailed guide on configuring durable sessions across restarts.
-- **[Interceptors](./docs/interceptors.md)**: Guide on using middleware for logging, metrics, and tracing.
-- **[Enhanced Authentication](./docs/auth.md)**: Deep dive into MQTT 5.0 challenge-response mechanisms.
-- **[Advanced Patterns](./docs/patterns.md)**: Best practices for Request/Response, Topic Aliases, and Flow Control.
-- **[Troubleshooting](./docs/troubleshooting.md)**: Solutions for common issues like client ID thrashing, zombie messages, and flow control.
-- **[Internals](./docs/internals/CONCURRENCY.md)**: Deep dive into the library's concurrency model.
-- **Compliance**: [MQTT 3.1.1](./docs/MQTT_3.1.1_Compliance.md) and [MQTT 5.0](./docs/MQTT_5.0_Compliance.md) compliance reports.
-
-
-## Examples
-
-See the [examples](./examples) directory for various use cases:
-- [`auto_reconnect/`](./examples/auto_reconnect) - Automatic reconnection demonstration
-- [`errors/`](./examples/errors) - Proper error handling
-- [`local_routing/`](./examples/local_routing) - Custom client-side message routing
-- [`lwt/`](./examples/lwt) - Last Will and Testament usage
-- [`persistent/`](./examples/persistent) - Persistent sessions and offline messaging
-- [`scram_auth/`](./examples/scram_auth) - SCRAM-SHA-256 Authentication (MQTT v5.0)
-- [`simple/`](./examples/simple) - Basic publish/subscribe
-- [`throughput/`](./examples/throughput) - High-performance throughput benchmarks. See an example of its output and analysis [here](https://gist.github.com/gonzalop/18e2d2ab28c94d32866f1a0d1668c523).
-- [`tls/`](./examples/tls) - Secure connection with optional client certs
-- [`topic_aliases/`](./examples/topic_aliases) - Bandwidth optimization using Topic Aliases
-- [`v5_properties/`](./examples/v5_properties) - MQTT v5.0 properties (ContentType, UserProperties, etc.)
-- [`v5_request_response/`](./examples/v5_request_response) - Request/response pattern using v5.0
-- [`websocket/`](./examples/websocket) - Connecting via WebSockets (BYOC pattern)
-- [`wildcards/`](./examples/wildcards) - Using wildcard subscriptions
-
-## Contributing
-
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on development, testing, and submitting pull requests.
-
-## Acknowledgements
-
-This library was developed with the assistance of [Antigravity](https://antigravity.google), powered by [Gemini](https://deepmind.google/technologies/gemini/) and [Claude](https://www.anthropic.com/claude).
+- [Getting Started](docs/getting_started.md)
+- [Examples Index](examples/README.md)
+- [Client Configuration Best Practices](docs/client_configuration_best_practices.md)
+- [Auth Patterns](docs/auth.md)
+- [Interceptors](docs/interceptors.md)
+- [Persistence](docs/persistence.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Performance Analysis](docs/PERFORMANCE_ANALYSIS.md)
+- [MQTT 5.0 Compliance](docs/MQTT_5.0_Compliance.md)
+- [MQTT 3.1.1 Compliance](docs/MQTT_3.1.1_Compliance.md)
 
 ## License
-
 This software is under the MIT License.
 See [LICENSE](LICENSE) file for details.

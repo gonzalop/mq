@@ -33,7 +33,7 @@ func FuzzClientHandleIncoming(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		// 1. Setup a dummy client
-		c := &Client{
+		c := &Client{trie: newTopicTrie(),
 			opts: &clientOptions{
 				ProtocolVersion: ProtocolV50, // Test v5.0 to exercise property logic
 				Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),

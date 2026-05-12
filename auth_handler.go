@@ -7,12 +7,12 @@ import (
 )
 
 // handleAuth processes an AUTH packet from the server during authentication exchange.
-func (c *Client) handleAuth(p *packets.AuthPacket) {
-	defer c.recoverPanic("Authenticator")
-
+// Returns a slice of packets to be sent in response.
+func (c *Client) handleAuth(p *packets.AuthPacket) []packets.Packet {
 	if c.opts.Authenticator == nil {
+
 		c.opts.Logger.Warn("received AUTH packet but no authenticator configured")
-		return
+		return nil
 	}
 
 	// Reset counter on success
@@ -21,14 +21,14 @@ func (c *Client) handleAuth(p *packets.AuthPacket) {
 		if err := c.opts.Authenticator.Complete(); err != nil {
 			c.opts.Logger.Warn("authenticator completion failed", "error", err)
 		}
-		return
+		return nil
 	}
 
 	count := c.authExchangeCount.Add(1)
 	if c.opts.MaxAuthExchanges > 0 && count > uint32(c.opts.MaxAuthExchanges) {
 		c.opts.Logger.Error("maximum authentication exchanges exceeded", "limit", c.opts.MaxAuthExchanges)
 		_ = c.disconnectWithReason(context.Background(), uint8(ReasonCodeBadAuthenticationMethod), nil, false)
-		return
+		return nil
 	}
 
 	var challengeData []byte
@@ -42,7 +42,7 @@ func (c *Client) handleAuth(p *packets.AuthPacket) {
 			c.opts.Logger.Error("authentication method mismatch",
 				"expected", c.opts.Authenticator.Method(),
 				"received", p.Properties.AuthenticationMethod)
-			return
+			return nil
 		}
 	}
 
@@ -50,7 +50,7 @@ func (c *Client) handleAuth(p *packets.AuthPacket) {
 	if err != nil {
 		c.opts.Logger.Error("authentication challenge failed", "error", err)
 		// Note: We can't use disconnectWithReason here because we're in logicLoop
-		return
+		return nil
 	}
 
 	// Send AUTH response
@@ -64,9 +64,5 @@ func (c *Client) handleAuth(p *packets.AuthPacket) {
 		Version: c.opts.ProtocolVersion,
 	}
 
-	select {
-	case c.outgoing <- authResp:
-		c.opts.Logger.Debug("sent AUTH response", "reason_code", authResp.ReasonCode)
-	case <-c.stop:
-	}
+	return []packets.Packet{authResp}
 }

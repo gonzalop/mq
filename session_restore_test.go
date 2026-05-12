@@ -50,7 +50,7 @@ func TestLoadSessionState_InFlightCount(t *testing.T) {
 	opts.SessionStore = store
 	// The default logger is io.Discard, which is fine for tests
 
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: opts,
 	}
 

@@ -60,7 +60,7 @@ func TestInitialSubscriptionsPersistence(t *testing.T) {
 	}
 
 	// Initialize client (partial initialization just to test loadSessionState)
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts:          opts,
 		subscriptions: make(map[string]subscriptionEntry),
 	}

@@ -31,7 +31,7 @@ func TestDeferredAcknowledgment(t *testing.T) {
 		close(handlerDone)
 	}
 
-	c.subscriptions["topic/1"] = subscriptionEntry{handler: h}
+	c.addSubscriptionLocked("topic/1", subscriptionEntry{handler: h})
 
 	// 2. Receive a QoS 1 message
 	c.incoming <- &packets.PublishPacket{
@@ -106,8 +106,12 @@ func TestOrderedRetransmission(t *testing.T) {
 
 	// 2. Run retryPending
 	c.sessionLock.Lock()
-	c.retryPending()
+	toResend := c.retryPending()
 	c.sessionLock.Unlock()
+
+	for _, p := range toResend {
+		c.outgoing <- p
+	}
 
 	// 3. Verify order in outgoing channel
 	for _, expectedID := range packetIDs {
@@ -132,7 +136,7 @@ func TestOrderedRetransmission(t *testing.T) {
 // TestRemovePending verifies that removePending correctly cleans up both
 // the map and the order slice.
 func TestRemovePending(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		pending:      make(map[uint16]*pendingOp),
 		pendingOrder: []uint16{1, 2, 3, 4, 5},
 	}

@@ -16,7 +16,7 @@ func TestConnectUserProperties(t *testing.T) {
 		"version": "1.0.0",
 	}
 
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion:       ProtocolV50,
 			KeepAlive:             60 * time.Second,
@@ -69,7 +69,7 @@ func TestConnectUserProperties_V311(t *testing.T) {
 		"region": "us-east-1",
 	}
 
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion:       ProtocolV311,
 			KeepAlive:             60 * time.Second,
@@ -98,7 +98,7 @@ func TestConnackUserProperties(t *testing.T) {
 	}
 
 	// Initialize client with minimal options and a discard logger
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),

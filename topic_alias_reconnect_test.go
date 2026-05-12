@@ -11,7 +11,7 @@ func TestTopicAliasStaleAfterReconnectRepro(t *testing.T) {
 	// becomes invalid if the connection is lost and re-established.
 	// Based on a true story.
 
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Logger:          testLogger(),
@@ -74,7 +74,7 @@ func TestTopicAliasStaleAfterReconnectRepro(t *testing.T) {
 }
 
 func TestTopicAliasStalePendingAfterReconnect(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Logger:          testLogger(),

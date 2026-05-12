@@ -2,6 +2,7 @@ package mq
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -20,15 +21,15 @@ func (c *Client) logicLoop() {
 	for {
 		select {
 		case pkt := <-c.incoming:
-			c.sessionLock.Lock()
-			c.handleIncoming(pkt)
-			c.sessionLock.Unlock()
+			toSend := c.handleIncoming(pkt)
+			c.sendPackets(toSend)
 
 		case <-retryTicker.C:
 			c.sessionLock.Lock()
-			c.retryPending()
-			c.processPublishQueue()
+			toResend := c.retryPending()
+			toResend = append(toResend, c.processPublishQueueLocked()...)
 			c.sessionLock.Unlock()
+			c.sendPackets(toResend)
 
 		case <-c.stop:
 			c.opts.Logger.Debug("logicLoop stopped")
@@ -70,29 +71,45 @@ func (c *Client) internalResetState() {
 	c.inboundUnacked = make(map[uint16]struct{})
 }
 
+// sendPackets sends a slice of packets to the outgoing channel without holding the lock.
+// It uses a non-blocking send to ensure the logicLoop never stalls.
+// Retransmissions for QoS 1/2 will be handled by retryPending if they fail here.
+func (c *Client) sendPackets(packets []packets.Packet) {
+	for _, pkt := range packets {
+		select {
+		case c.outgoing <- pkt:
+		case <-c.stop:
+			return
+		default:
+			c.opts.Logger.Debug("outgoing channel full, dropping packet (will retry if QoS > 0)", "type", fmt.Sprintf("%T", pkt))
+		}
+	}
+}
+
 // handleIncoming processes incoming packets from the server.
-func (c *Client) handleIncoming(pkt packets.Packet) {
+// Returns a slice of packets that should be sent in response.
+func (c *Client) handleIncoming(pkt packets.Packet) []packets.Packet {
 	switch p := pkt.(type) {
 	case *packets.PublishPacket:
-		c.handlePublish(p)
+		return c.handlePublish(p)
 
 	case *packets.PubackPacket:
-		c.handleAck(p.PacketID, p.ReasonCode)
+		return c.handleAck(p.PacketID, p.ReasonCode)
 
 	case *packets.PubrecPacket:
-		c.handlePubrec(p)
+		return c.handlePubrec(p)
 
 	case *packets.PubrelPacket:
-		c.handlePubrel(p)
+		return c.handlePubrel(p)
 
 	case *packets.PubcompPacket:
-		c.handleAck(p.PacketID, p.ReasonCode)
+		return c.handleAck(p.PacketID, p.ReasonCode)
 
 	case *packets.SubackPacket:
-		c.handleSuback(p)
+		return c.handleSuback(p)
 
 	case *packets.UnsubackPacket:
-		c.handleUnsuback(p)
+		return c.handleUnsuback(p)
 
 	case *packets.PingrespPacket:
 		// Keepalive response - signal writeLoop that PINGRESP was received
@@ -106,27 +123,35 @@ func (c *Client) handleIncoming(pkt packets.Packet) {
 		c.handleDisconnectPacket(p)
 
 	case *packets.AuthPacket:
-		c.handleAuth(p)
+		return c.handleAuth(p)
 	}
+	return nil
 }
 
 // handlePublish processes an incoming PUBLISH packet.
-func (c *Client) handlePublish(p *packets.PublishPacket) {
+func (c *Client) handlePublish(p *packets.PublishPacket) []packets.Packet {
 	// 1. Process Topic Alias (MQTT v5.0)
 	if err := c.processTopicAlias(p); err != nil {
 		c.opts.Logger.Error("failed to process topic alias", "error", err)
-		return
+		return nil
 	}
 
 	// 2. Enforce Receive Maximum (MQTT v5.0)
 	if err := c.enforceReceiveMaximum(p); err != nil {
 		c.opts.Logger.Error("failed to enforce receive maximum", "error", err)
-		return
+		// Protocol error: server sent too many QoS 1/2 messages
+		return []packets.Packet{
+			&packets.DisconnectPacket{
+				ReasonCode: uint8(ReasonCodeReceiveMaximumExceed),
+			},
+		}
 	}
 
 	// 3. Handle QoS 2 Duplicate Detection
-	if p.QoS == 2 && c.handleQoS2Duplicate(p.PacketID) {
-		return
+	if p.QoS == 2 {
+		if ack, isDup := c.handleQoS2Duplicate(p.PacketID); isDup {
+			return []packets.Packet{ack}
+		}
 	}
 
 	// 4. Find matching handlers
@@ -142,7 +167,7 @@ func (c *Client) handlePublish(p *packets.PublishPacket) {
 	}
 
 	// 5. Dispatch to handlers and acknowledge
-	c.dispatchAndAcknowledge(p, msg, handlers)
+	return c.dispatchAndAcknowledge(p, msg, handlers)
 }
 
 // processTopicAlias handles MQTT v5.0 topic alias validation and resolution.
@@ -195,6 +220,9 @@ func (c *Client) enforceReceiveMaximum(p *packets.PublishPacket) error {
 		return nil
 	}
 
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
+
 	if _, exists := c.inboundUnacked[p.PacketID]; !exists {
 		// New message. Check if we have capacity.
 		limit := c.opts.ReceiveMaximum
@@ -204,7 +232,8 @@ func (c *Client) enforceReceiveMaximum(p *packets.PublishPacket) error {
 		if len(c.inboundUnacked) >= int(limit) {
 			if c.opts.ReceiveMaximumPolicy == LimitPolicyStrict {
 				c.opts.Logger.Error("receive maximum exceeded", "limit", limit)
-				return c.disconnectWithReason(context.Background(), uint8(ReasonCodeReceiveMaximumExceed), nil, false)
+				// Returning error to trigger disconnect in caller
+				return fmt.Errorf("receive maximum exceeded: %d", limit)
 			}
 
 			// Ignore policy: log warning once
@@ -220,16 +249,14 @@ func (c *Client) enforceReceiveMaximum(p *packets.PublishPacket) error {
 }
 
 // handleQoS2Duplicate checks if a QoS 2 message has already been received.
-// Returns true if it's a duplicate (processing should stop).
-func (c *Client) handleQoS2Duplicate(packetID uint16) bool {
+// Returns (ack, true) if it's a duplicate (processing should stop), or (nil, false) otherwise.
+func (c *Client) handleQoS2Duplicate(packetID uint16) (packets.Packet, bool) {
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
+
 	if _, exists := c.receivedQoS2[packetID]; exists {
 		// Duplicate QoS 2 message - send PUBREC but don't deliver again
-		select {
-		case c.outgoing <- &packets.PubrecPacket{PacketID: packetID}:
-		case <-c.stop:
-		default:
-		}
-		return true
+		return &packets.PubrecPacket{PacketID: packetID}, true
 	}
 	c.receivedQoS2[packetID] = struct{}{}
 
@@ -239,19 +266,12 @@ func (c *Client) handleQoS2Duplicate(packetID uint16) bool {
 			c.opts.Logger.Warn("failed to persist QoS2 ID", "packet_id", packetID, "error", err)
 		}
 	}
-	return false
+	return nil, false
 }
 
 // matchHandlers finds all handlers that match the given topic.
 func (c *Client) matchHandlers(topic string) []MessageHandler {
-	var handlers []MessageHandler
-	for filter, entry := range c.subscriptions {
-		if MatchTopic(filter, topic) {
-			if entry.handler != nil {
-				handlers = append(handlers, entry.handler)
-			}
-		}
-	}
+	handlers := c.trie.match(topic)
 
 	// Use default handler if no matches found
 	if len(handlers) == 0 {
@@ -265,10 +285,18 @@ func (c *Client) matchHandlers(topic string) []MessageHandler {
 }
 
 // dispatchAndAcknowledge calls the handlers and sends the appropriate MQTT acknowledgment.
-func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, handlers []MessageHandler) {
+// Returns a slice containing the acknowledgment packet if it should be sent immediately
+// (i.e. no handlers), or nil if handlers are processing the message asynchronously.
+func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, handlers []MessageHandler) []packets.Packet {
 	if len(handlers) == 0 {
-		c.sendAck(p)
-		return
+		ack := c.buildAckPacket(p)
+		// Clean up state after building ack
+		if p.QoS > 0 {
+			c.sessionLock.Lock()
+			delete(c.inboundUnacked, p.PacketID)
+			c.sessionLock.Unlock()
+		}
+		return []packets.Packet{ack}
 	}
 
 	var wg sync.WaitGroup
@@ -290,8 +318,6 @@ func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, h
 				}
 			}
 
-			defer c.recoverPanic("MessageHandler")
-
 			// Create a context for the handler
 			ctx, cancel := context.WithCancel(context.Background())
 			if c.opts.HandlerTimeout > 0 {
@@ -309,32 +335,43 @@ func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, h
 		wg.Wait()
 		c.sendAck(p)
 	}()
+
+	return nil
+}
+
+func (c *Client) buildAckPacket(p *packets.PublishPacket) packets.Packet {
+	switch p.QoS {
+	case 1:
+		return &packets.PubackPacket{PacketID: p.PacketID}
+	case 2:
+		return &packets.PubrecPacket{PacketID: p.PacketID}
+	default:
+		return nil
+	}
 }
 
 func (c *Client) sendAck(p *packets.PublishPacket) {
-	switch p.QoS {
-	case 1:
-		select {
-		case c.outgoing <- &packets.PubackPacket{PacketID: p.PacketID}:
+	ack := c.buildAckPacket(p)
+	if ack == nil {
+		return
+	}
+
+	select {
+	case c.outgoing <- ack:
+		if p.QoS == 1 {
 			c.sessionLock.Lock()
 			delete(c.inboundUnacked, p.PacketID)
 			c.sessionLock.Unlock()
-		case <-c.stop:
-		default:
-			// If we can't send PUBACK right now, it will be retried (or handled)
-			// when we have capacity.
 		}
-	case 2:
-		select {
-		case c.outgoing <- &packets.PubrecPacket{PacketID: p.PacketID}:
-		case <-c.stop:
-		default:
-		}
+	case <-c.stop:
 	}
 }
 
 // handleAck processes a PUBACK or PUBCOMP packet.
-func (c *Client) handleAck(packetID uint16, reasonCode uint8) {
+func (c *Client) handleAck(packetID uint16, reasonCode uint8) []packets.Packet {
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
+
 	if op, ok := c.pending[packetID]; ok {
 		var err error
 		if c.opts.ProtocolVersion >= ProtocolV50 {
@@ -355,44 +392,43 @@ func (c *Client) handleAck(packetID uint16, reasonCode uint8) {
 		}
 
 		c.inFlightCount--
-		c.processPublishQueue()
+		return c.processPublishQueueLocked()
 	}
+	return nil
 }
 
 // handlePubrec processes a PUBREC packet (QoS 2, step 1).
-func (c *Client) handlePubrec(p *packets.PubrecPacket) {
+// Returns a slice containing the PUBREL packet to be sent in response.
+func (c *Client) handlePubrec(p *packets.PubrecPacket) []packets.Packet {
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
+
 	if op, ok := c.pending[p.PacketID]; ok {
 		if c.opts.ProtocolVersion >= ProtocolV50 {
 			op.token.reasonCode = ReasonCode(p.ReasonCode)
 			if p.ReasonCode >= 0x80 {
 				op.token.complete(&MqttError{ReasonCode: ReasonCode(p.ReasonCode)})
 				c.removePending(p.PacketID)
-				c.processPublishQueue()
-				return
+				return c.processPublishQueueLocked()
 			}
 		}
 
 		pubrel := &packets.PubrelPacket{PacketID: p.PacketID, Version: c.opts.ProtocolVersion}
-		select {
-		case c.outgoing <- pubrel:
-			// Update pending operation to track PUBREL for retransmission
-			op.packet = pubrel
-			op.timestamp = time.Now()
-		case <-c.stop:
-		default:
-		}
+		// Update pending operation to track PUBREL for retransmission
+		op.packet = pubrel
+		op.timestamp = time.Now()
+		return []packets.Packet{pubrel}
 	}
+	return nil
 }
 
 // handlePubrel processes a PUBREL packet (QoS 2, step 2).
-func (c *Client) handlePubrel(p *packets.PubrelPacket) {
-	select {
-	case c.outgoing <- &packets.PubcompPacket{PacketID: p.PacketID}:
-		delete(c.inboundUnacked, p.PacketID)
-	case <-c.stop:
-	default:
-	}
+// Returns a slice containing the PUBCOMP packet to be sent in response.
+func (c *Client) handlePubrel(p *packets.PubrelPacket) []packets.Packet {
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
 
+	delete(c.inboundUnacked, p.PacketID)
 	delete(c.receivedQoS2, p.PacketID)
 
 	if c.opts.SessionStore != nil {
@@ -400,10 +436,15 @@ func (c *Client) handlePubrel(p *packets.PubrelPacket) {
 			c.opts.Logger.Warn("failed to delete QoS2 ID", "packet_id", p.PacketID, "error", err)
 		}
 	}
+
+	return []packets.Packet{&packets.PubcompPacket{PacketID: p.PacketID}}
 }
 
 // handleSuback processes a SUBACK packet.
-func (c *Client) handleSuback(p *packets.SubackPacket) {
+func (c *Client) handleSuback(p *packets.SubackPacket) []packets.Packet {
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
+
 	if op, ok := c.pending[p.PacketID]; ok {
 		// Check for subscription failures
 		var err error
@@ -453,11 +494,16 @@ func (c *Client) handleSuback(p *packets.SubackPacket) {
 
 		op.token.complete(err)
 		c.removePending(p.PacketID)
+		return c.processPublishQueueLocked()
 	}
+	return nil
 }
 
 // handleUnsuback processes an UNSUBACK packet.
-func (c *Client) handleUnsuback(p *packets.UnsubackPacket) {
+func (c *Client) handleUnsuback(p *packets.UnsubackPacket) []packets.Packet {
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
+
 	if op, ok := c.pending[p.PacketID]; ok {
 		var err error
 		if c.opts.ProtocolVersion >= ProtocolV50 {
@@ -487,12 +533,16 @@ func (c *Client) handleUnsuback(p *packets.UnsubackPacket) {
 				}
 			}
 		}
+		return c.processPublishQueueLocked()
 	}
+	return nil
 }
 
 // retryPending retransmits packets that haven't been acknowledged.
-func (c *Client) retryPending() {
+// Returns a slice of packets that should be retransmitted.
+func (c *Client) retryPending() []packets.Packet {
 	now := time.Now()
+	var toResend []packets.Packet
 
 	for _, packetID := range c.pendingOrder {
 		op, ok := c.pending[packetID]
@@ -506,18 +556,11 @@ func (c *Client) retryPending() {
 				pub.Dup = true
 			}
 
-			select {
-			case c.outgoing <- op.packet:
-				op.timestamp = now
-			case <-c.stop:
-				return
-			default:
-				// Outgoing queue is full, skip retransmission for now
-				// to avoid blocking the logicLoop.
-				return
-			}
+			toResend = append(toResend, op.packet)
+			op.timestamp = now
 		}
 	}
+	return toResend
 }
 
 // nextID generates the next packet ID (1-65535, cycling).

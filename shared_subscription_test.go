@@ -13,7 +13,7 @@ import (
 
 func TestSharedSubscriptionNoLocalValidation(t *testing.T) {
 	// Setup a dummy client
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts:          defaultOptions("tcp://localhost:1883"),
 		subscriptions: make(map[string]subscriptionEntry),
 		pending:       make(map[uint16]*pendingOp),

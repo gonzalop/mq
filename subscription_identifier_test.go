@@ -57,7 +57,7 @@ func TestWithSubscriptionIdentifier(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a mock client
-			c := &Client{
+			c := &Client{trie: newTopicTrie(),
 				opts: &clientOptions{
 					ProtocolVersion: ProtocolV50,
 					Logger:          testLogger(),
@@ -134,7 +134,7 @@ func TestWithSubscriptionIdentifier(t *testing.T) {
 
 func TestSubscriptionIdentifierMQTTv311(t *testing.T) {
 	// Subscription identifiers should be ignored for MQTT v3.1.1
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV311,
 			Logger:          testLogger(),
@@ -226,7 +226,7 @@ func findSubstring(s, substr string) bool {
 func TestResubscribeBatchWithIDs(t *testing.T) {
 	// This test verifies that during resubscription, subscriptions with
 	// different identifiers are split into separate packets.
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Logger:          testLogger(),

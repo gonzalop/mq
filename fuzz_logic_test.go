@@ -17,7 +17,7 @@ func FuzzPacketSequence(f *testing.F) {
 	f.Add([]byte{3, 5, 6, 7}) // QoS 2 flow
 
 	f.Fuzz(func(t *testing.T, sequence []byte) {
-		c := &Client{
+		c := &Client{trie: newTopicTrie(),
 			opts: &clientOptions{
 				ProtocolVersion: ProtocolV50,
 				Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),

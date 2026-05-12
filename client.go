@@ -112,6 +112,7 @@ type Client struct {
 	pending       map[uint16]*pendingOp // Outgoing in-flight packets (PUBLISH QoS 1/2, SUBSCRIBE, UNSUBSCRIBE)
 	pendingOrder  []uint16              // Order of pending packets for retransmission
 	subscriptions map[string]subscriptionEntry
+	trie          *topicTrie          // Efficient topic matching
 	receivedQoS2  map[uint16]struct{} // Track received QoS 2 packet IDs to prevent duplicates
 	inFlightCount int                 // Number of QoS 1 special & QoS 2 packets currently in flight (outgoing)
 
@@ -176,12 +177,20 @@ type Client struct {
 	defaultHandler MessageHandler
 }
 
-func (c *Client) recoverPanic(callbackName string) {
-	if r := recover(); r != nil {
-		if c.opts != nil && c.opts.Logger != nil {
-			c.opts.Logger.Error("panic in user callback", "callback", callbackName, "error", r)
-		}
+// addSubscriptionLocked adds a subscription to both the map and the trie.
+// Assumes sessionLock is HELD.
+func (c *Client) addSubscriptionLocked(topic string, entry subscriptionEntry) {
+	c.subscriptions[topic] = entry
+	if entry.handler != nil {
+		c.trie.insert(topic, entry.handler)
 	}
+}
+
+// removeSubscriptionLocked removes a subscription from both the map and the trie.
+// Assumes sessionLock is HELD.
+func (c *Client) removeSubscriptionLocked(topic string) {
+	delete(c.subscriptions, topic)
+	c.trie.remove(topic)
 }
 
 // publishRequest represents a request to publish a message.
@@ -247,6 +256,7 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 	}
 
 	c := &Client{
+		trie:     newTopicTrie(),
 		opts:     options,
 		outgoing: make(chan packets.Packet, options.OutgoingQueueSize),
 		incoming: make(chan packets.Packet, options.IncomingQueueSize),
@@ -273,10 +283,11 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 	c.defaultHandler = c.wrapHandler(options.DefaultPublishHandler)
 
 	for topic, handler := range options.InitialSubscriptions {
-		c.subscriptions[topic] = subscriptionEntry{
-			handler: c.wrapHandler(handler),
+		wrapped := c.wrapHandler(handler)
+		c.addSubscriptionLocked(topic, subscriptionEntry{
+			handler: wrapped,
 			qos:     0,
-		}
+		})
 	}
 
 	if !c.opts.CleanSession {
@@ -532,11 +543,9 @@ func (c *Client) finalizeConnection(connack *packets.ConnackPacket) {
 
 	if c.opts.OnConnect != nil {
 		go func() {
-			defer c.recoverPanic("OnConnect")
 			c.opts.OnConnect(c)
 		}()
 	}
-
 	c.wg.Add(2)
 	c.activeLoops.Add(2)
 	go c.readLoop()
@@ -895,7 +904,6 @@ func (c *Client) handleDisconnect() {
 
 	if c.opts.OnConnectionLost != nil {
 		go func() {
-			defer c.recoverPanic("OnConnectionLost")
 			c.opts.OnConnectionLost(c, reason)
 		}()
 	}
@@ -1389,13 +1397,6 @@ func (c *Client) GetStats() ClientStats {
 }
 
 func (c *Client) performHandshake(ctx context.Context, r io.Reader, w io.Writer) (connack *packets.ConnackPacket, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			c.recoverPanic("Handshake")
-			err = fmt.Errorf("panic during handshake: %v", r)
-		}
-	}()
-
 	deadline, ok := ctx.Deadline()
 	if !ok {
 		deadline = time.Now().Add(c.opts.ConnectTimeout)
@@ -1501,10 +1502,10 @@ func (c *Client) processConnackProperties(connack *packets.ConnackPacket) {
 
 			if c.opts.OnServerRedirect != nil {
 				go func() {
-					defer c.recoverPanic("OnServerRedirect")
-					c.opts.OnServerRedirect(newState.serverReference)
+					c.opts.OnServerRedirect(connack.Properties.ServerReference)
 				}()
 			}
+
 		}
 
 		if c.opts.TopicAliasMaximum > 0 && connack.Properties.Presence&packets.PresTopicAliasMaximum != 0 {

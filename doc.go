@@ -17,6 +17,8 @@
 //   - Automatic reconnection with exponential backoff
 //   - Clean, idiomatic Go API with functional options
 //   - Context-based cancellation and timeouts
+//   - High-performance Radix Tree topic routing (O(K) complexity)
+//   - Async persistence with incremental directory-based storage
 //   - Zero external dependencies (main library)
 //
 // # Unified API Philosophy
@@ -26,6 +28,20 @@
 // these v5-specific features are handled gracefully—they are simply ignored during
 // packet encoding. This allows you to write code once using modern idioms while
 // maintaining compatibility with older servers.
+//
+// # Performance and Scalability
+//
+// The library is optimized for high-concurrency environments:
+//   - Radix Tree Routing: Subscription matching scales with topic depth (O(K)) rather than the number of subscriptions.
+//   - Non-blocking Logic: The core state machine uses functional packet handling and non-blocking I/O to prevent stalled connections from affecting others.
+//   - Async Persistence: Optional background worker for session storage ensures disk latency never blocks the network path.
+//
+// # Callback Safety
+//
+// In alignment with Go's "fail-fast" philosophy, this library does not provide
+// automatic panic recovery for user-provided callbacks (MessageHandlers, OnConnect, etc.).
+// A panic in a callback will propagate and terminate the process. If you require
+// process-level resilience, you must implement recover() within your own handlers.
 //
 // # Quick Start
 //
@@ -189,7 +205,10 @@
 // The library supports pluggable session persistence to save pending messages (QoS 1 & 2)
 // and subscriptions across restarts.
 //
-//	store, _ := mq.NewFileStore("/path/to/persist", "client-id")
+//	baseStore, _ := mq.NewFileStore("/path/to/persist", "client-id")
+//	store := mq.NewAsyncStore(baseStore, 1000)
+//	defer store.Close()
+//
 //	client, _ := mq.Dial(server,
 //	    mq.WithClientID("client-id"),
 //	    mq.WithCleanSession(false),

@@ -8,7 +8,7 @@ import (
 )
 
 func TestSubscribe(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Logger:          testLogger(),
@@ -60,7 +60,7 @@ func TestSubscribe(t *testing.T) {
 }
 
 func TestUnsubscribe(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Logger:          testLogger(),
@@ -100,7 +100,7 @@ func TestUnsubscribe(t *testing.T) {
 }
 
 func TestResubscribeAll(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Logger:          testLogger(),
@@ -131,7 +131,7 @@ func TestResubscribeAll(t *testing.T) {
 }
 
 func TestInternalSubscribe(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Logger:          testLogger(),
@@ -183,7 +183,7 @@ func TestInternalSubscribe(t *testing.T) {
 }
 
 func TestInternalUnsubscribe(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Logger:          testLogger(),
@@ -247,7 +247,7 @@ func TestResubscribeBatching(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &Client{
+			c := &Client{trie: newTopicTrie(),
 				subscriptions: make(map[string]subscriptionEntry),
 				pending:       make(map[uint16]*pendingOp),
 				outgoing:      make(chan packets.Packet, 100),
@@ -325,7 +325,7 @@ func TestResubscribeBatching(t *testing.T) {
 
 // TestResubscribePacketIDs tests that each batch gets a unique packet ID.
 func TestResubscribePacketIDs(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		subscriptions: make(map[string]subscriptionEntry),
 		pending:       make(map[uint16]*pendingOp),
 		outgoing:      make(chan packets.Packet, 10),
@@ -364,7 +364,7 @@ func TestResubscribePacketIDs(t *testing.T) {
 
 // TestResubscribeTimestamp tests that pending operations have timestamps.
 func TestResubscribeTimestamp(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		subscriptions: make(map[string]subscriptionEntry),
 		pending:       make(map[uint16]*pendingOp),
 		outgoing:      make(chan packets.Packet, 10),

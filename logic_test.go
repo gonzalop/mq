@@ -10,7 +10,7 @@ import (
 
 func TestHandlePubcomp(t *testing.T) {
 	// Setup client
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		pending: make(map[uint16]*pendingOp),
 		opts:    defaultOptions("tcp://localhost:1883"),
 	}
@@ -60,7 +60,7 @@ func TestHandlePubcomp_V5_Error(t *testing.T) {
 	// Setup client with V5 protocol
 	opts := defaultOptions("tcp://localhost:1883")
 	opts.ProtocolVersion = ProtocolV50
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		pending: make(map[uint16]*pendingOp),
 		opts:    opts,
 	}
@@ -152,7 +152,7 @@ func TestHandlePubcomp_WithSessionStore(t *testing.T) {
 	opts := defaultOptions("tcp://localhost:1883")
 	opts.SessionStore = store
 
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		pending: make(map[uint16]*pendingOp),
 		opts:    opts,
 	}
@@ -200,7 +200,7 @@ func TestHandlePubcomp_WithSessionStore_Error(t *testing.T) {
 	opts.SessionStore = store
 	// We can't easily check log output with default logger, but we can ensure it doesn't panic
 
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		pending: make(map[uint16]*pendingOp),
 		opts:    opts,
 	}
@@ -238,6 +238,7 @@ func TestHandlePubcomp_WithSessionStore_Error(t *testing.T) {
 
 func TestHandleQoS2Duplicate(t *testing.T) {
 	c := &Client{
+		trie:         newTopicTrie(),
 		receivedQoS2: make(map[uint16]struct{}),
 		outgoing:     make(chan packets.Packet, 10),
 		stop:         make(chan struct{}),
@@ -247,7 +248,7 @@ func TestHandleQoS2Duplicate(t *testing.T) {
 	packetID := uint16(42)
 
 	// 1. First time - should return false (not a duplicate)
-	if isDup := c.handleQoS2Duplicate(packetID); isDup {
+	if _, isDup := c.handleQoS2Duplicate(packetID); isDup {
 		t.Error("expected first call to return false")
 	}
 
@@ -256,21 +257,20 @@ func TestHandleQoS2Duplicate(t *testing.T) {
 	}
 
 	// 2. Second time - should return true (is a duplicate)
-	if isDup := c.handleQoS2Duplicate(packetID); !isDup {
+	ack, isDup := c.handleQoS2Duplicate(packetID)
+	if !isDup {
 		t.Error("expected second call to return true")
 	}
 
-	// Should have sent a PUBREC
-	select {
-	case pkt := <-c.outgoing:
-		pubrec, ok := pkt.(*packets.PubrecPacket)
-		if !ok {
-			t.Errorf("expected PUBREC packet, got %T", pkt)
-		} else if pubrec.PacketID != packetID {
-			t.Errorf("expected PUBREC with packetID %d, got %d", packetID, pubrec.PacketID)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Error("expected PUBREC to be sent to outgoing channel")
+	// Should have returned a PUBREC
+	if ack == nil {
+		t.Fatal("expected PUBREC packet, got nil")
+	}
+	pubrec, ok := ack.(*packets.PubrecPacket)
+	if !ok {
+		t.Errorf("expected PUBREC packet, got %T", ack)
+	} else if pubrec.PacketID != packetID {
+		t.Errorf("expected PUBREC with packetID %d, got %d", packetID, pubrec.PacketID)
 	}
 
 	// 3. Test with session store
@@ -278,7 +278,7 @@ func TestHandleQoS2Duplicate(t *testing.T) {
 	c.opts.SessionStore = store
 	packetID2 := uint16(43)
 
-	if isDup := c.handleQoS2Duplicate(packetID2); isDup {
+	if _, isDup := c.handleQoS2Duplicate(packetID2); isDup {
 		t.Error("expected first call for new packet to return false")
 	}
 
@@ -295,7 +295,7 @@ func TestHandlePublish_ConcurrencyLimit(t *testing.T) {
 	opts := defaultOptions("tcp://localhost:1883")
 	opts.MaxHandlerConcurrency = concurrencyLimit
 
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts:           opts,
 		handlerSem:     make(chan struct{}, concurrencyLimit),
 		stop:           make(chan struct{}),

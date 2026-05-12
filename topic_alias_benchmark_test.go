@@ -11,7 +11,7 @@ import (
 // BenchmarkTopicAlias_FirstPublish benchmarks the first publish with alias
 // (sends full topic + assigns alias ID).
 func BenchmarkTopicAlias_FirstPublish(b *testing.B) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -41,7 +41,7 @@ func BenchmarkTopicAlias_FirstPublish(b *testing.B) {
 // BenchmarkTopicAlias_SubsequentPublish benchmarks subsequent publishes with alias
 // (sends only alias ID, empty topic).
 func BenchmarkTopicAlias_SubsequentPublish(b *testing.B) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -70,7 +70,7 @@ func BenchmarkTopicAlias_SubsequentPublish(b *testing.B) {
 // BenchmarkTopicAlias_Disabled benchmarks the overhead when aliases are disabled.
 // This should be very fast (just an early return) to show minimal overhead.
 func BenchmarkTopicAlias_Disabled(b *testing.B) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),

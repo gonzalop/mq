@@ -52,7 +52,7 @@ func (c *Client) loadSessionState() error {
 		if handler, ok := c.opts.InitialSubscriptions[topic]; ok {
 			entry.handler = handler
 		}
-		c.subscriptions[topic] = entry
+		c.addSubscriptionLocked(topic, entry)
 	}
 
 	// 3. Load Received QoS 2 IDs

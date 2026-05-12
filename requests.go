@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"time"
+
+	"github.com/gonzalop/mq/internal/packets"
 )
 
 // internalPublish processes a publish request synchronously with locking.
@@ -117,15 +119,17 @@ func (c *Client) internalPublish(req *publishRequest) {
 	}
 }
 
-// helper for sending - assumes lock is HELD
-// Returns true if sent, false if queue full or stopped
-func (c *Client) sendPublishLocked(req *publishRequest) bool {
+// preparePublishLocked prepares a publish packet for sending while holding the lock.
+// It assigns a packet ID, updates pending state, and performs persistence.
+// Returns the prepared packet and true if successful, or nil/false if failed.
+// Assumes sessionLock is HELD.
+func (c *Client) preparePublishLocked(req *publishRequest) (*packets.PublishPacket, bool) {
 	pkt := req.packet
 
 	pkt.PacketID = c.nextID()
 	if pkt.PacketID == 0 {
 		req.token.complete(ErrNoPacketIDsAvailable)
-		return false
+		return nil, false
 	}
 
 	c.pending[pkt.PacketID] = &pendingOp{
@@ -136,32 +140,18 @@ func (c *Client) sendPublishLocked(req *publishRequest) bool {
 	}
 	c.pendingOrder = append(c.pendingOrder, pkt.PacketID)
 
-	select {
-	case c.outgoing <- pkt:
-		if pkt.QoS > 0 {
-			c.inFlightCount++
-		}
-
-		if c.opts.SessionStore != nil && pkt.QoS > 0 {
-			pub := c.convertToPersistedPublish(req)
-			if err := c.opts.SessionStore.SavePendingPublish(pkt.PacketID, pub); err != nil {
-				c.opts.Logger.Warn("failed to persist publish", "packet_id", pkt.PacketID, "error", err)
-			}
-		}
-		return true
-
-	case <-c.stop:
-		// Client stopped, treat as "not sent" but also won't be retried successfully
-		return false
-
-	default:
-		// Channel full, back off
-		// Remove from pending since we failed to send
-		delete(c.pending, pkt.PacketID)
-		// Complete token with error so caller doesn't block forever
-		req.token.complete(fmt.Errorf("failed to send publish: outgoing channel full"))
-		return false
+	if pkt.QoS > 0 {
+		c.inFlightCount++
 	}
+
+	if c.opts.SessionStore != nil && pkt.QoS > 0 {
+		pub := c.convertToPersistedPublish(req)
+		if err := c.opts.SessionStore.SavePendingPublish(pkt.PacketID, pub); err != nil {
+			c.opts.Logger.Warn("failed to persist publish", "packet_id", pkt.PacketID, "error", err)
+		}
+	}
+
+	return pkt, true
 }
 
 // internalSubscribe processes a subscribe request synchronously with locking.
@@ -234,11 +224,11 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 			qos = pkt.QoS[i]
 		}
 
-		c.subscriptions[topic] = subscriptionEntry{
+		c.addSubscriptionLocked(topic, subscriptionEntry{
 			handler: c.wrapHandler(req.handler),
 			options: subOpts,
 			qos:     qos,
-		}
+		})
 	}
 
 	c.sessionLock.Unlock()
@@ -285,7 +275,7 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 	c.opts.Logger.Debug("unsubscribing", "packet_id", pkt.PacketID, "topics", req.topics)
 
 	for _, topic := range req.topics {
-		delete(c.subscriptions, topic)
+		c.removeSubscriptionLocked(topic)
 	}
 
 	c.sessionLock.Unlock()

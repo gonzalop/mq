@@ -51,7 +51,7 @@ func BenchmarkDecoding_Publish_Large(b *testing.B) {
 // We use a pipe to clear the outgoing channel.
 func BenchmarkClient_Publish_Throughput(b *testing.B) {
 	// Setup client with mock stop channel and outgoing buffer
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts:         defaultOptions("tcp://test:1883"),
 		outgoing:     make(chan packets.Packet, 1000), // Larger buffer for bench
 		stop:         make(chan struct{}),

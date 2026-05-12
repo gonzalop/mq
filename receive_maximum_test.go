@@ -8,7 +8,7 @@ import (
 
 func TestReceiveMaximum_LimitExceeded(t *testing.T) {
 	// Create a client with ReceiveMaximum = 2
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion:      ProtocolV50,
 			ReceiveMaximum:       2,
@@ -23,13 +23,20 @@ func TestReceiveMaximum_LimitExceeded(t *testing.T) {
 	}
 
 	// Message 1 (QoS 1)
-	c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 1})
+	// Add a handler so it doesn't get acked and removed immediately
+	c.sessionLock.Lock()
+	c.addSubscriptionLocked("t", subscriptionEntry{handler: func(_ *Client, _ Message) {}})
+	c.sessionLock.Unlock()
+
+	// c.outgoing is unbuffered, so sendPackets will drop the PUBACK.
+	// This leaves PacketID 1 in inboundUnacked.
+	c.sendPackets(c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 1}))
 	if len(c.inboundUnacked) != 1 {
 		t.Errorf("expected 1 unacked, got %d", len(c.inboundUnacked))
 	}
 
 	// Message 2 (QoS 1)
-	c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 2})
+	c.sendPackets(c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 2}))
 	if len(c.inboundUnacked) != 2 {
 		t.Errorf("expected 2 unacked, got %d", len(c.inboundUnacked))
 	}
@@ -37,15 +44,25 @@ func TestReceiveMaximum_LimitExceeded(t *testing.T) {
 	// Message 3 (QoS 1) - Should trigger disconnect!
 	c.connected.Store(true)
 
-	c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 3})
+	pkts := c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 3})
 
-	if c.IsConnected() {
+	// Check if any packet is a DISCONNECT
+	disconnected := false
+	for _, p := range pkts {
+		if dp, ok := p.(*packets.DisconnectPacket); ok && dp.ReasonCode == uint8(ReasonCodeReceiveMaximumExceed) {
+			disconnected = true
+			c.connected.Store(false) // Simulate what logicLoop would do
+			break
+		}
+	}
+
+	if !disconnected || c.IsConnected() {
 		t.Error("client should have disconnected due to receive maximum exceeded")
 	}
 }
 
 func TestReceiveMaximum_QoS2_Enforcement(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion:      ProtocolV50,
 			ReceiveMaximum:       1,
@@ -58,24 +75,37 @@ func TestReceiveMaximum_QoS2_Enforcement(t *testing.T) {
 		receivedQoS2:   make(map[uint16]struct{}),
 		subscriptions:  make(map[string]subscriptionEntry),
 	}
+	c.sessionLock.Lock()
+	c.addSubscriptionLocked("t", subscriptionEntry{handler: func(_ *Client, _ Message) {}})
+	c.sessionLock.Unlock()
+
 	c.connected.Store(true)
 
 	// Msg 1 (QoS 2)
-	c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 2, PacketID: 10})
+	c.sendPackets(c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 2, PacketID: 10}))
 	if len(c.inboundUnacked) != 1 {
 		t.Errorf("expected 1 unacked, got %d", len(c.inboundUnacked))
 	}
 
 	// Msg 2 (QoS 2) - Should limit
-	c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 2, PacketID: 11})
+	pkts := c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 2, PacketID: 11})
 
-	if c.IsConnected() {
+	disconnected := false
+	for _, p := range pkts {
+		if dp, ok := p.(*packets.DisconnectPacket); ok && dp.ReasonCode == uint8(ReasonCodeReceiveMaximumExceed) {
+			disconnected = true
+			c.connected.Store(false)
+			break
+		}
+	}
+
+	if !disconnected || c.IsConnected() {
 		t.Error("client should have disconnected due to receive maximum exceeded (QoS 2)")
 	}
 }
 
 func TestReceiveMaximum_QoS1_AckReleasesSlot(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			ReceiveMaximum:  1,
@@ -90,14 +120,14 @@ func TestReceiveMaximum_QoS1_AckReleasesSlot(t *testing.T) {
 	// Msg 1 (QoS 1)
 	// Channel has space, so PUBACK is "sent" (queued).
 	// Logic loop removes it from tracking immediately.
-	c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 1})
+	c.sendPackets(c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 1}))
 
 	if len(c.inboundUnacked) != 0 {
 		t.Errorf("expected 0 unacked (acked immediately), got %d", len(c.inboundUnacked))
 	}
 
 	// Msg 2 (QoS 1) - Should be fine
-	c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 2})
+	c.sendPackets(c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 2}))
 
 	if len(c.inboundUnacked) != 0 {
 		t.Errorf("expected 0 unacked, got %d", len(c.inboundUnacked))
@@ -110,7 +140,7 @@ func TestReceiveMaximum_QoS1_AckReleasesSlot(t *testing.T) {
 }
 
 func TestReceiveMaximum_QoS2_Lifecycle(t *testing.T) {
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion: ProtocolV50,
 			ReceiveMaximum:  1,
@@ -123,10 +153,14 @@ func TestReceiveMaximum_QoS2_Lifecycle(t *testing.T) {
 		subscriptions:  make(map[string]subscriptionEntry),
 	}
 
+	c.sessionLock.Lock()
+	c.addSubscriptionLocked("t", subscriptionEntry{handler: func(_ *Client, _ Message) {}})
+	c.sessionLock.Unlock()
+
 	// 1. PUBLISH QoS 2
 	// Sends PUBREC. Unlike QoS 1 ACK, QoS 2 flow is not done.
 	// It should REMAIN in inboundUnacked until PUBCOMP.
-	c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 2, PacketID: 5})
+	c.sendPackets(c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 2, PacketID: 5}))
 
 	if len(c.inboundUnacked) != 1 {
 		t.Errorf("expected 1 unacked (QoS 2 incomplete), got %d", len(c.inboundUnacked))
@@ -143,7 +177,7 @@ func TestReceiveMaximum_QoS2_Lifecycle(t *testing.T) {
 
 func TestReceiveMaximum_SoftLimit(t *testing.T) {
 	// Create a client with ReceiveMaximum = 1 and Default Policy (Ignore)
-	c := &Client{
+	c := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			ProtocolVersion:      ProtocolV50,
 			ReceiveMaximum:       1,
@@ -157,14 +191,18 @@ func TestReceiveMaximum_SoftLimit(t *testing.T) {
 	}
 	c.connected.Store(true)
 
+	c.sessionLock.Lock()
+	c.addSubscriptionLocked("t", subscriptionEntry{handler: func(_ *Client, _ Message) {}})
+	c.sessionLock.Unlock()
+
 	// Msg 1 (QoS 1)
-	c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 1})
+	c.sendPackets(c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 1}))
 	if len(c.inboundUnacked) != 1 {
 		t.Errorf("expected 1 unacked, got %d", len(c.inboundUnacked))
 	}
 
 	// Msg 2 (QoS 1) - Should overflow but NOT disconnect
-	c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 2})
+	c.sendPackets(c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 2}))
 
 	if !c.IsConnected() {
 		t.Error("client should NOT have disconnected with SoftLimit policy")
