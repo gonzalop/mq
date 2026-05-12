@@ -8,6 +8,8 @@ import (
 
 // handleAuth processes an AUTH packet from the server during authentication exchange.
 func (c *Client) handleAuth(p *packets.AuthPacket) {
+	defer c.recoverPanic("Authenticator")
+
 	if c.opts.Authenticator == nil {
 		c.opts.Logger.Warn("received AUTH packet but no authenticator configured")
 		return

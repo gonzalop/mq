@@ -256,19 +256,18 @@ func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, h
 	for _, handler := range handlers {
 		h := handler // Capture for goroutine
 
-		// Acquire semaphore if configured
-		if c.handlerSem != nil {
-			select {
-			case c.handlerSem <- struct{}{}:
-			case <-c.stop:
-				return
-			}
-		}
-
 		go func() {
+			// Acquire semaphore if configured
 			if c.handlerSem != nil {
-				defer func() { <-c.handlerSem }()
+				select {
+				case c.handlerSem <- struct{}{}:
+					defer func() { <-c.handlerSem }()
+				case <-c.stop:
+					return
+				}
 			}
+
+			defer c.recoverPanic("MessageHandler")
 
 			// Create a context for the handler
 			ctx, cancel := context.WithCancel(context.Background())

@@ -175,6 +175,14 @@ type Client struct {
 	defaultHandler MessageHandler
 }
 
+func (c *Client) recoverPanic(callbackName string) {
+	if r := recover(); r != nil {
+		if c.opts != nil && c.opts.Logger != nil {
+			c.opts.Logger.Error("panic in user callback", "callback", callbackName, "error", r)
+		}
+	}
+}
+
 // publishRequest represents a request to publish a message.
 type publishRequest struct {
 	packet *packets.PublishPacket
@@ -522,7 +530,10 @@ func (c *Client) finalizeConnection(connack *packets.ConnackPacket) {
 	}
 
 	if c.opts.OnConnect != nil {
-		go c.opts.OnConnect(c)
+		go func() {
+			defer c.recoverPanic("OnConnect")
+			c.opts.OnConnect(c)
+		}()
 	}
 
 	c.wg.Add(2)
@@ -882,7 +893,10 @@ func (c *Client) handleDisconnect() {
 	c.connLock.Unlock()
 
 	if c.opts.OnConnectionLost != nil {
-		go c.opts.OnConnectionLost(c, reason)
+		go func() {
+			defer c.recoverPanic("OnConnectionLost")
+			c.opts.OnConnectionLost(c, reason)
+		}()
 	}
 
 	// Signal reconnect loop
@@ -970,28 +984,25 @@ func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, pro
 	}
 
 	// Wait for goroutines with timeout
-	deadline := time.Now().Add(5 * time.Second)
-	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
-		deadline = d
-	}
+	waitCtx, waitCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer waitCancel()
 
-	for time.Now().Before(deadline) {
-		if c.activeLoops.Load() == 0 {
-			c.opts.Logger.Debug("disconnected successfully")
-			return nil
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	done := make(chan struct{})
+	go func() {
+		c.wg.Wait()
+		close(done)
+	}()
 
-	if c.activeLoops.Load() == 0 {
+	select {
+	case <-done:
 		c.opts.Logger.Debug("disconnected successfully")
 		return nil
+	case <-waitCtx.Done():
+		if errors.Is(waitCtx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("timeout waiting for goroutines to exit (%d still running)", c.activeLoops.Load())
+		}
+		return waitCtx.Err()
 	}
-
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return fmt.Errorf("timeout waiting for goroutines to exit (%d still running)", c.activeLoops.Load())
 }
 
 // reconnectLoop handles automatic reconnection.
@@ -1376,7 +1387,14 @@ func (c *Client) GetStats() ClientStats {
 	}
 }
 
-func (c *Client) performHandshake(ctx context.Context, r io.Reader, w io.Writer) (*packets.ConnackPacket, error) {
+func (c *Client) performHandshake(ctx context.Context, r io.Reader, w io.Writer) (connack *packets.ConnackPacket, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			c.recoverPanic("Handshake")
+			err = fmt.Errorf("panic during handshake: %v", r)
+		}
+	}()
+
 	deadline, ok := ctx.Deadline()
 	if !ok {
 		deadline = time.Now().Add(c.opts.ConnectTimeout)
@@ -1481,7 +1499,10 @@ func (c *Client) processConnackProperties(connack *packets.ConnackPacket) {
 			c.opts.Logger.Debug("server provided redirect reference", "server_reference", newState.serverReference)
 
 			if c.opts.OnServerRedirect != nil {
-				go c.opts.OnServerRedirect(newState.serverReference)
+				go func() {
+					defer c.recoverPanic("OnServerRedirect")
+					c.opts.OnServerRedirect(newState.serverReference)
+				}()
 			}
 		}
 
