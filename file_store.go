@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -19,10 +20,14 @@ var _ SessionStore = (*FileStore)(nil)
 //
 //	baseDir/
 //	  clientID/
-//	    pending_1.json
-//	    pending_2.json
-//	    subscriptions.json
-//	    qos2_received.json
+//	    pending/
+//	      1.json
+//	      2.json
+//	    subscriptions/
+//	      <base64_topic>.json
+//	    qos2/
+//	      1.json
+//	      2.json
 //
 // This implementation is synchronous - all operations block until complete.
 // For async/batched writes, users can implement a custom SessionStore.
@@ -90,6 +95,13 @@ func NewFileStore(baseDir, clientID string, opts ...FileStoreOption) (*FileStore
 		return nil, fmt.Errorf("failed to create store directory: %w", err)
 	}
 
+	// Create subdirectories for incremental storage
+	for _, sub := range []string{"pending", "subscriptions", "qos2"} {
+		if err := os.MkdirAll(filepath.Join(dir, sub), cfg.permissions|0111); err != nil {
+			return nil, fmt.Errorf("failed to create %s directory: %w", sub, err)
+		}
+	}
+
 	return &FileStore{
 		dir:      dir,
 		clientID: clientID,
@@ -110,7 +122,7 @@ func (f *FileStore) SavePendingPublish(packetID uint16, pub *PersistedPublish) e
 		return fmt.Errorf("failed to marshal publish: %w", err)
 	}
 
-	path := filepath.Join(f.dir, fmt.Sprintf("pending_%d.json", packetID))
+	path := filepath.Join(f.dir, "pending", fmt.Sprintf("%d.json", packetID))
 	if err := os.WriteFile(path, data, f.config.permissions); err != nil {
 		return fmt.Errorf("failed to write pending publish: %w", err)
 	}
@@ -120,7 +132,7 @@ func (f *FileStore) SavePendingPublish(packetID uint16, pub *PersistedPublish) e
 
 // DeletePendingPublish removes a pending publish from disk.
 func (f *FileStore) DeletePendingPublish(packetID uint16) error {
-	path := filepath.Join(f.dir, fmt.Sprintf("pending_%d.json", packetID))
+	path := filepath.Join(f.dir, "pending", fmt.Sprintf("%d.json", packetID))
 	err := os.Remove(path)
 	if os.IsNotExist(err) {
 		return nil // Already deleted
@@ -135,19 +147,25 @@ func (f *FileStore) DeletePendingPublish(packetID uint16) error {
 func (f *FileStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
 	result := make(map[uint16]*PersistedPublish)
 
-	files, err := filepath.Glob(filepath.Join(f.dir, "pending_*.json"))
+	entries, err := os.ReadDir(filepath.Join(f.dir, "pending"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to list pending publishes: %w", err)
+		if os.IsNotExist(err) {
+			return result, nil
+		}
+		return nil, fmt.Errorf("failed to read pending directory: %w", err)
 	}
 
-	for _, file := range files {
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
 		var packetID uint16
-		base := filepath.Base(file)
-		if _, err := fmt.Sscanf(base, "pending_%d.json", &packetID); err != nil {
+		if _, err := fmt.Sscanf(entry.Name(), "%d.json", &packetID); err != nil {
 			continue // Skip malformed filenames
 		}
 
-		data, err := os.ReadFile(file)
+		data, err := os.ReadFile(filepath.Join(f.dir, "pending", entry.Name()))
 		if err != nil {
 			continue // Skip unreadable files
 		}
@@ -165,35 +183,20 @@ func (f *FileStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error)
 
 // ClearPendingPublishes removes all pending publishes from disk.
 func (f *FileStore) ClearPendingPublishes() error {
-	files, err := filepath.Glob(filepath.Join(f.dir, "pending_*.json"))
-	if err != nil {
-		return fmt.Errorf("failed to list pending publishes: %w", err)
-	}
-
-	for _, file := range files {
-		os.Remove(file) // Best effort
-	}
-
-	return nil
+	return os.RemoveAll(filepath.Join(f.dir, "pending"))
 }
 
 // SaveSubscription stores a subscription to disk.
 func (f *FileStore) SaveSubscription(topic string, sub *PersistedSubscription) error {
-	subs, err := f.LoadSubscriptions()
+	data, err := json.Marshal(sub)
 	if err != nil {
-		subs = make(map[string]*PersistedSubscription)
+		return fmt.Errorf("failed to marshal subscription: %w", err)
 	}
 
-	subs[topic] = sub
-
-	data, err := json.Marshal(subs)
-	if err != nil {
-		return fmt.Errorf("failed to marshal subscriptions: %w", err)
-	}
-
-	path := filepath.Join(f.dir, "subscriptions.json")
+	safeTopic := base64.URLEncoding.EncodeToString([]byte(topic))
+	path := filepath.Join(f.dir, "subscriptions", safeTopic+".json")
 	if err := os.WriteFile(path, data, f.config.permissions); err != nil {
-		return fmt.Errorf("failed to write subscriptions: %w", err)
+		return fmt.Errorf("failed to write subscription: %w", err)
 	}
 
 	return nil
@@ -201,132 +204,109 @@ func (f *FileStore) SaveSubscription(topic string, sub *PersistedSubscription) e
 
 // DeleteSubscription removes a subscription from disk.
 func (f *FileStore) DeleteSubscription(topic string) error {
-	subs, err := f.LoadSubscriptions()
+	safeTopic := base64.URLEncoding.EncodeToString([]byte(topic))
+	path := filepath.Join(f.dir, "subscriptions", safeTopic+".json")
+	err := os.Remove(path)
+	if os.IsNotExist(err) {
+		return nil // Already deleted
+	}
 	if err != nil {
-		return nil // Nothing to delete
+		return fmt.Errorf("failed to delete subscription: %w", err)
 	}
-
-	delete(subs, topic)
-
-	if len(subs) == 0 {
-		path := filepath.Join(f.dir, "subscriptions.json")
-		os.Remove(path)
-		return nil
-	}
-
-	data, err := json.Marshal(subs)
-	if err != nil {
-		return fmt.Errorf("failed to marshal subscriptions: %w", err)
-	}
-
-	path := filepath.Join(f.dir, "subscriptions.json")
-	if err := os.WriteFile(path, data, f.config.permissions); err != nil {
-		return fmt.Errorf("failed to write subscriptions: %w", err)
-	}
-
 	return nil
 }
 
 // LoadSubscriptions loads all subscriptions from disk.
 func (f *FileStore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {
-	path := filepath.Join(f.dir, "subscriptions.json")
+	result := make(map[string]*PersistedSubscription)
 
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return make(map[string]*PersistedSubscription), nil
-	}
+	entries, err := os.ReadDir(filepath.Join(f.dir, "subscriptions"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read subscriptions: %w", err)
+		if os.IsNotExist(err) {
+			return result, nil
+		}
+		return nil, fmt.Errorf("failed to read subscriptions directory: %w", err)
 	}
 
-	var subs map[string]*PersistedSubscription
-	if err := json.Unmarshal(data, &subs); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal subscriptions: %w", err)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+
+		encodedTopic := strings.TrimSuffix(entry.Name(), ".json")
+		topicBytes, err := base64.URLEncoding.DecodeString(encodedTopic)
+		if err != nil {
+			continue // Skip malformed filenames
+		}
+		topic := string(topicBytes)
+
+		data, err := os.ReadFile(filepath.Join(f.dir, "subscriptions", entry.Name()))
+		if err != nil {
+			continue // Skip unreadable files
+		}
+
+		var sub PersistedSubscription
+		if err := json.Unmarshal(data, &sub); err != nil {
+			continue // Skip corrupted files
+		}
+
+		result[topic] = &sub
 	}
 
-	return subs, nil
+	return result, nil
 }
 
 // SaveReceivedQoS2 marks a QoS 2 packet ID as received.
 func (f *FileStore) SaveReceivedQoS2(packetID uint16) error {
-	qos2, err := f.LoadReceivedQoS2()
-	if err != nil {
-		qos2 = make(map[uint16]struct{})
+	path := filepath.Join(f.dir, "qos2", fmt.Sprintf("%d.json", packetID))
+	// Just write an empty file to indicate the ID is received.
+	// We don't need any content because the ID is the filename.
+	if err := os.WriteFile(path, []byte{}, f.config.permissions); err != nil {
+		return fmt.Errorf("failed to write QoS2 ID: %w", err)
 	}
-
-	qos2[packetID] = struct{}{}
-
-	ids := make([]uint16, 0, len(qos2))
-	for id := range qos2 {
-		ids = append(ids, id)
-	}
-
-	data, err := json.Marshal(ids)
-	if err != nil {
-		return fmt.Errorf("failed to marshal QoS2 IDs: %w", err)
-	}
-
-	path := filepath.Join(f.dir, "qos2_received.json")
-	if err := os.WriteFile(path, data, f.config.permissions); err != nil {
-		return fmt.Errorf("failed to write QoS2 IDs: %w", err)
-	}
-
 	return nil
 }
 
 // DeleteReceivedQoS2 removes a QoS 2 packet ID.
 func (f *FileStore) DeleteReceivedQoS2(packetID uint16) error {
-	qos2, err := f.LoadReceivedQoS2()
+	if packetID == 0 {
+		return f.ClearReceivedQoS2()
+	}
+
+	path := filepath.Join(f.dir, "qos2", fmt.Sprintf("%d.json", packetID))
+	err := os.Remove(path)
+	if os.IsNotExist(err) {
+		return nil // Already deleted
+	}
 	if err != nil {
-		return nil // Nothing to delete
+		return fmt.Errorf("failed to delete QoS2 ID: %w", err)
 	}
-
-	delete(qos2, packetID)
-
-	if len(qos2) == 0 {
-		path := filepath.Join(f.dir, "qos2_received.json")
-		os.Remove(path)
-		return nil
-	}
-
-	ids := make([]uint16, 0, len(qos2))
-	for id := range qos2 {
-		ids = append(ids, id)
-	}
-
-	data, err := json.Marshal(ids)
-	if err != nil {
-		return fmt.Errorf("failed to marshal QoS2 IDs: %w", err)
-	}
-
-	path := filepath.Join(f.dir, "qos2_received.json")
-	if err := os.WriteFile(path, data, f.config.permissions); err != nil {
-		return fmt.Errorf("failed to write QoS2 IDs: %w", err)
-	}
-
 	return nil
 }
 
 // LoadReceivedQoS2 loads all received QoS 2 packet IDs.
 func (f *FileStore) LoadReceivedQoS2() (map[uint16]struct{}, error) {
-	path := filepath.Join(f.dir, "qos2_received.json")
+	result := make(map[uint16]struct{})
 
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return make(map[uint16]struct{}), nil
-	}
+	entries, err := os.ReadDir(filepath.Join(f.dir, "qos2"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read QoS2 IDs: %w", err)
+		if os.IsNotExist(err) {
+			return result, nil
+		}
+		return nil, fmt.Errorf("failed to read qos2 directory: %w", err)
 	}
 
-	var ids []uint16
-	if err := json.Unmarshal(data, &ids); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal QoS2 IDs: %w", err)
-	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
 
-	result := make(map[uint16]struct{}, len(ids))
-	for _, id := range ids {
-		result[id] = struct{}{}
+		var packetID uint16
+		if _, err := fmt.Sscanf(entry.Name(), "%d.json", &packetID); err != nil {
+			continue // Skip malformed filenames
+		}
+
+		result[packetID] = struct{}{}
 	}
 
 	return result, nil
@@ -334,32 +314,20 @@ func (f *FileStore) LoadReceivedQoS2() (map[uint16]struct{}, error) {
 
 // ClearReceivedQoS2 removes all received QoS 2 packet IDs.
 func (f *FileStore) ClearReceivedQoS2() error {
-	path := filepath.Join(f.dir, "qos2_received.json")
-	err := os.Remove(path)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	return err
+	return os.RemoveAll(filepath.Join(f.dir, "qos2"))
 }
 
 // Clear removes all session state from disk.
 func (f *FileStore) Clear() error {
-	entries, err := os.ReadDir(f.dir)
-	if err != nil {
-		return fmt.Errorf("failed to read store directory: %w", err)
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
+	// Instead of iterating, just remove all subdirectories and recreate them
+	for _, sub := range []string{"pending", "subscriptions", "qos2"} {
+		path := filepath.Join(f.dir, sub)
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("failed to clear %s: %w", sub, err)
 		}
-		name := entry.Name()
-		if strings.HasPrefix(name, "pending_") ||
-			name == "subscriptions.json" ||
-			name == "qos2_received.json" {
-			_ = os.Remove(filepath.Join(f.dir, name))
+		if err := os.MkdirAll(path, f.config.permissions|0111); err != nil {
+			return fmt.Errorf("failed to recreate %s: %w", sub, err)
 		}
 	}
-
 	return nil
 }

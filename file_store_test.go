@@ -49,7 +49,7 @@ func TestFileStore_NewFileStore(t *testing.T) {
 		}
 
 		// Check file permissions
-		path := filepath.Join(tmpDir, "perm-test", "pending_1.json")
+		path := filepath.Join(tmpDir, "perm-test", "pending", "1.json")
 		info, err := os.Stat(path)
 		if err != nil {
 			t.Fatalf("Stat failed: %v", err)

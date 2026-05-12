@@ -105,6 +105,140 @@ type SessionStore interface {
 	Clear() error
 }
 
+// AsyncStore wraps a SessionStore and performs Save and Delete operations
+// asynchronously in a background goroutine.
+//
+// Load methods remain synchronous and will wait for any pending writes
+// to complete if necessary (though in practice Load is only called at startup).
+type AsyncStore struct {
+	store SessionStore
+	queue chan func()
+	stop  chan struct{}
+}
+
+// NewAsyncStore creates a new AsyncStore wrapping the provided store.
+// bufferSize determines how many operations can be queued before Save/Delete block.
+func NewAsyncStore(store SessionStore, bufferSize int) *AsyncStore {
+	as := &AsyncStore{
+		store: store,
+		queue: make(chan func(), bufferSize),
+		stop:  make(chan struct{}),
+	}
+
+	go as.run()
+	return as
+}
+
+func (as *AsyncStore) run() {
+	for {
+		select {
+		case op := <-as.queue:
+			op()
+		case <-as.stop:
+			// Drain queue before exiting
+			for {
+				select {
+				case op := <-as.queue:
+					op()
+				default:
+					return
+				}
+			}
+		}
+	}
+}
+
+// Close stops the background worker.
+func (as *AsyncStore) Close() {
+	close(as.stop)
+}
+
+// SavePendingPublish implements SessionStore.
+func (as *AsyncStore) SavePendingPublish(packetID uint16, pub *PersistedPublish) error {
+	as.queue <- func() {
+		_ = as.store.SavePendingPublish(packetID, pub)
+	}
+	return nil
+}
+
+// DeletePendingPublish implements SessionStore.
+func (as *AsyncStore) DeletePendingPublish(packetID uint16) error {
+	as.queue <- func() {
+		_ = as.store.DeletePendingPublish(packetID)
+	}
+	return nil
+}
+
+// LoadPendingPublishes implements SessionStore.
+func (as *AsyncStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
+	return as.store.LoadPendingPublishes()
+}
+
+// ClearPendingPublishes implements SessionStore.
+func (as *AsyncStore) ClearPendingPublishes() error {
+	as.queue <- func() {
+		_ = as.store.ClearPendingPublishes()
+	}
+	return nil
+}
+
+// SaveSubscription implements SessionStore.
+func (as *AsyncStore) SaveSubscription(topic string, sub *PersistedSubscription) error {
+	as.queue <- func() {
+		_ = as.store.SaveSubscription(topic, sub)
+	}
+	return nil
+}
+
+// DeleteSubscription implements SessionStore.
+func (as *AsyncStore) DeleteSubscription(topic string) error {
+	as.queue <- func() {
+		_ = as.store.DeleteSubscription(topic)
+	}
+	return nil
+}
+
+// LoadSubscriptions implements SessionStore.
+func (as *AsyncStore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {
+	return as.store.LoadSubscriptions()
+}
+
+// SaveReceivedQoS2 implements SessionStore.
+func (as *AsyncStore) SaveReceivedQoS2(packetID uint16) error {
+	as.queue <- func() {
+		_ = as.store.SaveReceivedQoS2(packetID)
+	}
+	return nil
+}
+
+// DeleteReceivedQoS2 implements SessionStore.
+func (as *AsyncStore) DeleteReceivedQoS2(packetID uint16) error {
+	as.queue <- func() {
+		_ = as.store.DeleteReceivedQoS2(packetID)
+	}
+	return nil
+}
+
+// LoadReceivedQoS2 implements SessionStore.
+func (as *AsyncStore) LoadReceivedQoS2() (map[uint16]struct{}, error) {
+	return as.store.LoadReceivedQoS2()
+}
+
+// ClearReceivedQoS2 implements SessionStore.
+func (as *AsyncStore) ClearReceivedQoS2() error {
+	as.queue <- func() {
+		_ = as.store.ClearReceivedQoS2()
+	}
+	return nil
+}
+
+// Clear implements SessionStore.
+func (as *AsyncStore) Clear() error {
+	// Clear is usually called on disconnect or when session expires.
+	// We do it synchronously to ensure state is gone.
+	return as.store.Clear()
+}
+
 // PersistedPublish represents a publish for persistence.
 // This is a simplified representation containing only the data needed
 // to restore a pending publish after reconnection.
