@@ -59,6 +59,10 @@ client, err := mq.Dial(server, options...)
 client, err := mq.DialContext(ctx, server, options...)
 ```
 
+> [!TIP]
+> **Pro-Tip: Reconnection Safety**
+> For critical subscriptions, prefer using `mq.WithSubscription(topic, handler)` within your `mq.Dial` options. This guarantees the handler is attached *before* the client connects to the broker, ensuring you don't miss any "immediate" messages delivered by the broker upon session resumption.
+
 ### Supported URI Schemes
 - `tcp://` or `mqtt://` - Unencrypted (default port 1883)
 - `tls://`, `ssl://`, or `mqtts://` - Encrypted with TLS (default port 8883)

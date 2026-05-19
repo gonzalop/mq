@@ -28,41 +28,6 @@ A lightweight, idiomatic MQTT client library for Go with full support for v3.1.1
 
 For code demonstrations of these features, see the **[Examples Index](examples/README.md)**.
 
-## Performance
-
-The library is designed for high-concurrency environments:
-- **Throughput**: Up to **3x faster** than Paho v5 in high-concurrency scenarios, with peak rates exceeding **1.3M msg/s**.
-- **Radix Tree Routing**: O(K) topic matching for high-subscription environments.
-- **Non-blocking I/O**: Core state machine uses a non-blocking logic loop to maximize throughput.
-- **Efficiency**: **10x lower memory allocation** and significantly reduced GC overhead compared to alternative libraries.
-
-For a detailed comparative analysis, see the **[Performance Analysis Report](docs/PERFORMANCE_ANALYSIS.md)**.
-
-## Safety and Resilience
-
-In accordance with Go's "fail-fast" philosophy, the library does not catch panics in user-provided callbacks. If a handler panics, the entire process will terminate to prevent running in an inconsistent state.
-
-### Panic Recovery via Middleware
-
-If you require process-level resilience, you can implement a recovery interceptor:
-
-```go
-recoveryInterceptor := func(next mq.MessageHandler) mq.MessageHandler {
-    return func(c *mq.Client, m mq.Message) {
-        defer func() {
-            if r := recover(); r != nil {
-                c.Options().Logger.Error("Recovered from panic in handler", 
-                    "topic", m.Topic, "error", r)
-            }
-        }()
-        next(c, m)
-    }
-}
-
-client.Subscribe("sensors/#", mq.AtMostOnce, handler, 
-    mq.WithHandlerInterceptor(recoveryInterceptor))
-```
-
 ## Installation
 
 ```bash
@@ -104,13 +69,31 @@ func main() {
 
     // Publish a message
     token := client.Publish("sensors/living-room/temperature", []byte("22.5"), mq.WithQoS(mq.AtLeastOnce))
-    
+
     // Wait for acknowledgment
     if err := token.Wait(context.Background()); err != nil {
         fmt.Printf("Publish failed: %v\n", err)
     }
 }
 ```
+
+> [!TIP]
+> **Pro-Tip: Avoiding Reconnection Races**
+> For subscriptions that should persist across connections, use `mq.WithSubscription(topic, handler)` in your `mq.Dial` options instead of calling `client.Subscribe` after connecting. This ensures the handler is registered *before* the connection is established, preventing a race condition where the server might deliver messages before your client has finished processing the subscription.
+
+## Performance
+
+The library is designed for high-concurrency environments:
+- **Throughput**: Up to **3x faster** than Paho v5 in high-concurrency scenarios, with peak rates exceeding **1.3M msg/s**.
+- **Radix Tree Routing**: O(K) topic matching for high-subscription environments.
+- **Non-blocking I/O**: Core state machine uses a non-blocking logic loop to maximize throughput.
+- **Efficiency**: **10x lower memory allocation** and significantly reduced GC overhead compared to alternative libraries.
+
+For a detailed comparative analysis, see the **[Performance Analysis Report](docs/performance_analysis.md)**.
+
+## Architecture
+
+The library is built around a non-blocking logic loop and a high-performance Radix Tree for message routing. For a deep dive into how we handle high-concurrency and prevent deadlocks, see the **[Internals & Concurrency Guide](docs/internals/CONCURRENCY.md)**.
 
 ## Documentation
 - [Getting Started](docs/getting_started.md)
@@ -120,9 +103,9 @@ func main() {
 - [Interceptors](docs/interceptors.md)
 - [Persistence](docs/persistence.md)
 - [Troubleshooting](docs/troubleshooting.md)
-- [Performance Analysis](docs/PERFORMANCE_ANALYSIS.md)
-- [MQTT 5.0 Compliance](docs/MQTT_5.0_Compliance.md)
-- [MQTT 3.1.1 Compliance](docs/MQTT_3.1.1_Compliance.md)
+- [Performance Analysis](docs/performance_analysis.md)
+- [MQTT 5.0 Compliance](docs/mqtt_5.0_compliance.md)
+- [MQTT 3.1.1 Compliance](docs/mqtt_3.1.1_compliance.md)
 
 ## License
 This software is under the MIT License.

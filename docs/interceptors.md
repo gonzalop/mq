@@ -50,6 +50,28 @@ func DecryptionInterceptor(next mq.MessageHandler) mq.MessageHandler {
 }
 ```
 
+### Example: Panic Recovery
+
+In accordance with Go's "fail-fast" philosophy, the library does not catch panics in user-provided callbacks. If you require process-level resilience, you can implement a recovery interceptor:
+
+```go
+recoveryInterceptor := func(next mq.MessageHandler) mq.MessageHandler {
+    return func(c *mq.Client, m mq.Message) {
+        defer func() {
+            if r := recover(); r != nil {
+                c.Options().Logger.Error("Recovered from panic in handler", 
+                    "topic", m.Topic, "error", r)
+            }
+        }()
+        next(c, m)
+    }
+}
+
+// Apply to all subscriptions via Dial
+client, _ := mq.Dial(server, 
+    mq.WithHandlerInterceptor(recoveryInterceptor))
+```
+
 ---
 
 ## 2. Publish Interceptor (Outbound)
