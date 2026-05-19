@@ -5,6 +5,7 @@ examples/local_routing/local_routing
 examples/lwt/lwt
 examples/middleware/middleware
 examples/persistent/persistent
+examples/persistence_filestore/persistence_filestore
 examples/scram_auth/scram_auth
 examples/simple/simple
 examples/throughput/throughput

@@ -1,13 +1,9 @@
-//go:build ignore
-
 package main
 
 import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-	"time"
 
 	"github.com/gonzalop/mq"
 )
