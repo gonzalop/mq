@@ -11,7 +11,16 @@ import (
 	"time"
 
 	"github.com/gonzalop/mq/internal/packets"
+	"github.com/gonzalop/mq/internal/trie"
 )
+
+// topicTrie is a type alias for the generic trie in internal/trie.
+// This allows existing code and tests to work with minimal changes.
+type topicTrie = trie.TopicTrie[MessageHandler]
+
+func newTopicTrie() *topicTrie {
+	return trie.New[MessageHandler]()
+}
 
 // Client represents an MQTT client connection.
 type Client struct {

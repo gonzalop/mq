@@ -11,7 +11,7 @@ type subscriptionEntry struct {
 func (c *Client) addSubscriptionLocked(topic string, entry subscriptionEntry) {
 	c.subscriptions[topic] = entry
 	if entry.handler != nil {
-		c.trie.insert(topic, entry.handler)
+		c.trie.Insert(topic, entry.handler)
 	}
 }
 
@@ -19,7 +19,7 @@ func (c *Client) addSubscriptionLocked(topic string, entry subscriptionEntry) {
 // Assumes sessionLock is HELD.
 func (c *Client) removeSubscriptionLocked(topic string) {
 	delete(c.subscriptions, topic)
-	c.trie.remove(topic)
+	c.trie.Remove(topic)
 }
 
 // wrapHandler applies handler interceptors to a MessageHandler.
