@@ -60,35 +60,22 @@ benchmark:
 	@go test -bench=. -benchmem -run=^$ -v ./...
 
 
+# Fuzzing time (default 10s)
+FUZZTIME ?= 10s
+
 fuzz:
-	@echo "🌀 Running fuzz tests..."
-	@echo "  Fuzzing packet reader..."
-	@cd internal/packets && go test -fuzz=FuzzReadPacket -fuzztime=10s
-	@echo "  Fuzzing fixed header decoder..."
-	@cd internal/packets && go test -fuzz=FuzzDecodeFixedHeader -fuzztime=10s
-	@echo "  Fuzzing variable integer decoder..."
-	@cd internal/packets && go test -fuzz=FuzzDecodeVarInt -fuzztime=10s
-	@echo "  Fuzzing string decoder..."
-	@cd internal/packets && go test -fuzz=FuzzDecodeString -fuzztime=10s
-	@echo "  Fuzzing CONNECT decoder..."
-	@cd internal/packets && go test -fuzz=FuzzDecodeConnect -fuzztime=10s
-	@echo "  Fuzzing PUBLISH decoder..."
-	@cd internal/packets && go test -fuzz=FuzzDecodePublish -fuzztime=10s
-	@echo "  Fuzzing PUBCOMP decoder..."
-	@cd internal/packets && go test -fuzz=FuzzDecodePubcomp -fuzztime=10s
-	@echo "  Fuzzing PUBREC decoder..."
-	@cd internal/packets && go test -fuzz=FuzzDecodePubrec -fuzztime=10s
-	@echo "  Fuzzing PUBREL decoder..."
-	@cd internal/packets && go test -fuzz=FuzzDecodePubrel -fuzztime=10s
-	@echo "  Fuzzing topic matcher..."
-	@go test -fuzz=FuzzMatchTopic -fuzztime=10s
-	@echo "  Fuzzing publish topic validation..."
-	@go test -fuzz=FuzzValidatePublishTopic -fuzztime=10s
-	@echo "  Fuzzing subscribe topic validation..."
-	@go test -fuzz=FuzzValidateSubscribeTopic -fuzztime=10s
-	@echo "  Fuzzing client packet handling..."
-	@go test -fuzz=FuzzClientHandleIncoming -fuzztime=10s
-	@echo "✅ Fuzzing complete"
+	@echo "🌀 Discovering and running all fuzz tests (time: $(FUZZTIME))..."
+	@for dir in . ./internal/packets; do \
+		tests=$$(grep -oh "func Fuzz[A-Z][a-zA-Z0-9]*" $$dir/*.go 2>/dev/null | cut -d' ' -f2); \
+		if [ -n "$$tests" ]; then \
+			echo "  --- Package: $$dir ---"; \
+			for t in $$tests; do \
+				echo "    🔥 Fuzzing $$t..."; \
+				go test -fuzz=$$t -fuzztime=$(FUZZTIME) $$dir; \
+			done; \
+		fi; \
+	done
+	@echo "✅ All discovered fuzz tests complete"
 
 coverage:
 	@echo "📊 Generating coverage report..."
