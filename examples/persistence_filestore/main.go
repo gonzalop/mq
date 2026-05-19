@@ -40,7 +40,7 @@ func main() {
 		mq.WithSessionExpiryInterval(0xFFFFFFFF), // Required for v5 persistence (keep forever)
 		mq.WithSessionStore(store),               // Use our local disk store
 
-		// Pro-Tip: Use WithSubscription to ensure the handler is re-attached 
+		// Pro-Tip: Use WithSubscription to ensure the handler is re-attached
 		// if the session is restored from the local store on startup.
 		mq.WithSubscription(topic, func(c *mq.Client, msg mq.Message) {
 			fmt.Printf("Received message: %s\n", string(msg.Payload))
@@ -53,7 +53,7 @@ func main() {
 
 	fmt.Printf("Connected! Client is now monitoring %s\n", topic)
 	fmt.Println("Try stopping this program, publishing a message while offline, and restarting it.")
-	
+
 	// Keep the example running to receive messages
 	select {}
 }

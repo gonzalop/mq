@@ -150,7 +150,7 @@ func TestMqttError_v5_v3_Compatibility(t *testing.T) {
 	})
 
 	t.Run("MqttError with ReasonString", func(t *testing.T) {
-		// This simulates the logic in client.go for CONNACK
+		// This simulates the logic in client_connection.go for CONNACK
 		err := &MqttError{
 			ReasonCode: ReasonCodeUnspecifiedError,
 			Message:    "server busy",

@@ -63,8 +63,8 @@ func TestTopicTrie_Match(t *testing.T) {
 		{
 			name: "Multiple matches",
 			filters: map[string]string{
-				"sensors/+/temperature": "h1",
-				"sensors/#":             "h2",
+				"sensors/+/temperature":           "h1",
+				"sensors/#":                       "h2",
 				"sensors/living-room/temperature": "h3",
 			},
 			topic: "sensors/living-room/temperature",
