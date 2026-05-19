@@ -412,7 +412,7 @@ func TestAuthExchangeLimit(t *testing.T) {
 		t.Fatal("expected error due to auth exchange limit, got nil")
 	}
 
-	if !contains(err.Error(), "maximum authentication exchanges (3) exceeded") {
+	if !strings.Contains(err.Error(), "maximum authentication exchanges (3) exceeded") {
 		t.Errorf("expected exchange limit error, got: %v", err)
 	}
 }
