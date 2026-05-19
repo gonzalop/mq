@@ -10,7 +10,8 @@ This directory contains examples demonstrating various features of the `mq` libr
 
 ## Reliability and Persistence
 - **[Auto Reconnect](./auto_reconnect)**: Demonstrates the built-in automatic reconnection with exponential backoff.
-- **[Persistent Session](./persistent)**: Using a `SessionStore` (e.g., `FileStore`) to persist subscriptions and pending messages across restarts.
+- **[Persistent Session (Protocol)](./persistent)**: Demonstrates MQTT-level persistent sessions (`CleanSession=false`) where the broker queues messages while the client is offline.
+- **[Durable Persistence (FileStore)](./persistence_filestore)**: Demonstrates using a local `SessionStore` (`FileStore`) to persist state on disk, allowing the client to survive process restarts without losing track of subscriptions or pending messages.
 - **[Last Will and Testament (LWT)](./lwt)**: Configuring a "will" message to be sent by the broker if the client disconnects unexpectedly.
 
 ## MQTT v5.0 Features
