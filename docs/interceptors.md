@@ -82,16 +82,16 @@ A `PublishInterceptor` wraps the `Publish` function. It allows you to inspect or
 
 ```go
 func TracingInterceptor(next mq.PublishFunc) mq.PublishFunc {
-    return func(topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
+    return func(ctx context.Context, topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
         // Create a new span
-        ctx, span := tracer.Start(context.Background(), "mqtt.publish")
+        ctx, span := tracer.Start(ctx, "mqtt.publish")
         defer span.End()
 
         // Inject trace context into MQTT v5 User Properties
         traceID := span.SpanContext().TraceID().String()
         opts = append(opts, mq.WithUserProperty("trace_id", traceID))
 
-        return next(topic, payload, opts...)
+        return next(ctx, topic, payload, opts...)
     }
 }
 
