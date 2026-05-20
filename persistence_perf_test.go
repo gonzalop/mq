@@ -120,3 +120,42 @@ func TestFileStore_TopicEncoding(t *testing.T) {
 		}
 	}
 }
+
+type blockingSessionStore struct {
+	dummySessionStore
+	saveBlock chan struct{}
+}
+
+func (b *blockingSessionStore) SavePendingPublish(_ uint16, _ *PersistedPublish) error {
+	<-b.saveBlock
+	return nil
+}
+
+func TestAsyncStore_NonBlocking(t *testing.T) {
+	blockChan := make(chan struct{})
+	mockStore := &blockingSessionStore{
+		saveBlock: blockChan,
+	}
+
+	// Create an AsyncStore with initial capacity 2
+	asyncStore := NewAsyncStore(mockStore, 2)
+
+	// We will enqueue 10 operations. With the previous buffered channel implementation (bufferSize 2),
+	// this would block after enqueuing the 3rd operation because the mock store blocks indefinitely.
+	start := time.Now()
+	for i := uint16(1); i <= 10; i++ {
+		err := asyncStore.SavePendingPublish(i, &PersistedPublish{Topic: "test"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	duration := time.Since(start)
+
+	if duration > 50*time.Millisecond {
+		t.Errorf("AsyncStore blocked! Enqueues took %v, expected < 50ms", duration)
+	}
+
+	// Unblock the background worker to allow clean exit
+	close(blockChan)
+	asyncStore.Close()
+}

@@ -515,3 +515,38 @@ func TestWithSubscriptionIdentifier(t *testing.T) {
 		})
 	}
 }
+
+func TestSubscriptionOverwriting(t *testing.T) {
+	c := &Client{
+		trie:          newTopicTrie(),
+		subscriptions: make(map[string]subscriptionEntry),
+	}
+
+	var h1Count, h2Count int
+
+	h1 := func(*Client, Message) { h1Count++ }
+	h2 := func(*Client, Message) { h2Count++ }
+
+	// Add first subscription
+	c.addSubscriptionLocked("my/test/topic", subscriptionEntry{handler: h1})
+
+	// Add second subscription (overwrite)
+	c.addSubscriptionLocked("my/test/topic", subscriptionEntry{handler: h2})
+
+	// Match and execute handlers
+	handlers := c.trie.Match("my/test/topic")
+	if len(handlers) != 1 {
+		t.Fatalf("expected exactly 1 handler in trie, got %d", len(handlers))
+	}
+
+	for _, h := range handlers {
+		h(c, Message{})
+	}
+
+	if h1Count != 0 {
+		t.Errorf("expected h1Count to be 0 (overwritten), got %d", h1Count)
+	}
+	if h2Count != 1 {
+		t.Errorf("expected h2Count to be 1, got %d", h2Count)
+	}
+}

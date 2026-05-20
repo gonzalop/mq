@@ -450,3 +450,63 @@ func TestRemovePending(t *testing.T) {
 		t.Errorf("Expected order length %d, got %d", len(expectedOrder), len(c.pendingOrder))
 	}
 }
+
+type dummySessionStore struct {
+	pending map[uint16]*PersistedPublish
+}
+
+func (d *dummySessionStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
+	return d.pending, nil
+}
+func (d *dummySessionStore) SavePendingPublish(uint16, *PersistedPublish) error    { return nil }
+func (d *dummySessionStore) DeletePendingPublish(uint16) error                     { return nil }
+func (d *dummySessionStore) ClearPendingPublishes() error                          { return nil }
+func (d *dummySessionStore) SaveSubscription(string, *PersistedSubscription) error { return nil }
+func (d *dummySessionStore) DeleteSubscription(string) error                       { return nil }
+func (d *dummySessionStore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {
+	return nil, nil
+}
+func (d *dummySessionStore) SaveReceivedQoS2(uint16) error   { return nil }
+func (d *dummySessionStore) DeleteReceivedQoS2(uint16) error { return nil }
+func (d *dummySessionStore) LoadReceivedQoS2() (map[uint16]struct{}, error) {
+	return nil, nil
+}
+func (d *dummySessionStore) ClearReceivedQoS2() error { return nil }
+func (d *dummySessionStore) Clear() error             { return nil }
+
+func TestPersistencePendingOrder(t *testing.T) {
+	mockStore := &dummySessionStore{
+		pending: map[uint16]*PersistedPublish{
+			20: {Topic: "test", QoS: 1, Payload: []byte("p20")},
+			5:  {Topic: "test", QoS: 2, Payload: []byte("p5")},
+			10: {Topic: "test", QoS: 1, Payload: []byte("p10")},
+			1:  {Topic: "test", QoS: 0, Payload: []byte("p1")}, // QoS 0 should not increment inFlightCount but should be restored
+		},
+	}
+
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.SessionStore = mockStore
+	c := newTestClient(opts)
+
+	if err := c.loadSessionState(); err != nil {
+		t.Fatalf("loadSessionState failed: %v", err)
+	}
+
+	// Verify in-flight count (only QoS 1 and 2 increment it)
+	// From the mock: QoS 1 (20), QoS 2 (5), QoS 1 (10) -> count should be 3
+	if c.inFlightCount != 3 {
+		t.Errorf("Expected inFlightCount 3, got %d", c.inFlightCount)
+	}
+
+	// Verify pendingOrder is populated and sorted numerically
+	expectedOrder := []uint16{1, 5, 10, 20}
+	if len(c.pendingOrder) != len(expectedOrder) {
+		t.Fatalf("Expected pendingOrder length %d, got %d", len(expectedOrder), len(c.pendingOrder))
+	}
+
+	for i, id := range c.pendingOrder {
+		if id != expectedOrder[i] {
+			t.Errorf("At index %d, expected PacketID %d, got %d", i, expectedOrder[i], id)
+		}
+	}
+}

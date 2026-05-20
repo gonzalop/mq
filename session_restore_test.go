@@ -1,8 +1,10 @@
 package mq
 
 import (
+	"context"
 	"maps"
 	"testing"
+	"time"
 )
 
 // MockSessionStoreForRestore implements SessionStore interface for testing restoration
@@ -80,5 +82,32 @@ func TestLoadSessionState_InFlightCount(t *testing.T) {
 	c.inFlightCount++
 	if c.inFlightCount != 4 {
 		t.Errorf("inFlightCount didn't increment correctly, got %d", c.inFlightCount)
+	}
+}
+
+type clearTrackingSessionStore struct {
+	MockSessionStoreForRestore
+	clearCalled bool
+}
+
+func (c *clearTrackingSessionStore) Clear() error {
+	c.clearCalled = true
+	return nil
+}
+
+func TestClearSessionStoreOnCleanSession(t *testing.T) {
+	mockStore := &clearTrackingSessionStore{}
+
+	// Attempt connection (will fail since there is no broker running, but Clear should run first)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	_, _ = DialContext(ctx, "tcp://localhost:1883",
+		WithSessionStore(mockStore),
+		WithCleanSession(true),
+	)
+
+	if !mockStore.clearCalled {
+		t.Error("expected session store Clear() to be called on CleanSession=true")
 	}
 }

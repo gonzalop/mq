@@ -1,5 +1,9 @@
 package mq
 
+import (
+	"sync"
+)
+
 // SessionStore handles persistence of session state across process restarts.
 // This enables session state to survive client restarts, crashes, or reboots.
 //
@@ -112,18 +116,20 @@ type SessionStore interface {
 // to complete if necessary (though in practice Load is only called at startup).
 type AsyncStore struct {
 	store SessionStore
-	queue chan func()
-	stop  chan struct{}
+	mu    sync.Mutex
+	cond  *sync.Cond
+	queue []func()
+	stop  bool
 }
 
 // NewAsyncStore creates a new AsyncStore wrapping the provided store.
-// bufferSize determines how many operations can be queued before Save/Delete block.
+// bufferSize determines the initial capacity of the internal unbounded queue.
 func NewAsyncStore(store SessionStore, bufferSize int) *AsyncStore {
 	as := &AsyncStore{
 		store: store,
-		queue: make(chan func(), bufferSize),
-		stop:  make(chan struct{}),
+		queue: make([]func(), 0, bufferSize),
 	}
+	as.cond = sync.NewCond(&as.mu)
 
 	go as.run()
 	return as
@@ -131,41 +137,54 @@ func NewAsyncStore(store SessionStore, bufferSize int) *AsyncStore {
 
 func (as *AsyncStore) run() {
 	for {
-		select {
-		case op := <-as.queue:
-			op()
-		case <-as.stop:
-			// Drain queue before exiting
-			for {
-				select {
-				case op := <-as.queue:
-					op()
-				default:
-					return
-				}
-			}
+		as.mu.Lock()
+		for len(as.queue) == 0 && !as.stop {
+			as.cond.Wait()
 		}
+		if len(as.queue) == 0 && as.stop {
+			as.mu.Unlock()
+			return
+		}
+		op := as.queue[0]
+		as.queue = as.queue[1:]
+		as.mu.Unlock()
+
+		op()
 	}
+}
+
+// enqueue adds an operation to the queue without blocking.
+func (as *AsyncStore) enqueue(op func()) {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	if as.stop {
+		return
+	}
+	as.queue = append(as.queue, op)
+	as.cond.Signal()
 }
 
 // Close stops the background worker.
 func (as *AsyncStore) Close() {
-	close(as.stop)
+	as.mu.Lock()
+	as.stop = true
+	as.cond.Signal()
+	as.mu.Unlock()
 }
 
 // SavePendingPublish implements SessionStore.
 func (as *AsyncStore) SavePendingPublish(packetID uint16, pub *PersistedPublish) error {
-	as.queue <- func() {
+	as.enqueue(func() {
 		_ = as.store.SavePendingPublish(packetID, pub)
-	}
+	})
 	return nil
 }
 
 // DeletePendingPublish implements SessionStore.
 func (as *AsyncStore) DeletePendingPublish(packetID uint16) error {
-	as.queue <- func() {
+	as.enqueue(func() {
 		_ = as.store.DeletePendingPublish(packetID)
-	}
+	})
 	return nil
 }
 
@@ -176,25 +195,25 @@ func (as *AsyncStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, erro
 
 // ClearPendingPublishes implements SessionStore.
 func (as *AsyncStore) ClearPendingPublishes() error {
-	as.queue <- func() {
+	as.enqueue(func() {
 		_ = as.store.ClearPendingPublishes()
-	}
+	})
 	return nil
 }
 
 // SaveSubscription implements SessionStore.
 func (as *AsyncStore) SaveSubscription(topic string, sub *PersistedSubscription) error {
-	as.queue <- func() {
+	as.enqueue(func() {
 		_ = as.store.SaveSubscription(topic, sub)
-	}
+	})
 	return nil
 }
 
 // DeleteSubscription implements SessionStore.
 func (as *AsyncStore) DeleteSubscription(topic string) error {
-	as.queue <- func() {
+	as.enqueue(func() {
 		_ = as.store.DeleteSubscription(topic)
-	}
+	})
 	return nil
 }
 
@@ -205,17 +224,17 @@ func (as *AsyncStore) LoadSubscriptions() (map[string]*PersistedSubscription, er
 
 // SaveReceivedQoS2 implements SessionStore.
 func (as *AsyncStore) SaveReceivedQoS2(packetID uint16) error {
-	as.queue <- func() {
+	as.enqueue(func() {
 		_ = as.store.SaveReceivedQoS2(packetID)
-	}
+	})
 	return nil
 }
 
 // DeleteReceivedQoS2 implements SessionStore.
 func (as *AsyncStore) DeleteReceivedQoS2(packetID uint16) error {
-	as.queue <- func() {
+	as.enqueue(func() {
 		_ = as.store.DeleteReceivedQoS2(packetID)
-	}
+	})
 	return nil
 }
 
@@ -226,9 +245,9 @@ func (as *AsyncStore) LoadReceivedQoS2() (map[uint16]struct{}, error) {
 
 // ClearReceivedQoS2 implements SessionStore.
 func (as *AsyncStore) ClearReceivedQoS2() error {
-	as.queue <- func() {
+	as.enqueue(func() {
 		_ = as.store.ClearReceivedQoS2()
-	}
+	})
 	return nil
 }
 

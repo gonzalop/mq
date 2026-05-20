@@ -42,7 +42,7 @@ The `SessionStore` interface defines how the library interacts with a storage ba
 To ensure the client's logic loop is never blocked by disk I/O, `mq` supports two key features:
 
 1.  **Incremental Storage**: The default `FileStore` uses an incremental, directory-based format. Instead of rewriting a single large JSON file for every change (O(N)), it writes small, individual files for each packet or subscription (O(1)).
-2.  **Asynchronous Persistence**: The `AsyncStore` wrapper allows any `SessionStore` implementation to perform write operations in a background goroutine. This completely decouples the library's performance from the storage backend's latency.
+2.  **Asynchronous Persistence**: The `AsyncStore` wrapper allows any `SessionStore` implementation to perform write operations in a background goroutine. By utilizing an unbounded queue, it guarantees that persistence operations never block the client's internal logic loop, completely decoupling library performance from storage backend latency.
 
 ## Configuration
 
@@ -56,7 +56,7 @@ To enable persistence, you must:
 baseStore, _ := mq.NewFileStore("./data", "my-client-id")
 
 // 2. Wrap it with AsyncStore for non-blocking I/O
-store := mq.NewAsyncStore(baseStore, 1000) // Buffer up to 1000 ops
+store := mq.NewAsyncStore(baseStore, 1000) // Initial queue capacity of 1000 ops
 defer store.Close()
 
 // 3. Connect with the store

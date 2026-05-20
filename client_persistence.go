@@ -2,6 +2,7 @@ package mq
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/gonzalop/mq/internal/packets"
@@ -23,8 +24,18 @@ func (c *Client) loadSessionState() error {
 	}
 
 	c.pending = make(map[uint16]*pendingOp)
+	c.pendingOrder = nil
 	c.inFlightCount = 0
-	for id, pub := range pending {
+
+	// Collect and sort keys numerically to preserve chronological order
+	var ids []uint16
+	for id := range pending {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+
+	for _, id := range ids {
+		pub := pending[id]
 		op := c.convertFromPersistedPublish(pub)
 		if pkt, ok := op.packet.(*packets.PublishPacket); ok {
 			pkt.PacketID = id // Restore PacketID from map key
@@ -33,6 +44,7 @@ func (c *Client) loadSessionState() error {
 			}
 		}
 		c.pending[id] = op
+		c.pendingOrder = append(c.pendingOrder, id)
 	}
 
 	// 2. Load Subscriptions

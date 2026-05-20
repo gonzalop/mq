@@ -9,6 +9,9 @@ type subscriptionEntry struct {
 // addSubscriptionLocked adds a subscription to both the map and the trie.
 // Assumes sessionLock is HELD.
 func (c *Client) addSubscriptionLocked(topic string, entry subscriptionEntry) {
+	if _, exists := c.subscriptions[topic]; exists {
+		c.trie.Remove(topic)
+	}
 	c.subscriptions[topic] = entry
 	if entry.handler != nil {
 		c.trie.Insert(topic, entry.handler)

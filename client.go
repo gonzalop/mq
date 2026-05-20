@@ -222,6 +222,10 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 		if err := c.loadSessionState(); err != nil {
 			c.opts.Logger.Warn("failed to load session state", "error", err)
 		}
+	} else if c.opts.SessionStore != nil {
+		if err := c.opts.SessionStore.Clear(); err != nil {
+			c.opts.Logger.Warn("failed to clear session store", "error", err)
+		}
 	}
 
 	if err := c.connect(ctx); err != nil {
