@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"context"
 	"sync/atomic"
 	"testing"
 )
@@ -41,15 +42,15 @@ func TestPublishInterceptor(t *testing.T) {
 	var count atomic.Int32
 
 	interceptor := func(next PublishFunc) PublishFunc {
-		return func(_ string, payload []byte, opts ...PublishOption) Token {
+		return func(ctx context.Context, _ string, payload []byte, opts ...PublishOption) Token {
 			count.Add(1)
 			// Modify payload
-			return next("test", []byte(string(payload)+"_intercepted"), opts...)
+			return next(ctx, "test", []byte(string(payload)+"_intercepted"), opts...)
 		}
 	}
 
 	basePublishCalled := false
-	basePublish := func(_ string, payload []byte, _ ...PublishOption) Token {
+	basePublish := func(_ context.Context, _ string, payload []byte, _ ...PublishOption) Token {
 		basePublishCalled = true
 		if string(payload) != "hello_intercepted" {
 			t.Errorf("expected modified payload, got %s", string(payload))
@@ -59,7 +60,7 @@ func TestPublishInterceptor(t *testing.T) {
 
 	wrappedPublish := applyPublishInterceptors(basePublish, []PublishInterceptor{interceptor})
 
-	wrappedPublish("test", []byte("hello"))
+	wrappedPublish(context.Background(), "test", []byte("hello"))
 
 	if count.Load() != 1 {
 		t.Errorf("expected interceptor to be called once, got %d", count.Load())
@@ -73,27 +74,27 @@ func TestMultipleInterceptors(t *testing.T) {
 	var order []int
 
 	interceptor1 := func(next PublishFunc) PublishFunc {
-		return func(topic string, payload []byte, opts ...PublishOption) Token {
+		return func(ctx context.Context, topic string, payload []byte, opts ...PublishOption) Token {
 			order = append(order, 1)
-			return next(topic, payload, opts...)
+			return next(ctx, topic, payload, opts...)
 		}
 	}
 
 	interceptor2 := func(next PublishFunc) PublishFunc {
-		return func(_ string, _ []byte, _ ...PublishOption) Token {
+		return func(ctx context.Context, _ string, _ []byte, _ ...PublishOption) Token {
 			order = append(order, 2)
-			return next("test", []byte("hello"), nil)
+			return next(ctx, "test", []byte("hello"), nil)
 		}
 	}
 
-	basePublish := func(_ string, _ []byte, _ ...PublishOption) Token {
+	basePublish := func(_ context.Context, _ string, _ []byte, _ ...PublishOption) Token {
 		order = append(order, 3)
 		return newToken()
 	}
 
 	wrappedPublish := applyPublishInterceptors(basePublish, []PublishInterceptor{interceptor1, interceptor2})
 
-	wrappedPublish("test", []byte("hello"))
+	wrappedPublish(context.Background(), "test", []byte("hello"))
 
 	expected := []int{1, 2, 3}
 	if len(order) != len(expected) {

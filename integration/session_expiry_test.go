@@ -31,7 +31,7 @@ func TestSessionExpiry(t *testing.T) {
 		}
 
 		// 2. Subscribe
-		if err := client1.Subscribe(topic, 1, nil).Wait(context.Background()); err != nil {
+		if err := client1.Subscribe(context.Background(), topic, 1, nil).Wait(context.Background()); err != nil {
 			t.Fatalf("Failed to subscribe: %v", err)
 		}
 
@@ -45,7 +45,7 @@ func TestSessionExpiry(t *testing.T) {
 		}
 		defer pubClient.Disconnect(context.Background())
 
-		if err := pubClient.Publish(topic, []byte("persistent-msg"), mq.WithQoS(1)).Wait(context.Background()); err != nil {
+		if err := pubClient.Publish(context.Background(), topic, []byte("persistent-msg"), mq.WithQoS(1)).Wait(context.Background()); err != nil {
 			t.Fatalf("Failed to publish: %v", err)
 		}
 
@@ -98,7 +98,7 @@ func TestSessionExpiry(t *testing.T) {
 		}
 
 		// 2. Subscribe
-		if err := client1.Subscribe(topic, 1, nil).Wait(context.Background()); err != nil {
+		if err := client1.Subscribe(context.Background(), topic, 1, nil).Wait(context.Background()); err != nil {
 			t.Fatalf("Failed to subscribe: %v", err)
 		}
 
@@ -115,7 +115,7 @@ func TestSessionExpiry(t *testing.T) {
 		}
 		defer pubClient.Disconnect(context.Background())
 
-		if err := pubClient.Publish(topic, []byte("expired-msg"), mq.WithQoS(1)).Wait(context.Background()); err != nil {
+		if err := pubClient.Publish(context.Background(), topic, []byte("expired-msg"), mq.WithQoS(1)).Wait(context.Background()); err != nil {
 			t.Fatalf("Failed to publish: %v", err)
 		}
 
@@ -160,7 +160,7 @@ func TestSessionExpiry(t *testing.T) {
 			t.Fatalf("Failed to connect client1: %v", err)
 		}
 
-		if err := client1.Subscribe(topic, 1, nil).Wait(context.Background()); err != nil {
+		if err := client1.Subscribe(context.Background(), topic, 1, nil).Wait(context.Background()); err != nil {
 			t.Fatalf("Failed to subscribe: %v", err)
 		}
 		client1.Disconnect(context.Background())
@@ -172,7 +172,7 @@ func TestSessionExpiry(t *testing.T) {
 		}
 		defer pubClient.Disconnect(context.Background())
 
-		if err := pubClient.Publish(topic, []byte("catch-me"), mq.WithQoS(1)).Wait(context.Background()); err != nil {
+		if err := pubClient.Publish(context.Background(), topic, []byte("catch-me"), mq.WithQoS(1)).Wait(context.Background()); err != nil {
 			t.Fatalf("Failed to publish: %v", err)
 		}
 

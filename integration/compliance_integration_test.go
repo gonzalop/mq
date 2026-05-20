@@ -100,7 +100,7 @@ func TestComplianceIntegration_NoLocal_Persistence(t *testing.T) {
 	received := make(chan string, 10)
 
 	// Subscribe with NoLocal = true
-	token := client.Subscribe(topic, mq.AtLeastOnce, func(_ *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), topic, mq.AtLeastOnce, func(_ *mq.Client, msg mq.Message) {
 		received <- string(msg.Payload)
 	}, mq.WithNoLocal(true))
 
@@ -109,7 +109,7 @@ func TestComplianceIntegration_NoLocal_Persistence(t *testing.T) {
 	}
 
 	// 1. Verify NoLocal works initially
-	client.Publish(topic, []byte("msg1"), mq.WithQoS(1)).Wait(context.Background())
+	client.Publish(context.Background(), topic, []byte("msg1"), mq.WithQoS(1)).Wait(context.Background())
 	select {
 	case msg := <-received:
 		t.Fatalf("Received own message '%s' BEFORE reconnect", msg)
@@ -141,7 +141,7 @@ func TestComplianceIntegration_NoLocal_Persistence(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// 4. Verify NoLocal STILL works
-	client.Publish(topic, []byte("msg2"), mq.WithQoS(1)).Wait(context.Background())
+	client.Publish(context.Background(), topic, []byte("msg2"), mq.WithQoS(1)).Wait(context.Background())
 	select {
 	case msg := <-received:
 		t.Fatalf("Received own message '%s' AFTER reconnect. NoLocal option was lost!", msg)

@@ -79,7 +79,7 @@ func main() {
 	// The DefaultPublishHandler is ONLY called if no specific handler is attached
 	// to the subscription. Here we pass 'nil' as the handler for Subscribe.
 	fmt.Println("Subscribing to '#' to capture traffic...")
-	if err := client.Subscribe("#", mq.AtLeastOnce, nil).Wait(context.Background()); err != nil {
+	if err := client.Subscribe(context.Background(), "#", mq.AtLeastOnce, nil).Wait(context.Background()); err != nil {
 		log.Fatalf("Subscribe failed: %v", err)
 	}
 
@@ -90,13 +90,13 @@ func main() {
 	fmt.Println("\n--- Publishing Tests ---")
 
 	// Should match "system/alerts/#"
-	client.Publish("system/alerts/cpu", []byte("CPU > 90%"), mq.WithQoS(1)).Wait(context.Background())
+	client.Publish(context.Background(), "system/alerts/cpu", []byte("CPU > 90%"), mq.WithQoS(1)).Wait(context.Background())
 
 	// Should match "logs/error"
-	client.Publish("logs/error", []byte("Disk full"), mq.WithQoS(1)).Wait(context.Background())
+	client.Publish(context.Background(), "logs/error", []byte("Disk full"), mq.WithQoS(1)).Wait(context.Background())
 
 	// Should be [UNMATCHED]
-	client.Publish("users/chat", []byte("Hello world"), mq.WithQoS(1)).Wait(context.Background())
+	client.Publish(context.Background(), "users/chat", []byte("Hello world"), mq.WithQoS(1)).Wait(context.Background())
 
 	fmt.Println("------------------------")
 	fmt.Println("Waiting for messages... (Press Ctrl+C to quit)")

@@ -76,7 +76,7 @@ func TestGetStats(t *testing.T) {
 	}
 
 	// Send a publish to increment stats
-	client.Publish("test/stats", []byte("payload"), WithQoS(AtLeastOnce))
+	client.Publish(context.Background(), "test/stats", []byte("payload"), WithQoS(AtLeastOnce))
 
 	// Give time for IO
 	time.Sleep(100 * time.Millisecond)

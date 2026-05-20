@@ -27,7 +27,7 @@ func TestV5Properties(t *testing.T) {
 	t.Run("ContentType", func(t *testing.T) {
 		received := make(chan mq.Message, 1)
 
-		token := client.Subscribe("test/properties/contenttype", 1, func(_ *mq.Client, msg mq.Message) {
+		token := client.Subscribe(context.Background(), "test/properties/contenttype", 1, func(_ *mq.Client, msg mq.Message) {
 			received <- msg
 		})
 
@@ -39,7 +39,7 @@ func TestV5Properties(t *testing.T) {
 		}
 
 		// Publish with content type
-		err := client.Publish("test/properties/contenttype",
+		err := client.Publish(context.Background(), "test/properties/contenttype",
 			[]byte(`{"value": 42}`),
 			mq.WithQoS(1),
 			mq.WithContentType("application/json"),
@@ -67,7 +67,7 @@ func TestV5Properties(t *testing.T) {
 	t.Run("UserProperties", func(t *testing.T) {
 		received := make(chan mq.Message, 1)
 
-		token := client.Subscribe("test/properties/user", 1, func(_ *mq.Client, msg mq.Message) {
+		token := client.Subscribe(context.Background(), "test/properties/user", 1, func(_ *mq.Client, msg mq.Message) {
 			received <- msg
 		})
 
@@ -79,7 +79,7 @@ func TestV5Properties(t *testing.T) {
 		}
 
 		// Publish with user properties
-		err := client.Publish("test/properties/user",
+		err := client.Publish(context.Background(), "test/properties/user",
 			[]byte("test"),
 			mq.WithQoS(1),
 			mq.WithUserProperty("key1", "value1"),
@@ -116,7 +116,7 @@ func TestV5Properties(t *testing.T) {
 		responses := make(chan mq.Message, 1)
 
 		// Subscribe to response topic
-		token := client.Subscribe(responseTopic, 1, func(_ *mq.Client, msg mq.Message) {
+		token := client.Subscribe(context.Background(), responseTopic, 1, func(_ *mq.Client, msg mq.Message) {
 			responses <- msg
 		})
 
@@ -129,13 +129,13 @@ func TestV5Properties(t *testing.T) {
 
 		// Subscribe to request topic and auto-respond
 		requestTopic := "test/requests"
-		token = client.Subscribe(requestTopic, 1, func(c *mq.Client, msg mq.Message) {
+		token = client.Subscribe(context.Background(), requestTopic, 1, func(c *mq.Client, msg mq.Message) {
 			if msg.Properties == nil || msg.Properties.ResponseTopic == "" {
 				return
 			}
 
 			// Send response
-			c.Publish(msg.Properties.ResponseTopic,
+			c.Publish(context.Background(), msg.Properties.ResponseTopic,
 				[]byte("response-data"),
 				mq.WithQoS(1),
 				mq.WithCorrelationData(msg.Properties.CorrelationData),
@@ -148,7 +148,7 @@ func TestV5Properties(t *testing.T) {
 
 		// Send request
 		correlationData := []byte("req-123")
-		err := client.Publish(requestTopic,
+		err := client.Publish(context.Background(), requestTopic,
 			[]byte("request-data"),
 			mq.WithQoS(1),
 			mq.WithResponseTopic(responseTopic),
@@ -180,7 +180,7 @@ func TestV5Properties(t *testing.T) {
 	t.Run("MultipleProperties", func(t *testing.T) {
 		received := make(chan mq.Message, 1)
 
-		token := client.Subscribe("test/properties/multiple", 1, func(_ *mq.Client, msg mq.Message) {
+		token := client.Subscribe(context.Background(), "test/properties/multiple", 1, func(_ *mq.Client, msg mq.Message) {
 			received <- msg
 		})
 
@@ -192,7 +192,7 @@ func TestV5Properties(t *testing.T) {
 		}
 
 		// Publish with multiple properties
-		err := client.Publish("test/properties/multiple",
+		err := client.Publish(context.Background(), "test/properties/multiple",
 			[]byte("test data"),
 			mq.WithQoS(1),
 			mq.WithContentType("text/plain"),
@@ -238,7 +238,7 @@ func TestV5Properties(t *testing.T) {
 	t.Run("PropertiesStruct", func(t *testing.T) {
 		received := make(chan mq.Message, 1)
 
-		token := client.Subscribe("test/properties/struct", 1, func(_ *mq.Client, msg mq.Message) {
+		token := client.Subscribe(context.Background(), "test/properties/struct", 1, func(_ *mq.Client, msg mq.Message) {
 			received <- msg
 		})
 
@@ -257,7 +257,7 @@ func TestV5Properties(t *testing.T) {
 		props.MessageExpiry = &expiry
 
 		// Publish with properties struct
-		err := client.Publish("test/properties/struct",
+		err := client.Publish(context.Background(), "test/properties/struct",
 			[]byte(`{"test": true}`),
 			mq.WithQoS(1),
 			mq.WithProperties(props),
@@ -302,7 +302,7 @@ func TestV3NoProperties(t *testing.T) {
 
 	received := make(chan mq.Message, 1)
 
-	token := client.Subscribe("test/v3/noprops", 1, func(_ *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), "test/v3/noprops", 1, func(_ *mq.Client, msg mq.Message) {
 		received <- msg
 	})
 
@@ -314,7 +314,7 @@ func TestV3NoProperties(t *testing.T) {
 	}
 
 	// Publish with properties (should be ignored for v3.1.1)
-	err = client.Publish("test/v3/noprops",
+	err = client.Publish(context.Background(), "test/v3/noprops",
 		[]byte("test"),
 		mq.WithQoS(1),
 		mq.WithContentType("text/plain"),

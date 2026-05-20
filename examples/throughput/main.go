@@ -57,7 +57,7 @@ func main() {
 	doneCh := make(chan struct{})
 
 	// Subscribe
-	token := subClient.Subscribe(*topic, mq.QoS(*qos), func(c *mq.Client, m mq.Message) {
+	token := subClient.Subscribe(context.Background(), *topic, mq.QoS(*qos), func(c *mq.Client, m mq.Message) {
 		newVal := receivedCount.Add(1)
 		lastReceived.Store(time.Now().UnixNano())
 		if newVal == int64(*msgCount) {
@@ -97,7 +97,7 @@ func main() {
 		go func() {
 			defer pubWg.Done()
 			for j := 0; j < msgsPerWorker; j++ {
-				token := pubClient.Publish(*topic, payload, mq.WithQoS(mq.QoS(*qos)))
+				token := pubClient.Publish(context.Background(), *topic, payload, mq.WithQoS(mq.QoS(*qos)))
 				if err := token.Wait(ctx); err != nil {
 					fmt.Printf("Publish error: %v\n", err)
 				}

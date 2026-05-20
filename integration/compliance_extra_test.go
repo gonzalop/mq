@@ -38,7 +38,7 @@ func TestCompliance_OverlappingSubscriptions(t *testing.T) {
 	var mu sync.Mutex
 
 	// Sub 1: Exact match
-	t1 := client.Subscribe(topic, 1, func(_ *mq.Client, _ mq.Message) {
+	t1 := client.Subscribe(context.Background(), topic, 1, func(_ *mq.Client, _ mq.Message) {
 		mu.Lock()
 		handler1Called++
 		mu.Unlock()
@@ -46,7 +46,7 @@ func TestCompliance_OverlappingSubscriptions(t *testing.T) {
 	})
 
 	// Sub 2: Single-level wildcard
-	t2 := client.Subscribe(base+"/+/temp", 1, func(_ *mq.Client, _ mq.Message) {
+	t2 := client.Subscribe(context.Background(), base+"/+/temp", 1, func(_ *mq.Client, _ mq.Message) {
 		mu.Lock()
 		handler2Called++
 		mu.Unlock()
@@ -54,7 +54,7 @@ func TestCompliance_OverlappingSubscriptions(t *testing.T) {
 	})
 
 	// Sub 3: Multi-level wildcard
-	t3 := client.Subscribe(base+"/#", 1, func(_ *mq.Client, _ mq.Message) {
+	t3 := client.Subscribe(context.Background(), base+"/#", 1, func(_ *mq.Client, _ mq.Message) {
 		mu.Lock()
 		handler3Called++
 		mu.Unlock()
@@ -73,7 +73,7 @@ func TestCompliance_OverlappingSubscriptions(t *testing.T) {
 	}
 
 	// Publish message
-	client.Publish(topic, []byte("23.5"), mq.WithQoS(1))
+	client.Publish(context.Background(), topic, []byte("23.5"), mq.WithQoS(1))
 
 	// Wait for all handlers
 	done := make(chan struct{})
@@ -111,7 +111,7 @@ func TestCompliance_QoS_Downgrade(t *testing.T) {
 
 	receivedQoS := make(chan mq.QoS, 1)
 	topic := "qos/downgrade/" + t.Name()
-	clientA.Subscribe(topic, 0, func(_ *mq.Client, msg mq.Message) {
+	clientA.Subscribe(context.Background(), topic, 0, func(_ *mq.Client, msg mq.Message) {
 		receivedQoS <- msg.QoS
 	}).Wait(context.Background())
 
@@ -122,7 +122,7 @@ func TestCompliance_QoS_Downgrade(t *testing.T) {
 	}
 	defer clientB.Disconnect(context.Background())
 
-	clientB.Publish(topic, []byte("downgrade-me"), mq.WithQoS(2)).Wait(context.Background())
+	clientB.Publish(context.Background(), topic, []byte("downgrade-me"), mq.WithQoS(2)).Wait(context.Background())
 
 	// 3. Client A should receive the message with QoS 0 (downgraded by server)
 	select {
@@ -155,7 +155,7 @@ func TestCompliance_SubscriptionIdentifier(t *testing.T) {
 	topic := "sensors/temp/subid/" + t.Name()
 	subID := 123
 
-	token := client.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), topic, 1, func(_ *mq.Client, msg mq.Message) {
 		if msg.Properties != nil {
 			receivedIDs <- msg.Properties.SubscriptionIdentifier
 		}
@@ -166,7 +166,7 @@ func TestCompliance_SubscriptionIdentifier(t *testing.T) {
 	}
 
 	// Publish message
-	client.Publish(topic, []byte("data"), mq.WithQoS(1))
+	client.Publish(context.Background(), topic, []byte("data"), mq.WithQoS(1))
 
 	select {
 	case ids := <-receivedIDs:
@@ -226,7 +226,7 @@ func TestCompliance_Subscribe_MaxPacketSize(t *testing.T) {
 
 	// Attempt a large SUBSCRIBE that exceeds 20 bytes
 	// Variable header (2) + topic string (2+15) + QoS (1) = ~20 bytes + Fixed Header (2+)
-	err = client.Subscribe("very/long/topic/filter/that/exceeds/limit", 1, nil).Wait(context.Background())
+	err = client.Subscribe(context.Background(), "very/long/topic/filter/that/exceeds/limit", 1, nil).Wait(context.Background())
 	if err == nil {
 		t.Error("Expected error for large SUBSCRIBE, got nil")
 	} else if !strings.Contains(err.Error(), "exceeds server maximum") {

@@ -52,7 +52,7 @@ func main() {
 	}
 
 	// Subscribe (subscription will be persisted by server)
-	token := client1.Subscribe(topic, mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+	token := client1.Subscribe(context.Background(), topic, mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
 		fmt.Printf("[Client 1] Received: %s\n", string(msg.Payload))
 	})
 	token.Wait(context.Background())
@@ -72,7 +72,7 @@ func main() {
 	defer publisher.Disconnect(context.Background())
 
 	msg := "This message was sent while you were sleeping 💤"
-	publisher.Publish(topic, []byte(msg), mq.WithQoS(mq.AtLeastOnce)).Wait(context.Background())
+	publisher.Publish(context.Background(), topic, []byte(msg), mq.WithQoS(mq.AtLeastOnce)).Wait(context.Background())
 	fmt.Printf("Published: %q\n", msg)
 
 	// 3. Reconnect and receive offline message

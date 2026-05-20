@@ -49,7 +49,7 @@ func main() {
 
 	// Example 1: Publish with Content Type
 	fmt.Println("\n📤 Example 1: Publishing with Content Type")
-	err = client.Publish("sensors/temperature",
+	err = client.Publish(context.Background(), "sensors/temperature",
 		[]byte(`{"value": 22.5, "unit": "celsius"}`),
 		mq.WithQoS(1),
 		mq.WithContentType("application/json"),
@@ -61,7 +61,7 @@ func main() {
 
 	// Example 2: Publish with User Properties
 	fmt.Println("\n📤 Example 2: Publishing with User Properties")
-	err = client.Publish("sensors/humidity",
+	err = client.Publish(context.Background(), "sensors/humidity",
 		[]byte("65.2"),
 		mq.WithQoS(1),
 		mq.WithUserProperty("sensor-id", "hum-01"),
@@ -75,7 +75,7 @@ func main() {
 
 	// Example 3: Publish with Message Expiry
 	fmt.Println("\n📤 Example 3: Publishing with Message Expiry")
-	err = client.Publish("events/alert",
+	err = client.Publish(context.Background(), "events/alert",
 		[]byte("Temperature threshold exceeded"),
 		mq.WithQoS(1),
 		mq.WithMessageExpiry(60), // Expires in 60 seconds
@@ -90,7 +90,7 @@ func main() {
 	fmt.Println("\n📥 Example 4: Subscribing to receive properties")
 	received := make(chan bool, 1)
 
-	token := client.Subscribe("sensors/#", 1, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), "sensors/#", 1, func(c *mq.Client, msg mq.Message) {
 		fmt.Printf("\n   📨 Received message:\n")
 		fmt.Printf("      Topic: %s\n", msg.Topic)
 		fmt.Printf("      Payload: %s\n", string(msg.Payload))
@@ -124,7 +124,7 @@ func main() {
 
 	// Publish a test message
 	fmt.Println("\n📤 Publishing test message...")
-	err = client.Publish("sensors/test",
+	err = client.Publish(context.Background(), "sensors/test",
 		[]byte("test data"),
 		mq.WithQoS(1),
 		mq.WithContentType("text/plain"),
@@ -151,7 +151,7 @@ func main() {
 	expiry := uint32(300)
 	props.MessageExpiry = &expiry
 
-	err = client.Publish("data/structured",
+	err = client.Publish(context.Background(), "data/structured",
 		[]byte(`{"sensor": "temp-01", "value": 23.1}`),
 		mq.WithQoS(1),
 		mq.WithProperties(props),

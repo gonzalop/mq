@@ -31,7 +31,7 @@ func TestSubscriptionOptions_NoLocal(t *testing.T) {
 	received := make(chan string, 10)
 
 	// Subscribe with NoLocal = true
-	token := client.Subscribe(topic, mq.AtLeastOnce, func(_ *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), topic, mq.AtLeastOnce, func(_ *mq.Client, msg mq.Message) {
 		received <- string(msg.Payload)
 	}, mq.WithNoLocal(true))
 
@@ -40,7 +40,7 @@ func TestSubscriptionOptions_NoLocal(t *testing.T) {
 	}
 
 	// Publish to the topic
-	pubToken := client.Publish(topic, []byte("own-message"), mq.WithQoS(1))
+	pubToken := client.Publish(context.Background(), topic, []byte("own-message"), mq.WithQoS(1))
 	if err := pubToken.Wait(context.Background()); err != nil {
 		t.Fatalf("Publish failed: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestSubscriptionOptions_NoLocal(t *testing.T) {
 
 	// Control Test: Subscribe to another topic WITHOUT NoLocal
 	topicControl := "test/local"
-	tokenControl := client.Subscribe(topicControl, mq.AtLeastOnce, func(_ *mq.Client, msg mq.Message) {
+	tokenControl := client.Subscribe(context.Background(), topicControl, mq.AtLeastOnce, func(_ *mq.Client, msg mq.Message) {
 		received <- string(msg.Payload)
 	}, mq.WithNoLocal(false))
 
@@ -63,7 +63,7 @@ func TestSubscriptionOptions_NoLocal(t *testing.T) {
 		t.Fatalf("Control Subscribe failed: %v", err)
 	}
 
-	client.Publish(topicControl, []byte("should-receive"), mq.WithQoS(1)).Wait(context.Background())
+	client.Publish(context.Background(), topicControl, []byte("should-receive"), mq.WithQoS(1)).Wait(context.Background())
 
 	select {
 	case msg := <-received:
@@ -93,7 +93,7 @@ func TestSubscriptionOptions_RetainAsPublished(t *testing.T) {
 	receivedRetain := make(chan bool, 1)
 	topic := "test/rap"
 
-	clientA.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
+	clientA.Subscribe(context.Background(), topic, 1, func(_ *mq.Client, msg mq.Message) {
 		receivedRetain <- msg.Retained
 	}, mq.WithRetainAsPublished(true)).Wait(context.Background())
 
@@ -104,7 +104,7 @@ func TestSubscriptionOptions_RetainAsPublished(t *testing.T) {
 	}
 	defer clientB.Disconnect(context.Background())
 
-	clientB.Publish(topic, []byte("rap-test"), mq.WithQoS(1), mq.WithRetain(true)).Wait(context.Background())
+	clientB.Publish(context.Background(), topic, []byte("rap-test"), mq.WithQoS(1), mq.WithRetain(true)).Wait(context.Background())
 
 	// 3. Client A should receive the message with RETAIN flag PRESERVED
 	select {
@@ -129,7 +129,7 @@ func TestSubscriptionOptions_RetainHandling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pub.Publish(topic, []byte("pre-existing"), mq.WithRetain(true), mq.WithQoS(1)).Wait(context.Background())
+	pub.Publish(context.Background(), topic, []byte("pre-existing"), mq.WithRetain(true), mq.WithQoS(1)).Wait(context.Background())
 	pub.Disconnect(context.Background())
 
 	// 2. Client subscribes with RetainHandling = 2 (Do not send)
@@ -143,7 +143,7 @@ func TestSubscriptionOptions_RetainHandling(t *testing.T) {
 	defer sub.Disconnect(context.Background())
 
 	received := make(chan string, 1)
-	sub.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
+	sub.Subscribe(context.Background(), topic, 1, func(_ *mq.Client, msg mq.Message) {
 		received <- string(msg.Payload)
 	}, mq.WithRetainHandling(2)).Wait(context.Background())
 

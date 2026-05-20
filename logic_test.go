@@ -569,7 +569,7 @@ func TestQoS0NonBlocking(t *testing.T) {
 
 	// 2. Publish QoS 0
 	// Without the fix, this would block forever here because it tries to send to 'outgoing'.
-	token := c.Publish("qos0", []byte("payload"), WithQoS(0))
+	token := c.Publish(context.Background(), "qos0", []byte("payload"), WithQoS(0))
 
 	// 3. Verify it completed immediately and is marked as dropped
 	select {
@@ -614,7 +614,7 @@ func TestQoS0Blocking(t *testing.T) {
 	// 2. Publish QoS 0 in a goroutine because it should block
 	tokenCh := make(chan Token, 1)
 	go func() {
-		tokenCh <- c.Publish("qos0", []byte("payload"), WithQoS(0))
+		tokenCh <- c.Publish(context.Background(), "qos0", []byte("payload"), WithQoS(0))
 	}()
 
 	// 3. Verify it's blocked (no token received yet)

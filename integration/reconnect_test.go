@@ -34,7 +34,7 @@ func TestAutoReconnect(t *testing.T) {
 	var mu sync.Mutex
 	var msgCount int
 
-	token := client.Subscribe("test/reconnect", mq.AtLeastOnce, func(_ *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), "test/reconnect", mq.AtLeastOnce, func(_ *mq.Client, msg mq.Message) {
 		mu.Lock()
 		msgCount++
 		mu.Unlock()
@@ -44,7 +44,7 @@ func TestAutoReconnect(t *testing.T) {
 		t.Fatalf("Failed to subscribe: %v", err)
 	}
 
-	pubToken := client.Publish("test/reconnect", []byte("before disconnect"), mq.WithQoS(mq.AtLeastOnce))
+	pubToken := client.Publish(context.Background(), "test/reconnect", []byte("before disconnect"), mq.WithQoS(mq.AtLeastOnce))
 	if err := pubToken.Wait(context.Background()); err != nil {
 		t.Fatalf("Failed to publish: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestAutoReconnect(t *testing.T) {
 	}
 	defer publisher.Disconnect(context.Background())
 
-	pubToken2 := publisher.Publish("test/reconnect", []byte("after reconnect"), mq.WithQoS(mq.AtLeastOnce))
+	pubToken2 := publisher.Publish(context.Background(), "test/reconnect", []byte("after reconnect"), mq.WithQoS(mq.AtLeastOnce))
 	if err := pubToken2.Wait(context.Background()); err != nil {
 		t.Fatalf("Failed to publish after reconnect: %v", err)
 	}

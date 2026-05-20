@@ -42,7 +42,7 @@ max_inflight_messages 2
 		// Try to publish a payload that exceeds the limit
 		// Packet overhead is ~15-20 bytes, so 150 byte payload definitely exceeds 100
 		payload := make([]byte, 150)
-		token := client.Publish("test/large", payload, mq.WithQoS(1))
+		token := client.Publish(context.Background(), "test/large", payload, mq.WithQoS(1))
 
 		// Should fail immediately (client-side enforcement)
 		if err := token.Wait(context.Background()); err == nil {
@@ -82,7 +82,7 @@ max_inflight_messages 2
 
 		for i := 0; i < numMsgs; i++ {
 			go func(_ int) {
-				token := client.Publish("test/flow", []byte("data"), mq.WithQoS(1))
+				token := client.Publish(context.Background(), "test/flow", []byte("data"), mq.WithQoS(1))
 				err := token.Wait(context.Background())
 				done <- err
 			}(i)

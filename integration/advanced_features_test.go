@@ -73,13 +73,13 @@ func TestAdvancedFeatures(t *testing.T) {
 		payload := "this-is-retained"
 
 		// 1. Publish retained message
-		if err := client.Publish(topic, []byte(payload), mq.WithQoS(1), mq.WithRetain(true)).Wait(context.Background()); err != nil {
+		if err := client.Publish(context.Background(), topic, []byte(payload), mq.WithQoS(1), mq.WithRetain(true)).Wait(context.Background()); err != nil {
 			t.Fatalf("Failed to publish retained: %v", err)
 		}
 
 		// 2. Subscribe and verify we get it
 		received := make(chan mq.Message, 1)
-		if err := client.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
+		if err := client.Subscribe(context.Background(), topic, 1, func(_ *mq.Client, msg mq.Message) {
 			received <- msg
 		}).Wait(context.Background()); err != nil {
 			t.Fatalf("Failed to subscribe: %v", err)
@@ -119,16 +119,16 @@ func TestAdvancedFeatures(t *testing.T) {
 		// "+" matches single level: test/wildcard/one
 		// "#" matches multi level: test/wildcard/nested/two
 		prefix := "test/wildcard/" + t.Name() + "/"
-		if err := client.Subscribe(prefix+"+", 1, handler).Wait(context.Background()); err != nil {
+		if err := client.Subscribe(context.Background(), prefix+"+", 1, handler).Wait(context.Background()); err != nil {
 			t.Fatalf("Failed to subscribe +: %v", err)
 		}
-		if err := client.Subscribe(prefix+"nested/#", 1, handler).Wait(context.Background()); err != nil {
+		if err := client.Subscribe(context.Background(), prefix+"nested/#", 1, handler).Wait(context.Background()); err != nil {
 			t.Fatalf("Failed to subscribe #: %v", err)
 		}
 
 		// 2. Publish matching messages
-		client.Publish(prefix+"level1", []byte("msg1"), mq.WithQoS(1))
-		client.Publish(prefix+"nested/level2/level3", []byte("msg2"), mq.WithQoS(1))
+		client.Publish(context.Background(), prefix+"level1", []byte("msg1"), mq.WithQoS(1))
+		client.Publish(context.Background(), prefix+"nested/level2/level3", []byte("msg2"), mq.WithQoS(1))
 
 		// 3. Verify reception
 		expected := map[string]bool{

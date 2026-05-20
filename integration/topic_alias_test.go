@@ -35,7 +35,7 @@ func TestTopicAliases(t *testing.T) {
 	}
 	defer subClient.Disconnect(context.Background())
 
-	token := subClient.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
+	token := subClient.Subscribe(context.Background(), topic, 1, func(_ *mq.Client, msg mq.Message) {
 		subReceived <- msg
 	})
 	if err := token.Wait(context.Background()); err != nil {
@@ -63,7 +63,7 @@ func TestTopicAliases(t *testing.T) {
 
 	for i := 0; i < numMsgs; i++ {
 		payload := fmt.Sprintf("msg-%d", i)
-		token := pubClient.Publish(topic, []byte(payload),
+		token := pubClient.Publish(context.Background(), topic, []byte(payload),
 			mq.WithQoS(1),
 			mq.WithAlias(), // Explicitly request alias usage
 		)

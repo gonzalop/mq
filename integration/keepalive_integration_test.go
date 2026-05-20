@@ -67,7 +67,7 @@ func TestKeepAliveWithContinuousQoS0Publishing(t *testing.T) {
 		select {
 		case <-publishTicker.C:
 			// Publish QoS 0 message (no PUBACK expected)
-			client.Publish("keepalive/test", []byte("data"), mq.WithQoS(0))
+			client.Publish(context.Background(), "keepalive/test", []byte("data"), mq.WithQoS(0))
 			publishCount++
 			t.Logf("Published message %d", publishCount)
 

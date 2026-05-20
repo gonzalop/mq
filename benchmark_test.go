@@ -2,6 +2,7 @@ package mq
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"github.com/gonzalop/mq/internal/packets"
@@ -78,7 +79,7 @@ func BenchmarkClient_Publish_Throughput(b *testing.B) {
 
 	for b.Loop() {
 		// We call Publish but don't wait for token (QoS 0 fire and forget)
-		c.Publish("bench/topic", payload, WithQoS(AtMostOnce))
+		c.Publish(context.Background(), "bench/topic", payload, WithQoS(AtMostOnce))
 	}
 
 	// Cleanup

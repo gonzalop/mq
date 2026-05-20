@@ -46,7 +46,7 @@ func TestReceiveMaximum_FlowControl(t *testing.T) {
 		}
 	}
 
-	if token := receiver.Subscribe(topic, 1, handler); token.Wait(context.Background()) != nil {
+	if token := receiver.Subscribe(context.Background(), topic, 1, handler); token.Wait(context.Background()) != nil {
 		t.Fatalf("Failed to subscribe: %v", token.Error())
 	}
 
@@ -63,7 +63,7 @@ func TestReceiveMaximum_FlowControl(t *testing.T) {
 	for i := 0; i < msgCount; i++ {
 		go func(_ int) {
 			defer wg.Done()
-			token := sender.Publish(topic, []byte("payload"), mq.WithQoS(1))
+			token := sender.Publish(context.Background(), topic, []byte("payload"), mq.WithQoS(1))
 			token.Wait(context.Background())
 		}(i)
 	}

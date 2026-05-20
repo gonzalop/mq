@@ -73,7 +73,7 @@ func TestSubscribe(t *testing.T) {
 	handler := func(_ *Client, _ Message) {}
 
 	// Test successful subscription request
-	token := c.Subscribe(topic, 1, handler)
+	token := c.Subscribe(context.Background(), topic, 1, handler)
 
 	select {
 	case p := <-c.outgoing:
@@ -95,7 +95,7 @@ func TestSubscribe(t *testing.T) {
 	}
 
 	// Test invalid topic
-	token = c.Subscribe("#/invalid", 1, handler)
+	token = c.Subscribe(context.Background(), "#/invalid", 1, handler)
 	select {
 	case <-token.Done():
 		if token.Error() == nil {
@@ -123,7 +123,7 @@ func TestUnsubscribe(t *testing.T) {
 	topic := "test/topic"
 
 	// Test successful unsubscribe request
-	token := c.Unsubscribe(topic)
+	token := c.Unsubscribe(context.Background(), topic)
 
 	select {
 	case p := <-c.outgoing:
@@ -198,6 +198,7 @@ func TestInternalSubscribe(t *testing.T) {
 
 	token := newToken()
 	req := &subscribeRequest{
+		ctx:     context.Background(),
 		packet:  pkt,
 		handler: handler,
 		token:   token,
@@ -308,7 +309,7 @@ func TestSubscribeWithUserProperties(t *testing.T) {
 	topic := "test/topic"
 	handler := func(_ *Client, _ Message) {}
 
-	_ = c.Subscribe(topic, 1, handler,
+	_ = c.Subscribe(context.Background(), topic, 1, handler,
 		WithSubscribeUserProperty("key1", "value1"),
 		WithSubscribeUserProperty("key2", "value2"),
 	)
@@ -354,6 +355,7 @@ func TestEphemeralSubscription(t *testing.T) {
 
 	ephemeralTopic := "topic/ephemeral"
 	reqEphemeral := &subscribeRequest{
+		ctx: context.Background(),
 		packet: &packets.SubscribePacket{
 			Topics:   []string{ephemeralTopic},
 			PacketID: 1,
@@ -372,6 +374,7 @@ func TestEphemeralSubscription(t *testing.T) {
 
 	persistentTopic := "topic/persistent"
 	reqPersistent := &subscribeRequest{
+		ctx: context.Background(),
 		packet: &packets.SubscribePacket{
 			Topics:   []string{persistentTopic},
 			PacketID: 2,
@@ -440,7 +443,7 @@ func TestSharedSubscriptionNoLocalValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c.outgoing = make(chan packets.Packet, 10)
-			token := c.Subscribe(tt.topic, 1, func(*Client, Message) {}, WithNoLocal(tt.noLocal))
+			token := c.Subscribe(context.Background(), tt.topic, 1, func(*Client, Message) {}, WithNoLocal(tt.noLocal))
 			err := token.Error()
 
 			if tt.wantError {
@@ -485,7 +488,7 @@ func TestWithSubscriptionIdentifier(t *testing.T) {
 			}
 			c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
 
-			token := c.Subscribe("test/topic", AtLeastOnce, func(*Client, Message) {}, WithSubscriptionIdentifier(tt.subscriptionID))
+			token := c.Subscribe(context.Background(), "test/topic", AtLeastOnce, func(*Client, Message) {}, WithSubscriptionIdentifier(tt.subscriptionID))
 
 			if tt.wantError {
 				select {

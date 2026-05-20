@@ -74,7 +74,7 @@ func main() {
 		fmt.Printf("   %s\n", sub.description)
 
 		filter := sub.filter // Capture for closure
-		token := client.Subscribe(filter, mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+		token := client.Subscribe(context.Background(), filter, mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
 			mu.Lock()
 			messagesByFilter[filter] = append(messagesByFilter[filter], msg.Topic)
 			mu.Unlock()
@@ -105,7 +105,7 @@ func main() {
 	fmt.Println("📤 Publishing test messages...\n")
 	for _, msg := range testMessages {
 		fmt.Printf("Publishing to: %s\n", msg.topic)
-		token := client.Publish(msg.topic, []byte(msg.payload), mq.WithQoS(mq.AtLeastOnce))
+		token := client.Publish(context.Background(), msg.topic, []byte(msg.payload), mq.WithQoS(mq.AtLeastOnce))
 		if err := token.Wait(context.Background()); err != nil {
 			log.Printf("Failed to publish to %s: %v", msg.topic, err)
 		}

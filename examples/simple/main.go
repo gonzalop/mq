@@ -56,7 +56,7 @@ func main() {
 	fmt.Println("\nSubscribing to 'test/topic'...")
 	received := make(chan mq.Message, 10)
 
-	token := client.Subscribe("test/topic", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), "test/topic", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
 		fmt.Printf("📨 Received: topic=%s qos=%d payload=%s\n",
 			msg.Topic, msg.QoS, string(msg.Payload))
 		received <- msg
@@ -75,11 +75,11 @@ func main() {
 
 	// QoS 0: Fire and forget
 	fmt.Println("  Publishing QoS 0 message...")
-	client.Publish("test/topic", []byte("Hello QoS 0"), mq.WithQoS(mq.AtMostOnce))
+	client.Publish(context.Background(), "test/topic", []byte("Hello QoS 0"), mq.WithQoS(mq.AtMostOnce))
 
 	// QoS 1: Wait for acknowledgment (PUBACK)
 	fmt.Println("  Publishing QoS 1 message...")
-	pubToken := client.Publish("test/topic", []byte("Hello QoS 1"), mq.WithQoS(mq.AtLeastOnce))
+	pubToken := client.Publish(context.Background(), "test/topic", []byte("Hello QoS 1"), mq.WithQoS(mq.AtLeastOnce))
 	if err := pubToken.Wait(context.Background()); err != nil {
 		log.Printf("QoS 1 publish failed: %v", err)
 	} else {
@@ -88,7 +88,7 @@ func main() {
 
 	// QoS 2: Wait for full handshake (PUBREC, PUBREL, PUBCOMP)
 	fmt.Println("  Publishing QoS 2 message...")
-	pubToken2 := client.Publish("test/topic", []byte("Hello QoS 2"), mq.WithQoS(mq.ExactlyOnce))
+	pubToken2 := client.Publish(context.Background(), "test/topic", []byte("Hello QoS 2"), mq.WithQoS(mq.ExactlyOnce))
 	if err := pubToken2.Wait(context.Background()); err != nil {
 		log.Printf("QoS 2 publish failed: %v", err)
 	} else {
@@ -108,7 +108,7 @@ func main() {
 
 				// Unsubscribe before exiting
 				fmt.Println("\nUnsubscribing from 'test/topic'...")
-				if token := client.Unsubscribe("test/topic"); token.Wait(context.Background()) != nil {
+				if token := client.Unsubscribe(context.Background(), "test/topic"); token.Wait(context.Background()) != nil {
 					log.Printf("Unsubscribe failed: %v", token.Error())
 				} else {
 					fmt.Println("✓ Unsubscribed successfully!")
@@ -122,7 +122,7 @@ func main() {
 
 			// Unsubscribe before exiting
 			fmt.Println("\nUnsubscribing from 'test/topic'...")
-			if token := client.Unsubscribe("test/topic"); token.Wait(context.Background()) != nil {
+			if token := client.Unsubscribe(context.Background(), "test/topic"); token.Wait(context.Background()) != nil {
 				log.Printf("Unsubscribe failed: %v", token.Error())
 			} else {
 				fmt.Println("✓ Unsubscribed successfully!")

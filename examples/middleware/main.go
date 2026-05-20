@@ -48,11 +48,8 @@ func main() {
 		}
 	}
 
-	// 2. Define a Publish Interceptor (Outgoing)
-	// This one adds a custom "trace-id" User Property to every outgoing message
-	// and logs the publish attempt.
 	tracingInterceptor := func(next mq.PublishFunc) mq.PublishFunc {
-		return func(topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
+		return func(ctx context.Context, topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
 			traceID := fmt.Sprintf("trace-%d", time.Now().UnixNano())
 
 			// Append a new option to the existing ones
@@ -61,7 +58,7 @@ func main() {
 			logger.Info("Publishing message", "topic", topic, "trace_id", traceID)
 
 			// Call the next function in the chain
-			return next(topic, payload, newOpts...)
+			return next(ctx, topic, payload, newOpts...)
 		}
 	}
 
@@ -90,7 +87,7 @@ func main() {
 	// 4. Subscribe
 	// The loggingInterceptor will automatically wrap this handler.
 	fmt.Println("Subscribing to 'example/middleware'...")
-	subToken := client.Subscribe("example/middleware", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+	subToken := client.Subscribe(context.Background(), "example/middleware", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
 		traceID := "none"
 		if msg.Properties != nil {
 			if tid, ok := msg.Properties.UserProperties["x-trace-id"]; ok {
@@ -107,7 +104,7 @@ func main() {
 	// 5. Publish
 	// The tracingInterceptor will automatically wrap this call.
 	fmt.Println("Publishing test message...")
-	token := client.Publish("example/middleware", []byte("Hello Middleware!"), mq.WithQoS(mq.AtLeastOnce))
+	token := client.Publish(context.Background(), "example/middleware", []byte("Hello Middleware!"), mq.WithQoS(mq.AtLeastOnce))
 	if err := token.Wait(ctx); err != nil {
 		logger.Error("Publish failed", "error", err)
 	}

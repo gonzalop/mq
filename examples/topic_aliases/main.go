@@ -69,7 +69,7 @@ func main() {
 		// Use mq.WithAlias() to request alias usage.
 		// - 1st Call: Library sends [Topic: "...", Alias: 1, Payload: ...]
 		// - 2nd Call: Library sends [Topic: "",    Alias: 1, Payload: ...] (Savings!)
-		token := client.Publish(topic, []byte(payload), mq.WithQoS(1), mq.WithAlias())
+		token := client.Publish(context.Background(), topic, []byte(payload), mq.WithQoS(1), mq.WithAlias())
 
 		if err := token.Wait(context.Background()); err != nil {
 			log.Fatalf("Publish failed: %v", err)

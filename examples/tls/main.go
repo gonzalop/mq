@@ -115,7 +115,7 @@ func main() {
 	fmt.Printf("\nSubscribing to '%s'...\n", topic)
 	received := make(chan mq.Message, 10)
 
-	token := client.Subscribe(topic, 1, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), topic, 1, func(c *mq.Client, msg mq.Message) {
 		fmt.Printf("📨 Received: topic=%s qos=%d payload=%s\n",
 			msg.Topic, msg.QoS, string(msg.Payload))
 		received <- msg
@@ -131,7 +131,7 @@ func main() {
 
 	// Publish test message
 	fmt.Println("\nPublishing secure message...")
-	pubToken := client.Publish(topic, []byte("Secure Hello via TLS!"), mq.WithQoS(1))
+	pubToken := client.Publish(context.Background(), topic, []byte("Secure Hello via TLS!"), mq.WithQoS(1))
 	if err := pubToken.Wait(context.Background()); err != nil {
 		log.Printf("Publish failed: %v", err)
 	} else {

@@ -56,6 +56,8 @@ func (c *Client) internalPublish(req *publishRequest) {
 			select {
 			case c.outgoing <- pkt:
 				req.token.complete(nil)
+			case <-req.ctx.Done():
+				req.token.complete(req.ctx.Err())
 			case <-c.stop:
 				req.token.complete(ErrClientDisconnected)
 			}
@@ -66,6 +68,8 @@ func (c *Client) internalPublish(req *publishRequest) {
 		select {
 		case c.outgoing <- pkt:
 			req.token.complete(nil)
+		case <-req.ctx.Done():
+			req.token.complete(req.ctx.Err())
 		case <-c.stop:
 			req.token.complete(ErrClientDisconnected)
 		default:
@@ -114,6 +118,23 @@ func (c *Client) internalPublish(req *publishRequest) {
 	c.sessionLock.Unlock()
 	select {
 	case c.outgoing <- pkt:
+	case <-req.ctx.Done():
+		c.sessionLock.Lock()
+		delete(c.pending, pkt.PacketID)
+		for i, id := range c.pendingOrder {
+			if id == pkt.PacketID {
+				c.pendingOrder = append(c.pendingOrder[:i], c.pendingOrder[i+1:]...)
+				break
+			}
+		}
+		if pkt.QoS > 0 {
+			c.inFlightCount--
+		}
+		if c.opts.SessionStore != nil && pkt.QoS > 0 {
+			_ = c.opts.SessionStore.DeletePendingPublish(pkt.PacketID)
+		}
+		c.sessionLock.Unlock()
+		req.token.complete(req.ctx.Err())
 	case <-c.stop:
 		req.token.complete(fmt.Errorf("client stopped"))
 	}
@@ -234,6 +255,20 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 	c.sessionLock.Unlock()
 	select {
 	case c.outgoing <- pkt:
+	case <-req.ctx.Done():
+		c.sessionLock.Lock()
+		delete(c.pending, pkt.PacketID)
+		for i, id := range c.pendingOrder {
+			if id == pkt.PacketID {
+				c.pendingOrder = append(c.pendingOrder[:i], c.pendingOrder[i+1:]...)
+				break
+			}
+		}
+		for _, topic := range pkt.Topics {
+			c.removeSubscriptionLocked(topic)
+		}
+		c.sessionLock.Unlock()
+		req.token.complete(req.ctx.Err())
 	case <-c.stop:
 		req.token.complete(fmt.Errorf("client stopped"))
 	}
@@ -281,6 +316,17 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 	c.sessionLock.Unlock()
 	select {
 	case c.outgoing <- pkt:
+	case <-req.ctx.Done():
+		c.sessionLock.Lock()
+		delete(c.pending, pkt.PacketID)
+		for i, id := range c.pendingOrder {
+			if id == pkt.PacketID {
+				c.pendingOrder = append(c.pendingOrder[:i], c.pendingOrder[i+1:]...)
+				break
+			}
+		}
+		c.sessionLock.Unlock()
+		req.token.complete(req.ctx.Err())
 	case <-c.stop:
 		req.token.complete(fmt.Errorf("client stopped"))
 	}

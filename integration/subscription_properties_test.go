@@ -31,7 +31,7 @@ func TestSubscriptionProperties_Integration(t *testing.T) {
 	// Subscribe with Subscription Identifier and User Properties
 	subID := 42
 
-	token := client.Subscribe(topic, mq.AtLeastOnce, func(_ *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), topic, mq.AtLeastOnce, func(_ *mq.Client, msg mq.Message) {
 		received <- msg
 	},
 		mq.WithSubscriptionIdentifier(subID),
@@ -46,7 +46,7 @@ func TestSubscriptionProperties_Integration(t *testing.T) {
 	}
 
 	// Publish a message to the topic
-	pubToken := client.Publish(topic, []byte("hello"), mq.WithQoS(1))
+	pubToken := client.Publish(context.Background(), topic, []byte("hello"), mq.WithQoS(1))
 	if err := pubToken.Wait(ctx); err != nil {
 		t.Fatalf("Publish failed: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestSubscriptionProperties_Persistence(t *testing.T) {
 	}
 
 	// Subscribe with ID and User Properties
-	subToken := client1.Subscribe(topic, 1, nil,
+	subToken := client1.Subscribe(context.Background(), topic, 1, nil,
 		mq.WithSubscriptionIdentifier(subID),
 		mq.WithSubscribeUserProperty("persist-key", "persist-value"),
 	)
@@ -158,7 +158,7 @@ func TestSubscriptionProperties_Persistence(t *testing.T) {
 
 	// Publish from another connection
 	pubClient, _ := mq.Dial(server2, mq.WithClientID("publisher-"+t.Name()))
-	if err := pubClient.Publish(topic, []byte("msg-persisted"), mq.WithQoS(1)).Wait(context.Background()); err != nil {
+	if err := pubClient.Publish(context.Background(), topic, []byte("msg-persisted"), mq.WithQoS(1)).Wait(context.Background()); err != nil {
 		t.Fatalf("Publish failed: %v", err)
 	}
 	pubClient.Disconnect(context.Background())

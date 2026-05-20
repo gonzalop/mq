@@ -27,12 +27,12 @@ func TestClientLimits_Validation(t *testing.T) {
 		defer c.Disconnect(context.Background())
 
 		// Valid topic (10 chars)
-		if token := c.Publish("1234567890", []byte("ok"), mq.WithQoS(1)); token.Error() != nil {
+		if token := c.Publish(context.Background(), "1234567890", []byte("ok"), mq.WithQoS(1)); token.Error() != nil {
 			t.Errorf("Valid topic failed: %v", token.Error())
 		}
 
 		// Invalid topic (11 chars)
-		if token := c.Publish("12345678901", []byte("fail"), mq.WithQoS(1)); token.Error() == nil {
+		if token := c.Publish(context.Background(), "12345678901", []byte("fail"), mq.WithQoS(1)); token.Error() == nil {
 			t.Error("Expected error for topic > 10 chars, got nil")
 		} else if !strings.Contains(token.Error().Error(), "topic length") {
 			t.Errorf("Expected 'topic length' error, got: %v", token.Error())
@@ -51,12 +51,12 @@ func TestClientLimits_Validation(t *testing.T) {
 		defer c.Disconnect(context.Background())
 
 		// Valid payload (50 bytes)
-		if token := c.Publish("topic", make([]byte, 50), mq.WithQoS(1)); token.Error() != nil {
+		if token := c.Publish(context.Background(), "topic", make([]byte, 50), mq.WithQoS(1)); token.Error() != nil {
 			t.Errorf("Valid payload failed: %v", token.Error())
 		}
 
 		// Invalid payload (51 bytes)
-		if token := c.Publish("topic", make([]byte, 51), mq.WithQoS(1)); token.Error() == nil {
+		if token := c.Publish(context.Background(), "topic", make([]byte, 51), mq.WithQoS(1)); token.Error() == nil {
 			t.Error("Expected error for payload > 50 bytes, got nil")
 		} else if !strings.Contains(token.Error().Error(), "payload size") {
 			t.Errorf("Expected 'payload size' error, got: %v", token.Error())
@@ -92,7 +92,7 @@ func TestClientLimits_IncomingPacket(t *testing.T) {
 	defer func() { _ = victim.Disconnect(context.Background()) }()
 
 	// Subscribe to a topic
-	if token := victim.Subscribe(topic, 1, nil); token.Wait(context.Background()) != nil {
+	if token := victim.Subscribe(context.Background(), topic, 1, nil); token.Wait(context.Background()) != nil {
 		t.Fatalf("Victim failed to subscribe: %v", token.Error())
 	}
 
@@ -104,7 +104,7 @@ func TestClientLimits_IncomingPacket(t *testing.T) {
 	defer attacker.Disconnect(context.Background())
 
 	largePayload := make([]byte, 200)
-	if token := attacker.Publish(topic, largePayload, mq.WithQoS(1)); token.Wait(context.Background()) != nil {
+	if token := attacker.Publish(context.Background(), topic, largePayload, mq.WithQoS(1)); token.Wait(context.Background()) != nil {
 		t.Fatalf("Attacker failed to publish: %v", token.Error())
 	}
 

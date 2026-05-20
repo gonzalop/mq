@@ -24,7 +24,7 @@ func TestBasicPublishSubscribe(t *testing.T) {
 
 	// Subscribe to topic
 	received := make(chan mq.Message, 1)
-	token := client.Subscribe("test/topic", 1, func(_ *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), "test/topic", 1, func(_ *mq.Client, msg mq.Message) {
 		received <- msg
 	})
 
@@ -36,7 +36,7 @@ func TestBasicPublishSubscribe(t *testing.T) {
 	}
 
 	// Publish message
-	pubToken := client.Publish("test/topic", []byte("hello world"), mq.WithQoS(1))
+	pubToken := client.Publish(context.Background(), "test/topic", []byte("hello world"), mq.WithQoS(1))
 	if err := pubToken.Wait(ctx); err != nil {
 		t.Fatalf("Failed to publish: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestQoS0PublishSubscribe(t *testing.T) {
 	defer client.Disconnect(context.Background())
 
 	received := make(chan mq.Message, 1)
-	token := client.Subscribe("qos0/topic", 0, func(_ *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), "qos0/topic", 0, func(_ *mq.Client, msg mq.Message) {
 		received <- msg
 	})
 
@@ -79,7 +79,7 @@ func TestQoS0PublishSubscribe(t *testing.T) {
 	}
 
 	// QoS 0 - fire and forget
-	client.Publish("qos0/topic", []byte("qos0 message"), mq.WithQoS(0))
+	client.Publish(context.Background(), "qos0/topic", []byte("qos0 message"), mq.WithQoS(0))
 
 	select {
 	case msg := <-received:
@@ -103,7 +103,7 @@ func TestQoS2PublishSubscribe(t *testing.T) {
 	defer client.Disconnect(context.Background())
 
 	received := make(chan mq.Message, 1)
-	token := client.Subscribe("qos2/topic", 2, func(_ *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), "qos2/topic", 2, func(_ *mq.Client, msg mq.Message) {
 		received <- msg
 	})
 
@@ -115,7 +115,7 @@ func TestQoS2PublishSubscribe(t *testing.T) {
 	}
 
 	// QoS 2 - exactly once
-	pubToken := client.Publish("qos2/topic", []byte("qos2 message"), mq.WithQoS(2))
+	pubToken := client.Publish(context.Background(), "qos2/topic", []byte("qos2 message"), mq.WithQoS(2))
 	if err := pubToken.Wait(ctx); err != nil {
 		t.Fatalf("Failed to publish: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestWildcardSubscriptions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			received := make(chan mq.Message, 1)
-			token := client.Subscribe(tt.filter, 1, func(_ *mq.Client, msg mq.Message) {
+			token := client.Subscribe(context.Background(), tt.filter, 1, func(_ *mq.Client, msg mq.Message) {
 				received <- msg
 			})
 
@@ -169,7 +169,7 @@ func TestWildcardSubscriptions(t *testing.T) {
 			}
 
 			// Publish message
-			client.Publish(tt.publishTopic, []byte("test"), mq.WithQoS(1))
+			client.Publish(context.Background(), tt.publishTopic, []byte("test"), mq.WithQoS(1))
 
 			// Check if message received
 			select {
@@ -187,7 +187,7 @@ func TestWildcardSubscriptions(t *testing.T) {
 			}
 
 			// Unsubscribe for next test
-			client.Unsubscribe(tt.filter)
+			client.Unsubscribe(context.Background(), tt.filter)
 			time.Sleep(100 * time.Millisecond)
 		})
 	}
@@ -206,7 +206,7 @@ func TestRetainedMessages(t *testing.T) {
 		t.Fatalf("Failed to connect: %v", err)
 	}
 
-	token := client1.Publish(topic, []byte("retained message"),
+	token := client1.Publish(context.Background(), topic, []byte("retained message"),
 		mq.WithQoS(1),
 		mq.WithRetain(true))
 
@@ -224,7 +224,7 @@ func TestRetainedMessages(t *testing.T) {
 	defer client2.Disconnect(context.Background())
 
 	received := make(chan mq.Message, 1)
-	subToken := client2.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
+	subToken := client2.Subscribe(context.Background(), topic, 1, func(_ *mq.Client, msg mq.Message) {
 		received <- msg
 	})
 
@@ -267,7 +267,7 @@ func TestMultipleSubscribers(t *testing.T) {
 		channels[i] = make(chan mq.Message, 1)
 
 		ch := channels[i] // Capture for closure
-		token := client.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
+		token := client.Subscribe(context.Background(), topic, 1, func(_ *mq.Client, msg mq.Message) {
 			ch <- msg
 		})
 
@@ -277,7 +277,7 @@ func TestMultipleSubscribers(t *testing.T) {
 	}
 
 	// Publish one message
-	clients[0].Publish(topic, []byte("broadcast"), mq.WithQoS(1))
+	clients[0].Publish(context.Background(), topic, []byte("broadcast"), mq.WithQoS(1))
 
 	// All clients should receive it
 	for i := 0; i < 3; i++ {
@@ -309,7 +309,7 @@ func TestHighThroughput(t *testing.T) {
 	var receivedCount int
 	var mu sync.Mutex
 
-	token := client.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), topic, 1, func(_ *mq.Client, msg mq.Message) {
 		mu.Lock()
 		receivedCount++
 		mu.Unlock()
@@ -324,7 +324,7 @@ func TestHighThroughput(t *testing.T) {
 	start := time.Now()
 	for i := 0; i < numMessages; i++ {
 		payload := fmt.Sprintf("message-%d", i)
-		client.Publish(topic, []byte(payload), mq.WithQoS(1))
+		client.Publish(context.Background(), topic, []byte(payload), mq.WithQoS(1))
 	}
 
 	// Wait for all messages
@@ -362,7 +362,7 @@ func TestUnsubscribe(t *testing.T) {
 
 	topic := "unsub/topic/" + t.Name()
 	received := make(chan mq.Message, 10)
-	token := client.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), topic, 1, func(_ *mq.Client, msg mq.Message) {
 		received <- msg
 	})
 
@@ -371,7 +371,7 @@ func TestUnsubscribe(t *testing.T) {
 	}
 
 	// Publish first message
-	client.Publish(topic, []byte("before unsub"), mq.WithQoS(1))
+	client.Publish(context.Background(), topic, []byte("before unsub"), mq.WithQoS(1))
 
 	select {
 	case msg := <-received:
@@ -383,13 +383,13 @@ func TestUnsubscribe(t *testing.T) {
 	}
 
 	// Unsubscribe
-	unsubToken := client.Unsubscribe(topic)
+	unsubToken := client.Unsubscribe(context.Background(), topic)
 	if err := unsubToken.Wait(context.Background()); err != nil {
 		t.Fatalf("Failed to unsubscribe: %v", err)
 	}
 
 	// Publish second message
-	client.Publish(topic, []byte("after unsub"), mq.WithQoS(1))
+	client.Publish(context.Background(), topic, []byte("after unsub"), mq.WithQoS(1))
 
 	// Should NOT receive this message
 	select {
@@ -418,7 +418,7 @@ func TestCleanSession(t *testing.T) {
 	}
 
 	// Subscribe
-	token := client1.Subscribe(topic, 1, func(_ *mq.Client, _ mq.Message) {})
+	token := client1.Subscribe(context.Background(), topic, 1, func(_ *mq.Client, _ mq.Message) {})
 	if err := token.Wait(context.Background()); err != nil {
 		t.Fatalf("Failed to subscribe: %v", err)
 	}
@@ -432,7 +432,7 @@ func TestCleanSession(t *testing.T) {
 
 	// Publish while disconnected
 	publisher, _ := mq.Dial(server, mq.WithClientID("test-publisher-"+t.Name()))
-	pubToken := publisher.Publish(topic, []byte("offline message"), mq.WithQoS(1))
+	pubToken := publisher.Publish(context.Background(), topic, []byte("offline message"), mq.WithQoS(1))
 	if err := pubToken.Wait(context.Background()); err != nil {
 		t.Fatalf("Failed to publish: %v", err)
 	}

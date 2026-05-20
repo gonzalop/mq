@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -148,18 +149,19 @@ func WithUnsubscribeUserProperty(key, value string) UnsubscribeOption {
 //
 // Example (simple subscription):
 //
-//	token := client.Subscribe("sensors/temperature", 1,
+//	ctx := context.Background()
+//	token := client.Subscribe(ctx, "sensors/temperature", 1,
 //	    func(c *mq.Client, msg mq.Message) {
 //	        fmt.Printf("Temperature: %s\n", string(msg.Payload))
 //	    })
-//	if err := token.Wait(context.Background()); err != nil {
+//	if err := token.Wait(ctx); err != nil {
 //	    log.Fatal(err)
 //	}
 //
 // Example with options (MQTT v5.0):
 //
-//	client.Subscribe("chat/room", 1, handler, mq.WithNoLocal(true))
-func (c *Client) Subscribe(topic string, qos QoS, handler MessageHandler, opts ...SubscribeOption) Token {
+//	client.Subscribe(ctx, "chat/room", 1, handler, mq.WithNoLocal(true))
+func (c *Client) Subscribe(ctx context.Context, topic string, qos QoS, handler MessageHandler, opts ...SubscribeOption) Token {
 	c.opts.Logger.Debug("subscribing to topic", "topic", topic, "qos", qos)
 
 	if err := validateSubscribeTopic(topic, c.opts); err != nil {
@@ -238,6 +240,7 @@ func (c *Client) Subscribe(topic string, qos QoS, handler MessageHandler, opts .
 	tok := newToken()
 
 	req := &subscribeRequest{
+		ctx:         ctx,
 		packet:      pkt,
 		handler:     handler,
 		token:       tok,
@@ -259,13 +262,14 @@ func (c *Client) Subscribe(topic string, qos QoS, handler MessageHandler, opts .
 //
 // Example:
 //
-//	token := client.Unsubscribe("sensors/temperature")
-//	token.Wait(context.Background())
+//	ctx := context.Background()
+//	token := client.Unsubscribe(ctx, "sensors/temperature")
+//	token.Wait(ctx)
 //
 // Example with options (MQTT v5.0):
 //
-//	client.Unsubscribe("logs", mq.WithUnsubscribeUserProperty("reason", "done"))
-func (c *Client) Unsubscribe(topic string, opts ...UnsubscribeOption) Token {
+//	client.Unsubscribe(ctx, "logs", mq.WithUnsubscribeUserProperty("reason", "done"))
+func (c *Client) Unsubscribe(ctx context.Context, topic string, opts ...UnsubscribeOption) Token {
 	c.opts.Logger.Debug("unsubscribing from topic", "topic", topic)
 
 	unsubOpts := &UnsubscribeOptions{}
@@ -299,6 +303,7 @@ func (c *Client) Unsubscribe(topic string, opts ...UnsubscribeOption) Token {
 
 	tok := newToken()
 	req := &unsubscribeRequest{
+		ctx:    ctx,
 		packet: pkt,
 		topics: []string{topic},
 		token:  tok,

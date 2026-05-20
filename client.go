@@ -123,12 +123,14 @@ type Client struct {
 
 // publishRequest represents a request to publish a message.
 type publishRequest struct {
+	ctx    context.Context
 	packet *packets.PublishPacket
 	token  *token
 }
 
 // subscribeRequest represents a request to subscribe to a topic.
 type subscribeRequest struct {
+	ctx         context.Context
 	packet      *packets.SubscribePacket
 	handler     MessageHandler
 	token       *token
@@ -137,6 +139,7 @@ type subscribeRequest struct {
 
 // unsubscribeRequest represents a request to unsubscribe from topics.
 type unsubscribeRequest struct {
+	ctx    context.Context
 	packet *packets.UnsubscribePacket
 	topics []string
 	token  *token

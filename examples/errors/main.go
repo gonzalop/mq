@@ -84,7 +84,7 @@ func main() {
 	// We'll simulate a check by printing the type of error you WOULD get.
 
 	fmt.Println("Attempting to subscribe to restricted topic...")
-	token := client.Subscribe("sys/admin/restricted", mq.AtLeastOnce, nil)
+	token := client.Subscribe(context.Background(), "sys/admin/restricted", mq.AtLeastOnce, nil)
 
 	if err := token.Wait(context.Background()); err != nil {
 		if errors.Is(err, mq.ErrSubscriptionFailed) {

@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -273,13 +274,13 @@ func TestClientValidationIntegration(t *testing.T) {
 	}
 
 	// Publish to wildcard should fail
-	tok := c.Publish("test/+", []byte("payload"))
+	tok := c.Publish(context.Background(), "test/+", []byte("payload"))
 	if tok.Error() == nil {
 		t.Error("expected error publishing to wildcard, got nil")
 	}
 
 	// Subscribe to empty topic should fail
-	tok2 := c.Subscribe("", AtLeastOnce, nil)
+	tok2 := c.Subscribe(context.Background(), "", AtLeastOnce, nil)
 	if tok2.Error() == nil {
 		t.Error("expected error subscribing to empty topic, got nil")
 	}

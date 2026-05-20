@@ -30,8 +30,7 @@ func TestV311Isolation(t *testing.T) {
 	// 2. Attempt to Publish with v5.0 properties
 	// The library should SILENTLY STRIP these.
 	// If it leaks them, Mosquitto receives a malformed v3.1.1 packet and disconnects.
-	token := client.Publish(
-		"test/isolation",
+	token := client.Publish(context.Background(), "test/isolation",
 		[]byte("payload"),
 		mq.WithQoS(1),
 		mq.WithUserProperty("key", "value"), // v5 feature
@@ -49,7 +48,7 @@ func TestV311Isolation(t *testing.T) {
 	// If the previous publish caused a disconnect, this will fail or we'll be disconnected.
 	time.Sleep(100 * time.Millisecond) // Give time for server to react if it was going to kill us
 
-	token2 := client.Publish("test/isolation/check", []byte("check"), mq.WithQoS(1))
+	token2 := client.Publish(context.Background(), "test/isolation/check", []byte("check"), mq.WithQoS(1))
 	if err := token2.Wait(ctx); err != nil {
 		t.Fatalf("Connection died after sending v5 properties on v3 link: %v", err)
 	}
@@ -72,8 +71,7 @@ func TestV311SubscribeIsolation(t *testing.T) {
 
 	// Attempt to Subscribe with v5 options (NoLocal)
 	// Library should strip NoLocal.
-	token := client.Subscribe(
-		"test/isolation/sub",
+	token := client.Subscribe(context.Background(), "test/isolation/sub",
 		1,
 		func(_ *mq.Client, _ mq.Message) {},
 		mq.WithNoLocal(true), // v5 feature

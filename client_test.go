@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"context"
 	"errors"
 	"net"
 	"strings"
@@ -23,7 +24,7 @@ func TestOperationsAfterDisconnect(t *testing.T) {
 	close(c.stop)
 
 	// Test Publish
-	token := c.Publish("test", []byte("payload"))
+	token := c.Publish(context.Background(), "test", []byte("payload"))
 	if err := token.Error(); !errors.Is(err, ErrClientDisconnected) {
 		t.Errorf("expected ErrClientDisconnected, got %v", err)
 	}
@@ -55,7 +56,7 @@ func TestConcurrentSafety(_ *testing.T) {
 	for range 10 {
 		go func() {
 			defer wg.Done()
-			c.Publish("topic", []byte("payload"), WithAlias())
+			c.Publish(context.Background(), "topic", []byte("payload"), WithAlias())
 		}()
 	}
 

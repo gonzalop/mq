@@ -35,7 +35,7 @@ func TestDefaultPublishHandlerIntegration(t *testing.T) {
 	}
 
 	subscribeDone := make(chan struct{})
-	token := clientA.Subscribe(persistentTopic, 1, func(_ *mq.Client, _ mq.Message) {
+	token := clientA.Subscribe(context.Background(), persistentTopic, 1, func(_ *mq.Client, _ mq.Message) {
 		// Handler logic not relevant for this test, but must be present initially
 		close(subscribeDone)
 	})
@@ -57,7 +57,7 @@ func TestDefaultPublishHandlerIntegration(t *testing.T) {
 	}
 	defer clientB.Disconnect(context.Background())
 
-	pToken := clientB.Publish(persistentTopic, []byte(offlinePayload), mq.WithQoS(1))
+	pToken := clientB.Publish(context.Background(), persistentTopic, []byte(offlinePayload), mq.WithQoS(1))
 	if err := pToken.Wait(context.Background()); err != nil {
 		t.Fatalf("Client B failed to publish: %v", err)
 	}

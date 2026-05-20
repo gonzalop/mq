@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/gonzalop/mq/internal/packets"
@@ -162,7 +163,7 @@ func WithPayloadFormat(format uint8) PublishOption {
 //	props := mq.NewProperties()
 //	props.ContentType = "application/json"
 //	props.SetUserProperty("version", "1.0")
-//	client.Publish("data/json", payload, mq.WithProperties(props))
+//	client.Publish(context.Background(), "data/json", payload, mq.WithProperties(props))
 func WithProperties(props *Properties) PublishOption {
 	return func(o *PublishOptions) {
 		o.Properties = props
@@ -177,38 +178,38 @@ func WithProperties(props *Properties) PublishOption {
 //
 // Example (QoS 0 - fire and forget):
 //
-//	client.Publish("sensors/temp", []byte("22.5"), mq.WithQoS(0))
+//	client.Publish(context.Background(), "sensors/temp", []byte("22.5"), mq.WithQoS(0))
 //
 // Example (QoS 1 - wait for acknowledgment):
 //
-//	token := client.Publish("sensors/temp", []byte("22.5"), mq.WithQoS(1))
+//	token := client.Publish(context.Background(), "sensors/temp", []byte("22.5"), mq.WithQoS(1))
 //	if err := token.Wait(context.Background()); err != nil {
 //	    log.Printf("Publish failed: %v", err)
 //	}
 //
 // Example (retained message):
 //
-//	client.Publish("status/online", []byte("true"),
+//	client.Publish(context.Background(), "status/online", []byte("true"),
 //	    mq.WithQoS(1),
 //	    mq.WithRetain(true))
 //
 // Example (QoS 2 with timeout):
 //
-//	token := client.Publish("critical/alert", []byte("fire"),
-//	    mq.WithQoS(2))
 //	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 //	defer cancel()
+//	token := client.Publish(ctx, "critical/alert", []byte("fire"),
+//	    mq.WithQoS(2))
 //	if err := token.Wait(ctx); err != nil {
 //	    log.Printf("Publish timeout or failed: %v", err)
 //	}
-func (c *Client) Publish(topic string, payload []byte, opts ...PublishOption) Token {
+func (c *Client) Publish(ctx context.Context, topic string, payload []byte, opts ...PublishOption) Token {
 	if c.publish == nil {
-		return c.basePublish(topic, payload, opts...)
+		return c.basePublish(ctx, topic, payload, opts...)
 	}
-	return c.publish(topic, payload, opts...)
+	return c.publish(ctx, topic, payload, opts...)
 }
 
-func (c *Client) basePublish(topic string, payload []byte, opts ...PublishOption) Token {
+func (c *Client) basePublish(ctx context.Context, topic string, payload []byte, opts ...PublishOption) Token {
 	c.opts.Logger.Debug("publishing message", "topic", topic, "payload_size", len(payload))
 
 	if err := validatePublishTopic(topic, c.opts); err != nil {
@@ -263,6 +264,7 @@ func (c *Client) basePublish(topic string, payload []byte, opts ...PublishOption
 	tok := newToken()
 
 	req := &publishRequest{
+		ctx:    ctx,
 		packet: pkt,
 		token:  tok,
 	}

@@ -55,12 +55,12 @@
 //	}
 //	defer client.Disconnect(context.Background())
 //
-//	token := client.Publish("sensors/temperature", []byte("22.5"), mq.WithQoS(1))
+//	token := client.Publish(context.Background(), "sensors/temperature", []byte("22.5"), mq.WithQoS(1))
 //	err = token.Wait(context.Background())  // 'select' also supported, see further down
 //
 // Subscribe to a topic:
 //
-//	client.Subscribe("sensors/+/temperature", mq.AtLeastOnce,
+//	client.Subscribe(context.Background(), "sensors/+/temperature", mq.AtLeastOnce,
 //	    func(c *mq.Client, msg mq.Message) {
 //	        fmt.Printf("%s: %s\n", msg.Topic, string(msg.Payload))
 //	    })
@@ -106,9 +106,9 @@
 // Publish Interceptors wrap the Publish call for outgoing messages:
 //
 //	tracingInterceptor := func(next mq.PublishFunc) mq.PublishFunc {
-//	    return func(topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
+//	    return func(ctx context.Context, topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
 //	        // Inject tracing headers into opts here
-//	        return next(topic, payload, opts...)
+//	        return next(ctx, topic, payload, opts...)
 //	    }
 //	}
 //
@@ -137,10 +137,10 @@
 // Example:
 //
 //	// Using named constants (recommended)
-//	client.Publish("topic", []byte("data"), mq.WithQoS(mq.AtLeastOnce))
+//	client.Publish(context.Background(), "topic", []byte("data"), mq.WithQoS(mq.AtLeastOnce))
 //
 //	// Using numeric values
-//	client.Publish("topic", []byte("data"), mq.WithQoS(1))
+//	client.Publish(context.Background(), "topic", []byte("data"), mq.WithQoS(1))
 //
 // # Wildcard Subscriptions
 //
@@ -152,17 +152,17 @@
 // Example:
 //
 //	// Subscribe to all temperature sensors
-//	client.Subscribe("sensors/+/temperature", mq.AtLeastOnce, handler)
+//	client.Subscribe(context.Background(), "sensors/+/temperature", mq.AtLeastOnce, handler)
 //
 //	// Subscribe to all sensor data
-//	client.Subscribe("sensors/#", mq.AtMostOnce, handler)
+//	client.Subscribe(context.Background(), "sensors/#", mq.AtMostOnce, handler)
 //
 // # MQTT v5.0 Properties
 //
 // MQTT v5.0 introduces "Properties" that can be attached to packets. This
 // library provides a clean API for using common properties:
 //
-//	client.Publish("sensors/temp", payload,
+//	client.Publish(context.Background(), "sensors/temp", payload,
 //	    mq.WithContentType("application/json"),
 //	    mq.WithUserProperty("sensor-id", "temp-01"),
 //	    mq.WithMessageExpiry(3600)) // Expire in 1 hour
@@ -180,7 +180,7 @@
 // instead of the full topic string for repeated publications.
 //
 //	// Enable topic alias for this publication
-//	client.Publish("very/long/topic/name/for/bandwidth/saving", data,
+//	client.Publish(context.Background(), "very/long/topic/name/for/bandwidth/saving", data,
 //	    mq.WithAlias())
 //
 // The library automatically manages alias assignment and mapping.
@@ -197,7 +197,7 @@
 //
 // Example:
 //
-//	client.Subscribe("chat/room", mq.AtLeastOnce, handler,
+//	client.Subscribe(context.Background(), "chat/room", mq.AtLeastOnce, handler,
 //	    mq.WithNoLocal(true))
 //
 // # Client-side Session Persistence

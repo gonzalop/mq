@@ -1,6 +1,9 @@
 package mq
 
-import "slices"
+import (
+	"context"
+	"slices"
+)
 
 // HandlerInterceptor is a function that wraps a MessageHandler.
 // It allows cross-cutting concerns like logging, metrics, or tracing
@@ -17,7 +20,7 @@ import "slices"
 type HandlerInterceptor func(MessageHandler) MessageHandler
 
 // PublishFunc matches the signature of Client.Publish.
-type PublishFunc func(topic string, payload []byte, opts ...PublishOption) Token
+type PublishFunc func(ctx context.Context, topic string, payload []byte, opts ...PublishOption) Token
 
 // PublishInterceptor is a function that wraps a PublishFunc.
 // It allows cross-cutting concerns to be applied to all outbound messages.
@@ -25,10 +28,10 @@ type PublishFunc func(topic string, payload []byte, opts ...PublishOption) Token
 // Example (Tracing):
 //
 //	func TracingInterceptor(next mq.PublishFunc) mq.PublishFunc {
-//	    return func(topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
-//	        // Inject tracing headers into opts or log the publish
-//	        return next(topic, payload, opts...)
-//	    }
+//		return func(ctx context.Context, topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
+//			// Inject tracing headers into opts or log the publish
+//			return next(ctx, topic, payload, opts...)
+//		}
 //	}
 type PublishInterceptor func(PublishFunc) PublishFunc
 

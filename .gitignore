@@ -28,6 +28,7 @@ coverage.txt
 # IDEs
 .idea/
 .vscode/
+.antigravitycli/
 
 # Dependency directories
 vendor/

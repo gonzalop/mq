@@ -24,7 +24,7 @@ func TestMqttErrorIntegration_Subscribe_Restricted(t *testing.T) {
 		defer client.Disconnect(context.Background())
 
 		// This topic should be prohibited by the server
-		token := client.Subscribe("$SYS/broker/connection/+", mq.AtLeastOnce, nil)
+		token := client.Subscribe(context.Background(), "$SYS/broker/connection/+", mq.AtLeastOnce, nil)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

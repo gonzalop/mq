@@ -58,13 +58,13 @@ func main() {
 	statusReceived := make(chan string, 10)
 
 	// Monitor subscribes to both will and status topics
-	monitorClient.Subscribe("devices/sensor-1/will", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+	monitorClient.Subscribe(context.Background(), "devices/sensor-1/will", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
 		fmt.Printf("\n🪦 WILL MESSAGE RECEIVED: %s\n", string(msg.Payload))
 		fmt.Printf("   (This means the client disconnected unexpectedly!)\n\n")
 		willReceived <- string(msg.Payload)
 	})
 
-	monitorClient.Subscribe("devices/sensor-1/status", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+	monitorClient.Subscribe(context.Background(), "devices/sensor-1/status", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
 		fmt.Printf("   📊 Status: %s\n", string(msg.Payload))
 		statusReceived <- string(msg.Payload)
 	})
@@ -103,14 +103,14 @@ func main() {
 
 	// Publish online status
 	fmt.Println("3️⃣  Publishing 'online' status...")
-	client.Publish("devices/sensor-1/status", []byte("online"), mq.WithQoS(mq.AtLeastOnce), mq.WithRetain(true))
+	client.Publish(context.Background(), "devices/sensor-1/status", []byte("online"), mq.WithQoS(mq.AtLeastOnce), mq.WithRetain(true))
 	time.Sleep(500 * time.Millisecond)
 
 	// Simulate normal operation
 	fmt.Println("\n4️⃣  Simulating normal operation (publishing sensor data)...")
 	for i := 1; i <= 3; i++ {
 		payload := fmt.Sprintf(`{"temperature":%.1f,"timestamp":"%s"}`, 20.0+float64(i)*0.5, time.Now().Format(time.RFC3339))
-		client.Publish("devices/sensor-1/data", []byte(payload), mq.WithQoS(mq.AtLeastOnce))
+		client.Publish(context.Background(), "devices/sensor-1/data", []byte(payload), mq.WithQoS(mq.AtLeastOnce))
 		fmt.Printf("   📡 Published sensor reading #%d\n", i)
 		time.Sleep(1 * time.Second)
 	}
@@ -132,7 +132,7 @@ func main() {
 	case <-sigChan:
 		fmt.Println("\n5️⃣  Graceful disconnect requested (Ctrl+C)...")
 		fmt.Println("   Publishing 'offline' status before disconnecting...")
-		client.Publish("devices/sensor-1/status", []byte("offline"), mq.WithQoS(mq.AtLeastOnce), mq.WithRetain(true))
+		client.Publish(context.Background(), "devices/sensor-1/status", []byte("offline"), mq.WithQoS(mq.AtLeastOnce), mq.WithRetain(true))
 		time.Sleep(500 * time.Millisecond)
 
 		fmt.Println("   Disconnecting gracefully...")

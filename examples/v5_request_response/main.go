@@ -51,7 +51,7 @@ func main() {
 	responseTopic := "responses/temperature"
 	responses := make(map[string]chan string)
 
-	token := client.Subscribe(responseTopic, 1, func(c *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), responseTopic, 1, func(c *mq.Client, msg mq.Message) {
 		if msg.Properties != nil && len(msg.Properties.CorrelationData) > 0 {
 			correlationID := string(msg.Properties.CorrelationData)
 			fmt.Printf("📨 Received response for request %s\n", correlationID)
@@ -69,7 +69,7 @@ func main() {
 
 	// Set up request handler (simulates a server)
 	requestTopic := "requests/temperature"
-	token = client.Subscribe(requestTopic, 1, func(c *mq.Client, msg mq.Message) {
+	token = client.Subscribe(context.Background(), requestTopic, 1, func(c *mq.Client, msg mq.Message) {
 		fmt.Printf("📨 Received request on %s\n", msg.Topic)
 
 		// Extract request properties
@@ -92,7 +92,7 @@ func main() {
 
 		// Send response
 		response := `{"temperature": 22.5, "unit": "celsius", "timestamp": "2024-01-07T16:00:00Z"}`
-		err := c.Publish(replyTopic,
+		err := c.Publish(context.Background(), replyTopic,
 			[]byte(response),
 			mq.WithQoS(1),
 			mq.WithContentType("application/json"),
@@ -117,7 +117,7 @@ func main() {
 	responseChan := make(chan string, 1)
 	responses[correlationID] = responseChan
 
-	err = client.Publish(requestTopic,
+	err = client.Publish(context.Background(), requestTopic,
 		[]byte("get-temperature"),
 		mq.WithQoS(1),
 		mq.WithResponseTopic(responseTopic),
@@ -145,7 +145,7 @@ func main() {
 		responseChan := make(chan string, 1)
 		responses[correlationID] = responseChan
 
-		err = client.Publish(requestTopic,
+		err = client.Publish(context.Background(), requestTopic,
 			[]byte(fmt.Sprintf("get-temperature-sensor-%d", i)),
 			mq.WithQoS(1),
 			mq.WithResponseTopic(responseTopic),

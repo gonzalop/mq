@@ -76,7 +76,7 @@ func main() {
 	topic := "mq-test/websocket"
 	subReady := make(chan struct{})
 
-	token := client.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
+	token := client.Subscribe(context.Background(), topic, 1, func(_ *mq.Client, msg mq.Message) {
 		fmt.Printf("Received: %s on %s\n", string(msg.Payload), msg.Topic)
 		subReady <- struct{}{}
 	})
@@ -89,7 +89,7 @@ func main() {
 
 	// 4. Publish
 	fmt.Println("Publishing message...")
-	pubToken := client.Publish(topic, []byte("Hello from WebSockets!"), mq.WithQoS(1))
+	pubToken := client.Publish(context.Background(), topic, []byte("Hello from WebSockets!"), mq.WithQoS(1))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := pubToken.Wait(ctx); err != nil {

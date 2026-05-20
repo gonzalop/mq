@@ -148,7 +148,7 @@ func TestLastWillWithDelay(t *testing.T) {
 
 	// Watch for Will
 	wills := make(chan mq.Message, 1)
-	if err := witness.Subscribe(topic, 1, func(_ *mq.Client, msg mq.Message) {
+	if err := witness.Subscribe(context.Background(), topic, 1, func(_ *mq.Client, msg mq.Message) {
 		wills <- msg
 	}).Wait(context.Background()); err != nil {
 		t.Fatalf("Failed to subscribe witness: %v", err)

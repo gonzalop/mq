@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -58,6 +59,7 @@ func TestMaximumPacketSizeEnforcement(t *testing.T) {
 
 			token := &token{done: make(chan struct{})}
 			req := &publishRequest{
+				ctx: context.Background(),
 				packet: &packets.PublishPacket{
 					Topic:   "test/topic",
 					Payload: []byte(strings.Repeat("x", tt.payloadSize)),
@@ -181,6 +183,7 @@ func TestReceiveMaximumEnforcement(t *testing.T) {
 
 			token := &token{done: make(chan struct{})}
 			req := &publishRequest{
+				ctx: context.Background(),
 				packet: &packets.PublishPacket{
 					Topic:   "test/topic",
 					Payload: []byte("test"),

@@ -49,7 +49,7 @@ func main() {
 
 			// Resubscribe on each connection
 			fmt.Println("   Subscribing to 'test/reconnect'...")
-			token := c.Subscribe("test/reconnect", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+			token := c.Subscribe(context.Background(), "test/reconnect", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
 				fmt.Printf("   📨 Received: %s\n", string(msg.Payload))
 			})
 			if err := token.Wait(context.Background()); err != nil {
@@ -94,7 +94,7 @@ func main() {
 			messageCount++
 			payload := fmt.Sprintf("Message #%d at %s", messageCount, time.Now().Format("15:04:05"))
 
-			token := client.Publish("test/reconnect", []byte(payload), mq.WithQoS(mq.AtLeastOnce))
+			token := client.Publish(context.Background(), "test/reconnect", []byte(payload), mq.WithQoS(mq.AtLeastOnce))
 			if err := token.Wait(context.Background()); err != nil {
 				fmt.Printf("⚠️  Publish failed: %v (will retry on reconnect)\n", err)
 			} else {

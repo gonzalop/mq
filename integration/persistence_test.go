@@ -47,7 +47,7 @@ func TestPersistenceIntegration(t *testing.T) {
 		}
 
 		// Subscribe with persistence enabled (default)
-		if err := client1.Subscribe(topic, 1, nil).Wait(context.Background()); err != nil {
+		if err := client1.Subscribe(context.Background(), topic, 1, nil).Wait(context.Background()); err != nil {
 			t.Fatalf("Subscribe failed: %v", err)
 		}
 
@@ -56,7 +56,7 @@ func TestPersistenceIntegration(t *testing.T) {
 
 		// B. Publish while offline
 		pubClient, _ := mq.Dial(server, mq.WithClientID("publisher-1-"+t.Name()))
-		if err := pubClient.Publish(topic, []byte("msg-1"), mq.WithQoS(1)).Wait(context.Background()); err != nil {
+		if err := pubClient.Publish(context.Background(), topic, []byte("msg-1"), mq.WithQoS(1)).Wait(context.Background()); err != nil {
 			t.Fatalf("Publish failed: %v", err)
 		}
 		pubClient.Disconnect(context.Background())
@@ -131,7 +131,7 @@ func TestPersistenceIntegration(t *testing.T) {
 		}
 
 		// Subscribe
-		if err := client1.Subscribe(topic, 1, nil).Wait(context.Background()); err != nil {
+		if err := client1.Subscribe(context.Background(), topic, 1, nil).Wait(context.Background()); err != nil {
 			cleanup()
 			t.Fatalf("Subscribe failed: %v", err)
 		}
@@ -170,7 +170,7 @@ func TestPersistenceIntegration(t *testing.T) {
 
 		// Publish from another connection
 		pubClient, _ := mq.Dial(server2, mq.WithClientID("publisher-2-"+t.Name()))
-		if err := pubClient.Publish(topic, []byte("msg-2"), mq.WithQoS(1)).Wait(context.Background()); err != nil {
+		if err := pubClient.Publish(context.Background(), topic, []byte("msg-2"), mq.WithQoS(1)).Wait(context.Background()); err != nil {
 			t.Fatalf("Publish failed: %v", err)
 		}
 		pubClient.Disconnect(context.Background())
@@ -222,7 +222,7 @@ func TestPersistenceIntegration(t *testing.T) {
 		}
 
 		// USE WithPersistence(false)
-		if err := client1.Subscribe(topic, 1, nil, mq.WithPersistence(false)).Wait(context.Background()); err != nil {
+		if err := client1.Subscribe(context.Background(), topic, 1, nil, mq.WithPersistence(false)).Wait(context.Background()); err != nil {
 			t.Fatalf("Subscribe failed: %v", err)
 		}
 
@@ -253,7 +253,7 @@ func TestPersistenceIntegration(t *testing.T) {
 
 		// C. Publish and verify NOT received
 		pubClient, _ := mq.Dial(server2, mq.WithClientID("publisher-3-"+t.Name()))
-		pubClient.Publish(topic, []byte("should-not-receive"), mq.WithQoS(1)).Wait(context.Background())
+		pubClient.Publish(context.Background(), topic, []byte("should-not-receive"), mq.WithQoS(1)).Wait(context.Background())
 		pubClient.Disconnect(context.Background())
 
 		select {
