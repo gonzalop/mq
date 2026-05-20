@@ -125,7 +125,7 @@ client, _ := mq.Dial(...,
 For dynamic or temporary subscriptions, mark them as **ephemeral**. They will not be saved to the store and will not cause "zombie" subscriptions on restart.
 
 ```go
-client.Subscribe(topic, mq.AtLeastOnce, handler,
+client.Subscribe(context.Background(), topic, mq.AtLeastOnce, handler,
     mq.WithPersistence(false),
 )
 ```

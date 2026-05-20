@@ -63,12 +63,12 @@ func main() {
     defer client.Disconnect(context.Background())
 
     // Subscribe to a topic
-    client.Subscribe("sensors/+/temperature", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+    client.Subscribe(context.Background(), "sensors/+/temperature", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
         fmt.Printf("Topic: %s, Payload: %s\n", msg.Topic, string(msg.Payload))
     })
 
     // Publish a message
-    token := client.Publish("sensors/living-room/temperature", []byte("22.5"), mq.WithQoS(mq.AtLeastOnce))
+    token := client.Publish(context.Background(), "sensors/living-room/temperature", []byte("22.5"), mq.WithQoS(mq.AtLeastOnce))
 
     // Wait for acknowledgment
     if err := token.Wait(context.Background()); err != nil {

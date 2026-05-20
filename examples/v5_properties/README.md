@@ -72,14 +72,14 @@ Sending request...
 ### Content Type
 Indicates the MIME type of the payload:
 ```go
-client.Publish(topic, jsonData,
+client.Publish(context.Background(), topic, jsonData,
     mq.WithContentType("application/json"))
 ```
 
 ### User Properties
 Custom key-value metadata:
 ```go
-client.Publish(topic, data,
+client.Publish(context.Background(), topic, data,
     mq.WithUserProperty("source", "sensor-1"),
     mq.WithUserProperty("location", "warehouse"),
     mq.WithUserProperty("priority", "high"))
@@ -88,14 +88,14 @@ client.Publish(topic, data,
 ### Message Expiry
 Time in seconds until message expires:
 ```go
-client.Publish(topic, data,
+client.Publish(context.Background(), topic, data,
     mq.WithMessageExpiry(300)) // 5 minutes
 ```
 
 ### Payload Format
 Indicates if payload is UTF-8 text:
 ```go
-client.Publish(topic, textData,
+client.Publish(context.Background(), topic, textData,
     mq.WithPayloadFormat(1)) // 1 = UTF-8 text, 0 = binary
 ```
 
@@ -103,7 +103,7 @@ client.Publish(topic, textData,
 For request/response messaging:
 ```go
 // Request
-client.Publish("requests/topic", request,
+client.Publish(context.Background(), "requests/topic", request,
     mq.WithResponseTopic("responses/topic"),
     mq.WithCorrelationData([]byte("request-id-123")))
 
@@ -142,7 +142,7 @@ func messageHandler(c *mq.Client, msg mq.Message) {
     // Response Topic
     if msg.Properties.ResponseTopic != "" {
         // Send response to this topic
-        c.Publish(msg.Properties.ResponseTopic, response,
+        c.Publish(context.Background(), msg.Properties.ResponseTopic, response,
             mq.WithCorrelationData(msg.Properties.CorrelationData))
     }
 }

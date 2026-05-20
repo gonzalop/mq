@@ -31,7 +31,7 @@ func main() {
     defer client.Disconnect(context.Background())
 
     // 2. Subscribe to a topic
-    token := client.Subscribe("sensors/+/temperature", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+    token := client.Subscribe(context.Background(), "sensors/+/temperature", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
         fmt.Printf("Topic: %s, Payload: %s\n", msg.Topic, string(msg.Payload))
     })
 
@@ -42,7 +42,7 @@ func main() {
     }
 
     // 3. Publish a message
-    pubToken := client.Publish("sensors/living-room/temperature", []byte("22.5"), mq.WithQoS(mq.AtLeastOnce))
+    pubToken := client.Publish(context.Background(), "sensors/living-room/temperature", []byte("22.5"), mq.WithQoS(mq.AtLeastOnce))
     pubToken.Wait(context.Background())
 
     time.Sleep(2 * time.Second)
@@ -155,7 +155,7 @@ client, _ := mq.Dial(uri,
 ## Publishing
 
 ```go
-token := client.Publish(topic, payload, options...)
+token := client.Publish(ctx, topic, payload, options...)
 ```
 
 ### Options
@@ -177,7 +177,7 @@ For details on advanced patterns using these options, see **[MQTT 5.0 Advanced P
 
 ### Example with Properties
 ```go
-client.Publish("sensors/temp", []byte("22.5"),
+client.Publish(context.Background(), "sensors/temp", []byte("22.5"),
     mq.WithQoS(1),
     mq.WithContentType("text/plain"),
     mq.WithUserProperty("sensor-id", "temp-01"),
@@ -188,7 +188,7 @@ client.Publish("sensors/temp", []byte("22.5"),
 ## Subscribing
 
 ```go
-token := client.Subscribe(topic, qos, handler, options...)
+token := client.Subscribe(ctx, topic, qos, handler, options...)
 ```
 
 The handler receives messages:
@@ -213,16 +213,16 @@ func(c *mq.Client, msg mq.Message) {
 ### Examples
 ```go
 // Don't receive own messages (NoLocal)
-client.Subscribe("chat/room", 1, handler, mq.WithNoLocal(true))
+client.Subscribe(context.Background(), "chat/room", 1, handler, mq.WithNoLocal(true))
 
 // Control when to receive retained messages (RetainHandling: 2=Never)
-client.Subscribe("status/+", 1, handler, mq.WithNoLocal(false), mq.WithRetainHandling(2))
+client.Subscribe(context.Background(), "status/+", 1, handler, mq.WithNoLocal(false), mq.WithRetainHandling(2))
 ```
 
 ## Unsubscribing
 
 ```go
-token := client.Unsubscribe("sensors/temperature")
+token := client.Unsubscribe(context.Background(), "sensors/temperature")
 token.Wait(context.Background())
 ```
 
@@ -230,7 +230,7 @@ token.Wait(context.Background())
 
 ```go
 // Unsubscribe with User Properties
-token := client.Unsubscribe("logs", mq.WithUnsubscribeUserProperty("reason", "done"))
+token := client.Unsubscribe(context.Background(), "logs", mq.WithUnsubscribeUserProperty("reason", "done"))
 token.Wait(context.Background())
 ```
 
@@ -263,7 +263,7 @@ type Token interface {
 
 ### Example with Select
 ```go
-token := client.Publish("topic", []byte("data"), mq.WithQoS(mq.AtLeastOnce))
+token := client.Publish(context.Background(), "topic", []byte("data"), mq.WithQoS(mq.AtLeastOnce))
 
 select {
 case <-token.Done():
@@ -283,7 +283,7 @@ The library supports all three MQTT QoS levels:
 - **QoS 2** (`mq.ExactlyOnce`): Assured delivery.
 
 ```go
-client.Subscribe("sensors/temp", mq.AtLeastOnce, handler)
+client.Subscribe(context.Background(), "sensors/temp", mq.AtLeastOnce, handler)
 ```
 
 ## Protocol Compatibility

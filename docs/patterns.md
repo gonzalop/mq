@@ -13,13 +13,13 @@ In MQTT 3.1.1, request/response required hardcoded topic conventions. MQTT 5.0 s
 ```go
 corrID := uuid.New().Bytes()
 
-client.Publish("request/service", payload,
+client.Publish(context.Background(), "request/service", payload,
     mq.WithResponseTopic("results/client-123"),
     mq.WithCorrelationData(corrID),
 )
 
 // Subscribe to the response topic
-client.Subscribe("results/client-123", 1, func(c *mq.Client, msg mq.Message) {
+client.Subscribe(context.Background(), "results/client-123", 1, func(c *mq.Client, msg mq.Message) {
     if bytes.Equal(msg.Properties.CorrelationData, corrID) {
         // This is the response to our specific request
     }
@@ -29,10 +29,10 @@ client.Subscribe("results/client-123", 1, func(c *mq.Client, msg mq.Message) {
 ### The Responder
 
 ```go
-client.Subscribe("request/service", 1, func(c *mq.Client, msg mq.Message) {
+client.Subscribe(context.Background(), "request/service", 1, func(c *mq.Client, msg mq.Message) {
     if msg.Properties.ResponseTopic != "" {
         // Send response back to the requested topic
-        c.Publish(msg.Properties.ResponseTopic, responsePayload,
+        c.Publish(context.Background(), msg.Properties.ResponseTopic, responsePayload,
             mq.WithCorrelationData(msg.Properties.CorrelationData),
         )
     }
@@ -54,7 +54,7 @@ client, _ := mq.Dial(uri,
 
 // The library will automatically assign an alias to "very/long/topic/name/..."
 // on the first publish and use the alias ID for subsequent publishes.
-client.Publish("very/long/topic/name/...", payload)
+client.Publish(context.Background(), "very/long/topic/name/...", payload)
 ```
 
 ---
@@ -69,7 +69,7 @@ User Properties are UTF-8 key-value pairs that can be attached to almost any pac
 *   **Application Logic**: Indicating the serialization format (if not using the built-in `PayloadFormat`).
 
 ```go
-client.Publish("logs", data,
+client.Publish(context.Background(), "logs", data,
     mq.WithUserProperty("priority", "high"),
     mq.WithUserProperty("component", "engine"),
 )
@@ -83,7 +83,7 @@ In v3.1.1, a message stayed in the broker until delivered (or the session expire
 
 ```go
 // This message is useless if not delivered within 60 seconds
-client.Publish("alerts/temporary", data,
+client.Publish(context.Background(), "alerts/temporary", data,
     mq.WithMessageExpiry(60),
 )
 ```
@@ -129,7 +129,7 @@ client, _ := mq.Dial(uri,
     mq.WithHandlerTimeout(5 * time.Second), // Global timeout for all handlers
 )
 
-client.Subscribe("orders/new", 1, func(c *mq.Client, msg mq.Message) {
+client.Subscribe(context.Background(), "orders/new", 1, func(c *mq.Client, msg mq.Message) {
     // Pass msg.Context to external calls.
     // If the HTTP request takes longer than 5 seconds, or if the MQTT 
     // client disconnects, the request will be automatically aborted.

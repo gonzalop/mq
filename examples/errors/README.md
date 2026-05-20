@@ -79,7 +79,7 @@ if err != nil {
 ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 defer cancel()
 
-token := client.Publish(topic, payload, mq.WithQoS(1))
+token := client.Publish(ctx, topic, payload, mq.WithQoS(1))
 if err := token.Wait(ctx); err != nil {
     if errors.Is(err, context.DeadlineExceeded) {
         log.Println("Publish timed out")
@@ -105,7 +105,7 @@ if err != nil {
 
 ### Pattern 4: Async Error Handling
 ```go
-token := client.Publish(topic, payload, mq.WithQoS(1))
+token := client.Publish(context.Background(), topic, payload, mq.WithQoS(1))
 go func() {
     if err := token.Wait(context.Background()); err != nil {
         log.Printf("Async publish failed: %v", err)

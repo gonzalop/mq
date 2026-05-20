@@ -316,10 +316,10 @@ QoS 2 involves a four-part handshake. It is significantly slower and heavier on 
 
 ```go
 // Example: Reliable alert (QoS 1)
-client.Publish("alerts/fire", []byte("detected"), mq.WithQoS(mq.AtLeastOnce))
+client.Publish(context.Background(), "alerts/fire", []byte("detected"), mq.WithQoS(mq.AtLeastOnce))
 
 // Example: Non-critical sensor data (QoS 0)
-client.Publish("sensors/temp", []byte("22.5"), mq.WithQoS(mq.AtMostOnce))
+client.Publish(context.Background(), "sensors/temp", []byte("22.5"), mq.WithQoS(mq.AtMostOnce))
 ```
 
 ---
@@ -351,7 +351,7 @@ Well-designed topics make your system easier to monitor, secure, and scale.
 // same topic string and mq.WithAlias() will automatically send only the
 // numeric alias ID to save bandwidth.
 const longTopic = "telemetry/v1/sensors/locations/california/san-francisco/building-4/room-202/temp"
-client.Publish(longTopic, []byte("22.5"), mq.WithAlias())
+client.Publish(context.Background(), longTopic, []byte("22.5"), mq.WithAlias())
 ```
 
 ---
@@ -390,7 +390,7 @@ client, err := mq.Dial(server,
     mq.WithWill("status/device-123", []byte("offline"), 1, true),
     mq.WithOnConnect(func(c *mq.Client) {
         // Immediately publish "Online" when we connect
-        c.Publish("status/device-123", []byte("online"), mq.WithRetain(true))
+        c.Publish(context.Background(), "status/device-123", []byte("online"), mq.WithRetain(true))
     }),
 )
 ```
@@ -415,7 +415,7 @@ The `mq` library is optimized for high throughput and low latency, but your usag
 3.  **Asynchronous Publishing:** `Publish()` returns a `Token`. For maximum throughput, do not `Wait()` on every token immediately. Launch them and wait in batches or use the `Done()` channel with `select` for timeouts.
 
 ```go
-token := client.Publish("data", payload, mq.WithQoS(mq.AtLeastOnce))
+token := client.Publish(context.Background(), "data", payload, mq.WithQoS(mq.AtLeastOnce))
 
 // Wait for acknowledgment with a timeout using select
 select {
@@ -561,7 +561,7 @@ if err != nil {
 }
 
 // 1. Track Published Messages
-token := client.Publish("data", payload, mq.WithQoS(1))
+token := client.Publish(context.Background(), "data", payload, mq.WithQoS(1))
 if err := token.Wait(context.Background()); err != nil {
     slog.Error("Publish failed", "error", err)
 } else {
@@ -569,7 +569,7 @@ if err := token.Wait(context.Background()); err != nil {
 }
 
 // 2. Track Received Messages
-subToken := client.Subscribe("sensors/+", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+subToken := client.Subscribe(context.Background(), "sensors/+", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
     msgReceivedTotal.Add(1)
     // process message...
 })

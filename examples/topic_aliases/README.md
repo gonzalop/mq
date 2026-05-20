@@ -96,7 +96,7 @@ client, err := mq.Dial(server,
 )
 
 // Explicitly request alias usage
-client.Publish(topic, payload,
+client.Publish(context.Background(), topic, payload,
     mq.WithQoS(1),
     mq.WithAlias(), // Request topic alias
 )

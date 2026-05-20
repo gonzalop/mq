@@ -73,7 +73,7 @@ Sending request with 1s timeout...
 ### Server Side
 ```go
 // Subscribe to request topic
-client.Subscribe("rpc/requests", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+client.Subscribe(context.Background(), "rpc/requests", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
     if msg.Properties == nil || msg.Properties.ResponseTopic == "" {
         return // Not a request
     }
@@ -82,7 +82,7 @@ client.Subscribe("rpc/requests", mq.AtLeastOnce, func(c *mq.Client, msg mq.Messa
     response := processRequest(msg.Payload)
     
     // Send response
-    c.Publish(msg.Properties.ResponseTopic, response,
+    c.Publish(context.Background(), msg.Properties.ResponseTopic, response,
         mq.WithQoS(mq.AtLeastOnce),
         mq.WithCorrelationData(msg.Properties.CorrelationData))
 })
@@ -94,11 +94,11 @@ client.Subscribe("rpc/requests", mq.AtLeastOnce, func(c *mq.Client, msg mq.Messa
 responseTopic := fmt.Sprintf("rpc/responses/%s", clientID)
 
 // Subscribe to responses
-client.Subscribe(responseTopic, mq.AtLeastOnce, handleResponse)
+client.Subscribe(context.Background(), responseTopic, mq.AtLeastOnce, handleResponse)
 
 // Send request
 correlationID := generateUniqueID()
-client.Publish("rpc/requests", request,
+client.Publish(context.Background(), "rpc/requests", request,
     mq.WithQoS(mq.AtLeastOnce),
     mq.WithResponseTopic(responseTopic),
     mq.WithCorrelationData([]byte(correlationID)))

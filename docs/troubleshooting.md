@@ -41,7 +41,7 @@ client, _ := mq.Dial("tcp://broker:1883",
 **Fix**: Send an **empty payload** with `Retain=true` to delete the retained message:
 ```go
 // Delete retained message
-client.Publish("status", []byte(""), mq.WithRetain(true))
+client.Publish(context.Background(), "status", []byte(""), mq.WithRetain(true))
 ```
 
 ---
@@ -56,7 +56,7 @@ client.Publish("status", []byte(""), mq.WithRetain(true))
 ```go
 msgQueue := make(chan mq.Message, 1000)
 
-client.Subscribe("data/#", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+client.Subscribe(context.Background(), "data/#", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
     select {
     case msgQueue <- msg:
         // Queued successfully
