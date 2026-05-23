@@ -157,11 +157,28 @@ func TestSubscriptionProperties_Persistence(t *testing.T) {
 	// If the client restored the subscription but lost the ID, the received message wouldn't have it.
 
 	// Publish from another connection
-	pubClient, _ := mq.Dial(server2, mq.WithClientID("publisher-"+t.Name()))
-	if err := pubClient.Publish(context.Background(), topic, []byte("msg-persisted"), mq.WithQoS(1)).Wait(context.Background()); err != nil {
-		t.Fatalf("Publish failed: %v", err)
+	pubClient, err := mq.Dial(server2, mq.WithClientID("publisher-"+t.Name()))
+	if err != nil {
+		t.Fatalf("Dial publisher failed: %v", err)
 	}
-	pubClient.Disconnect(context.Background())
+	defer pubClient.Disconnect(context.Background())
+
+	// Publish periodically in the background because resubscription happens asynchronously
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_ = pubClient.Publish(context.Background(), topic, []byte("msg-persisted"), mq.WithQoS(1))
+			}
+		}
+	}()
 
 	// Verify message reception with ID
 	select {
