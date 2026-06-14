@@ -244,9 +244,7 @@ func OTelTraceHandlerInterceptor(propagator propagation.TextMapPropagator, trace
 			defer span.End()
 
 			// Expose the active context containing the span to the handler
-			// Note: As MessageHandler signature does not take a context.Context parameter,
-			// trace contexts can be stored/linked in other ways or propagated manually 
-			// if your custom handler wraps it.
+			msg.Context = ctx
 			next(client, msg)
 		}
 	}

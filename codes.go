@@ -21,7 +21,7 @@ func (r ReasonCode) Error() string {
 //
 // Example (checking for specific disconnect reason):
 //
-//	token := client.Publish("topic", data, mq.WithQoS(1))
+//	token := client.Publish(ctx, "topic", data, mq.WithQoS(1))
 //	if err := token.Wait(ctx); err != nil {
 //	    if errors.Is(err, mq.ReasonCodeQuotaExceeded) {
 //	        log.Println("Server quota exceeded, backing off...")

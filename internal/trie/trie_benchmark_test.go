@@ -82,15 +82,18 @@ func BenchmarkTrieRemove(b *testing.B) {
 	for _, size := range sizes {
 		b.Run(fmt.Sprintf("Size-%d", size), func(b *testing.B) {
 			filters, _ := generateFiltersAndTopics(size)
-			tr := New[string]()
-			for _, filter := range filters {
-				tr.Insert(filter, "handler")
-			}
-
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				filterToRemove := filters[i%len(filters)]
-				tr.Remove(filterToRemove)
+			for i := 0; i < b.N; {
+				b.StopTimer()
+				tr := New[string]()
+				for _, filter := range filters {
+					tr.Insert(filter, "handler")
+				}
+				b.StartTimer()
+				for j := 0; j < len(filters) && i < b.N; j++ {
+					tr.Remove(filters[j])
+					i++
+				}
 			}
 		})
 	}

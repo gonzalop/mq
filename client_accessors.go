@@ -275,7 +275,7 @@ func (c *Client) SessionExpiryInterval() uint32 {
 //	if respInfo := client.ResponseInformation(); respInfo != "" {
 //	    // Use server's suggested prefix for response topics
 //	    responseTopic := respInfo + "my-responses"
-//	    client.Publish("requests/data", payload,
+//	    client.Publish(context.Background(), "requests/data", payload,
 //	        mq.WithResponseTopic(responseTopic))
 //	}
 func (c *Client) ResponseInformation() string {

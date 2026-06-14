@@ -22,11 +22,11 @@ import "github.com/gonzalop/mq/internal/packets"
 //	    mq.WithTopicAliasMaximum(100))
 //
 //	// First publish - sends full topic + assigns alias
-//	client.Publish("sensors/building-a/floor-3/room-42/temperature", data,
+//	client.Publish(context.Background(), "sensors/building-a/floor-3/room-42/temperature", data,
 //	    mq.WithAlias())
 //
 //	// Subsequent publishes - automatically uses alias (saves ~50 bytes)
-//	client.Publish("sensors/building-a/floor-3/room-42/temperature", data,
+//	client.Publish(context.Background(), "sensors/building-a/floor-3/room-42/temperature", data,
 //	    mq.WithAlias())
 func WithAlias() PublishOption {
 	return func(o *PublishOptions) {
