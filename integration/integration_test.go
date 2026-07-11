@@ -138,11 +138,13 @@ func TestWildcardSubscriptions(t *testing.T) {
 	server, cleanup := startMosquitto(t, "")
 	defer cleanup()
 
-	client, err := mq.Dial(server, mq.WithClientID("test-wildcards"))
+	client, err := mq.Dial(server, mq.WithClientID("test-wildcards-"+t.Name()))
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
 	defer client.Disconnect(context.Background())
+
+	root := "wildcards-" + t.Name() + "/"
 
 	tests := []struct {
 		name         string
@@ -150,11 +152,11 @@ func TestWildcardSubscriptions(t *testing.T) {
 		publishTopic string
 		shouldMatch  bool
 	}{
-		{"single level wildcard", "sensors/+/temperature", "sensors/living-room/temperature", true},
-		{"single level no match", "sensors/+/temperature", "sensors/living-room/humidity", false},
-		{"multi level wildcard", "sensors/#", "sensors/living-room/temperature", true},
-		{"multi level deep", "sensors/#", "sensors/living-room/temperature/current", true},
-		{"multi level no match", "sensors/#", "devices/switch", false},
+		{"single level wildcard", root + "+/temperature", root + "living-room/temperature", true},
+		{"single level no match", root + "+/temperature", root + "living-room/humidity", false},
+		{"multi level wildcard", root + "#", root + "living-room/temperature", true},
+		{"multi level deep", root + "#", root + "living-room/temperature/current", true},
+		{"multi level no match", root + "#", "devices/switch", false},
 	}
 
 	for _, tt := range tests {
