@@ -271,7 +271,9 @@ func (c *Client) handleQoS2Duplicate(packetID uint16) (packets.Packet, bool) {
 
 // matchHandlers finds all handlers that match the given topic.
 func (c *Client) matchHandlers(topic string) []MessageHandler {
+	c.sessionLock.Lock()
 	handlers := c.trie.Match(topic)
+	c.sessionLock.Unlock()
 
 	// Use default handler if no matches found
 	if len(handlers) == 0 {

@@ -27,6 +27,7 @@ The `sessionLock` MUST be held when accessing or modifying the following fields:
 -   `publishQueue`: Slice of buffered publish requests awaiting flow control credits.
 -   `receivedQoS2`: Map of received QoS 2 packet IDs (for exactly-once semantics).
 -   `inboundUnacked`: Map of received QoS 1 & 2 packet IDs that are awaiting acknowledgment (used for inbound flow control).
+-   `trie`: Radix tree of active subscription handlers (used for topic routing).
 
 ### Lifecycle Tracking
 
