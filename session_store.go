@@ -165,11 +165,12 @@ func (as *AsyncStore) enqueue(op func()) {
 }
 
 // Close stops the background worker.
-func (as *AsyncStore) Close() {
+func (as *AsyncStore) Close() error {
 	as.mu.Lock()
 	as.stop = true
 	as.cond.Signal()
 	as.mu.Unlock()
+	return nil
 }
 
 // SavePendingPublish implements SessionStore.

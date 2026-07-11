@@ -5,6 +5,8 @@ import (
 	"maps"
 	"testing"
 	"time"
+
+	"github.com/gonzalop/mq/internal/packets"
 )
 
 // MockSessionStoreForRestore implements SessionStore interface for testing restoration
@@ -109,5 +111,41 @@ func TestClearSessionStoreOnCleanSession(t *testing.T) {
 
 	if !mockStore.clearCalled {
 		t.Error("expected session store Clear() to be called on CleanSession=true")
+	}
+}
+
+type closeTrackingSessionStore struct {
+	MockSessionStoreForRestore
+	closeCalled bool
+}
+
+func (c *closeTrackingSessionStore) Close() error {
+	c.closeCalled = true
+	return nil
+}
+
+func TestSessionStoreAutoClose(t *testing.T) {
+	mockStore := &closeTrackingSessionStore{}
+
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.SessionStore = mockStore
+
+	c := &Client{
+		trie:     newTopicTrie(),
+		opts:     opts,
+		outgoing: make(chan packets.Packet, 1),
+		stop:     make(chan struct{}),
+	}
+
+	c.connected.Store(true)
+
+	// Disconnect should trigger the Close() method on SessionStore
+	err := c.disconnectWithReason(context.Background(), uint8(ReasonCodeNormalDisconnect), nil, true)
+	if err != nil {
+		t.Fatalf("Disconnect failed: %v", err)
+	}
+
+	if !mockStore.closeCalled {
+		t.Error("expected SessionStore Close() to be called automatically on Disconnect()")
 	}
 }

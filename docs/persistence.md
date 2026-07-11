@@ -68,6 +68,9 @@ client, _ := mq.Dial("tcp://broker:1883",
 )
 ```
 
+> [!NOTE]
+> **Automatic Lifecycle Management**: If the configured `SessionStore` implements `io.Closer` (like the built-in `AsyncStore`), the `Client` will automatically call its `Close()` method when `client.Disconnect()` is executed. This prevents background goroutine leaks without requiring manual store closing.
+
 ## Built-in `FileStore`
 
 The `FileStore` saves state to individual JSON files within a directory structure:

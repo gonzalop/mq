@@ -96,16 +96,28 @@ func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, pro
 		close(done)
 	}()
 
+	var err error
 	select {
 	case <-done:
 		c.opts.Logger.Debug("disconnected successfully")
-		return nil
 	case <-waitCtx.Done():
 		if errors.Is(waitCtx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("timeout waiting for goroutines to exit (%d still running)", c.activeLoops.Load())
+			err = fmt.Errorf("timeout waiting for goroutines to exit (%d still running)", c.activeLoops.Load())
+		} else {
+			err = waitCtx.Err()
 		}
-		return waitCtx.Err()
 	}
+
+	// Close session store if it implements Closer or has a Close method
+	if c.opts != nil && c.opts.SessionStore != nil {
+		if closer, ok := c.opts.SessionStore.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		} else if closer, ok := c.opts.SessionStore.(interface{ Close() }); ok {
+			closer.Close()
+		}
+	}
+
+	return err
 }
 
 // AssignedClientID returns the client ID assigned by the server.
