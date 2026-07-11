@@ -173,6 +173,22 @@ func (as *AsyncStore) Close() error {
 	return nil
 }
 
+// flush blocks until all currently enqueued operations have completed.
+func (as *AsyncStore) flush() {
+	as.mu.Lock()
+	if as.stop {
+		as.mu.Unlock()
+		return
+	}
+	ch := make(chan struct{})
+	as.queue = append(as.queue, func() {
+		close(ch)
+	})
+	as.cond.Signal()
+	as.mu.Unlock()
+	<-ch
+}
+
 // SavePendingPublish implements SessionStore.
 func (as *AsyncStore) SavePendingPublish(packetID uint16, pub *PersistedPublish) error {
 	as.enqueue(func() {
@@ -191,6 +207,7 @@ func (as *AsyncStore) DeletePendingPublish(packetID uint16) error {
 
 // LoadPendingPublishes implements SessionStore.
 func (as *AsyncStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
+	as.flush()
 	return as.store.LoadPendingPublishes()
 }
 
@@ -220,6 +237,7 @@ func (as *AsyncStore) DeleteSubscription(topic string) error {
 
 // LoadSubscriptions implements SessionStore.
 func (as *AsyncStore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {
+	as.flush()
 	return as.store.LoadSubscriptions()
 }
 
@@ -241,6 +259,7 @@ func (as *AsyncStore) DeleteReceivedQoS2(packetID uint16) error {
 
 // LoadReceivedQoS2 implements SessionStore.
 func (as *AsyncStore) LoadReceivedQoS2() (map[uint16]struct{}, error) {
+	as.flush()
 	return as.store.LoadReceivedQoS2()
 }
 
@@ -256,6 +275,7 @@ func (as *AsyncStore) ClearReceivedQoS2() error {
 func (as *AsyncStore) Clear() error {
 	// Clear is usually called on disconnect or when session expires.
 	// We do it synchronously to ensure state is gone.
+	as.flush()
 	return as.store.Clear()
 }
 

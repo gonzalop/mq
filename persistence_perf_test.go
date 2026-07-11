@@ -159,3 +159,42 @@ func TestAsyncStore_NonBlocking(t *testing.T) {
 	close(blockChan)
 	asyncStore.Close()
 }
+
+func TestAsyncStore_LoadFlushesQueue(t *testing.T) {
+	saveDone := make(chan struct{})
+	mock := &raceCheckingSessionStore{
+		saveDone: saveDone,
+	}
+	asyncStore := NewAsyncStore(mock, 10)
+	defer asyncStore.Close()
+
+	_ = asyncStore.SavePendingPublish(1, &PersistedPublish{Topic: "test"})
+
+	_, _ = asyncStore.LoadPendingPublishes()
+	if !mock.loadSuccess {
+		t.Fatalf("Race condition: Load completed before pending Save completed")
+	}
+}
+
+type raceCheckingSessionStore struct {
+	dummySessionStore
+	saveDone    chan struct{}
+	loadSuccess bool
+}
+
+func (r *raceCheckingSessionStore) SavePendingPublish(_ uint16, _ *PersistedPublish) error {
+	time.Sleep(50 * time.Millisecond) // Simulate slow write
+	close(r.saveDone)
+	return nil
+}
+
+func (r *raceCheckingSessionStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
+	select {
+	case <-r.saveDone:
+		r.loadSuccess = true
+	default:
+		r.loadSuccess = false
+	}
+	return nil, nil
+}
+
