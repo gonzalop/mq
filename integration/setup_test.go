@@ -11,8 +11,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/go-connections/nat"
+	"github.com/moby/moby/api/types/container"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -110,7 +109,7 @@ func startContainer(configContent string, fixedPort ...string) (string, func(), 
 		HostConfigModifier: func(hc *container.HostConfig) {
 			hc.NetworkMode = "host"
 		},
-		WaitingFor: wait.ForListeningPort(nat.Port(port + "/tcp")),
+		WaitingFor: wait.ForListeningPort(port + "/tcp"),
 	}
 
 	var tmpFileName string
