@@ -6,7 +6,7 @@ replace github.com/gonzalop/mq => ../
 
 require (
 	github.com/docker/docker v28.5.2+incompatible
-	github.com/docker/go-connections v0.6.0
+	github.com/docker/go-connections v0.7.0
 	github.com/gonzalop/mq v0.0.0-00010101000000-000000000000
 	github.com/testcontainers/testcontainers-go v0.41.0
 )
