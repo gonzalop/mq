@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.25']
+        go-version: [ '1.24', '1.25', '1.26' ]
 
     steps:
     - name: Checkout code
@@ -29,8 +29,14 @@ jobs:
     - name: Download dependencies
       run: go mod download
 
+    - name: Download integration dependencies
+      run: cd integration && go mod download
+
     - name: Run tests
       run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+    - name: Run integration tests
+      run: cd integration && go test -v -timeout=5m
 
     - name: Build
       run: go build -v ./...
@@ -41,4 +47,5 @@ jobs:
         file: ./coverage.txt
         flags: unittests
         name: codecov-umbrella
+        token: ${{ secrets.CODECOV_TOKEN }}
       continue-on-error: true
