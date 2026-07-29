@@ -261,6 +261,7 @@ func (c *Client) prepareConnectionState() {
 	c.receivedAliasesLock.Lock()
 	c.receivedAliases = make(map[uint16]string)
 	c.receivedAliasesLock.Unlock()
+	c.receiveMaxExceededLogged = false
 }
 
 func (c *Client) performHandshake(ctx context.Context, r io.Reader, w io.Writer) (connack *packets.ConnackPacket, err error) {

@@ -69,6 +69,11 @@ func (c *Client) internalResetState() {
 	defer c.sessionLock.Unlock()
 	c.receivedQoS2 = make(map[uint16]struct{})
 	c.inboundUnacked = make(map[uint16]struct{})
+	c.pingPending = false
+	select {
+	case <-c.pingPendingCh:
+	default:
+	}
 }
 
 // sendPackets sends a slice of packets to the outgoing channel without holding the lock.

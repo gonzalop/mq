@@ -281,6 +281,11 @@ func TestReceiveMaximum_SoftLimit(t *testing.T) {
 	if !c.receiveMaxExceededLogged {
 		t.Error("Expected receiveMaxExceededLogged to be true")
 	}
+
+	c.prepareConnectionState()
+	if c.receiveMaxExceededLogged {
+		t.Error("Expected receiveMaxExceededLogged to be reset to false after prepareConnectionState")
+	}
 }
 
 // TestDeferredAcknowledgment verifies that acknowledgments are only sent

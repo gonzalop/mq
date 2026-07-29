@@ -197,4 +197,3 @@ func (r *raceCheckingSessionStore) LoadPendingPublishes() (map[uint16]*Persisted
 	}
 	return nil, nil
 }
-

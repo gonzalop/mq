@@ -90,6 +90,13 @@ func (c *Client) writeLoop() {
 	lastReceived := time.Now()
 	lastSent := lastReceived
 
+	// Reset ping state and drain any stale PINGRESP signal from previous connection
+	c.pingPending = false
+	select {
+	case <-c.pingPendingCh:
+	default:
+	}
+
 	for {
 		select {
 		case pkt := <-c.outgoing:
@@ -193,6 +200,11 @@ func (c *Client) handleDisconnect() {
 	if c.conn != nil {
 		c.conn.Close()
 		c.conn = nil
+	}
+	c.pingPending = false
+	select {
+	case <-c.pingPendingCh:
+	default:
 	}
 	// Check if we have a specific disconnect reason from the server
 	reason := fmt.Errorf("connection lost")
