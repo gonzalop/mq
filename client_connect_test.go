@@ -337,3 +337,24 @@ func TestProtocolNegotiation(t *testing.T) {
 		t.Errorf("expected protocol version %d, got %d", ProtocolV311, client.opts.ProtocolVersion)
 	}
 }
+
+func TestWithWillDelayInterval(t *testing.T) {
+	options := defaultOptions("tcp://localhost:1883")
+	WithProtocolVersion(ProtocolV50)(options)
+	WithWill("status", []byte("offline"), 1, false)(options)
+	WithWillDelayInterval(120)(options)
+
+	c := &Client{
+		trie:               newTopicTrie(),
+		opts:               options,
+		requestedKeepAlive: options.KeepAlive,
+	}
+
+	pkt := c.buildConnectPacket()
+	if pkt.WillProperties == nil {
+		t.Fatal("expected WillProperties to be non-nil")
+	}
+	if pkt.WillProperties.WillDelayInterval != 120 {
+		t.Errorf("WillDelayInterval = %d, want 120", pkt.WillProperties.WillDelayInterval)
+	}
+}

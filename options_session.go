@@ -177,3 +177,25 @@ func WithWill(topic string, payload []byte, qos uint8, retained bool, properties
 		}
 	}
 }
+
+// WithWillDelayInterval sets the Will Delay Interval property (in seconds) on the Last Will and Testament message (MQTT v5.0).
+//
+// In MQTT v5.0, the server delays publishing the Will Message by the specified number of seconds
+// after an ungraceful disconnection. If the client reconnects before this delay expires,
+// the Will Message is not sent.
+//
+// If a Will Message has not already been configured via WithWill, calling this option will create
+// an empty Will Message configuration to hold the property.
+//
+// This option is ignored when using MQTT v3.1.1.
+func WithWillDelayInterval(seconds uint32) Option {
+	return func(o *clientOptions) {
+		if o.will == nil {
+			o.will = &willMessage{}
+		}
+		if o.will.Properties == nil {
+			o.will.Properties = &Properties{}
+		}
+		o.will.Properties.WillDelayInterval = &seconds
+	}
+}
