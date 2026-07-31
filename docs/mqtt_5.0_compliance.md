@@ -6,7 +6,8 @@ This document outlines the support for MQTT 5.0 features in the `mq` library, ba
 
 | Feature | Spec Ref | Status | Implementation Details |
 | :--- | :--- | :--- | :--- |
-| **Session Expiry** | 3.1.2.23 | ✅ Supported | `WithSessionExpiryInterval`. Persists state if > 0. Can be updated on Disconnect (v5). |
+| **Session Expiry** | 3.1.2.23 | ✅ Supported | `WithSessionExpiryInterval`. Persists state if > 0. Updated on Disconnect via `WithDisconnectSessionExpiry`. |
+| **Will Delay Interval** | 3.1.3.2.2 | ✅ Supported | `WithWillDelayInterval` or `WithWill` properties. Delays LWT publish on ungraceful disconnect. |
 | **Clean Start** | 3.1.2.4 | ✅ Supported | Mapped to `WithCleanSession` (false = CleanStart=0). |
 | **Reason Codes** | 3.2.2.2 | ✅ Supported | Full support for reason codes in all ACK packets and DISCONNECT. |
 | **Server Redirection** | 3.2.2.3 | ✅ Supported | `WithOnServerRedirect` or `Client.ServerReference()` (CONNACK). `DisconnectError.ServerReference` via `OnConnectionLost` (DISCONNECT). |

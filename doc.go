@@ -80,6 +80,7 @@
 //   - WithAutoReconnect(bool) - Enable auto-reconnect (default: true)
 //   - WithTLS(config) - Enable TLS encryption
 //   - WithWill(topic, payload, qos, retained) - Set Last Will and Testament
+//   - WithWillDelayInterval(secs) - Set Will Delay Interval for LWT (v5.0)
 //   - WithOutgoingQueueSize(int) - Set internal outgoing buffer size
 //   - WithIncomingQueueSize(int) - Set internal incoming buffer size
 //   - WithQoS0LimitPolicy(policy) - Set reliability policy for QoS 0
