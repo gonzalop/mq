@@ -116,3 +116,70 @@ func TestDisconnectWithProperties(t *testing.T) {
 		t.Fatal("timeout waiting for server verification")
 	}
 }
+
+// TestDisconnectWithSessionExpiryOption verifies that WithDisconnectSessionExpiry correctly sets the property.
+func TestDisconnectWithSessionExpiryOption(t *testing.T) {
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer listener.Close()
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		_, _ = packets.ReadPacket(conn, 5, 0)
+
+		connack := &packets.ConnackPacket{
+			ReturnCode: packets.ConnAccepted,
+			Properties: &packets.Properties{},
+		}
+		_, _ = conn.Write(encodeToBytes(connack))
+
+		pkt, err := packets.ReadPacket(conn, 5, 0)
+		if err != nil {
+			t.Errorf("failed to read disconnect packet: %v", err)
+			return
+		}
+
+		disconnect, ok := pkt.(*packets.DisconnectPacket)
+		if !ok {
+			t.Errorf("expected DISCONNECT packet, got %T", pkt)
+			return
+		}
+
+		if disconnect.Properties == nil || disconnect.Properties.SessionExpiryInterval != 600 {
+			t.Errorf("expected SessionExpiryInterval 600, got %v", disconnect.Properties)
+		}
+	}()
+
+	client, err := mq.Dial(
+		"tcp://"+listener.Addr().String(),
+		mq.WithClientID("test-expiry-option-client"),
+		mq.WithProtocolVersion(mq.ProtocolV50),
+	)
+	if err != nil {
+		t.Fatalf("failed to dial: %v", err)
+	}
+
+	err = client.Disconnect(
+		context.Background(),
+		mq.WithDisconnectSessionExpiry(600),
+	)
+	if err != nil {
+		t.Fatalf("failed to disconnect: %v", err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for server verification")
+	}
+}

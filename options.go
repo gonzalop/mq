@@ -584,6 +584,21 @@ func WithDisconnectProperties(props *Properties) DisconnectOption {
 	}
 }
 
+// WithDisconnectSessionExpiry sets the Session Expiry Interval (in seconds) for the DISCONNECT packet (MQTT v5.0).
+//
+// This option allows a client to update or expire its session state upon disconnection.
+// For example, setting 0 ensures the session expires immediately on disconnect.
+//
+// This option is ignored when using MQTT v3.1.1.
+func WithDisconnectSessionExpiry(interval uint32) DisconnectOption {
+	return func(o *DisconnectOptions) {
+		if o.Properties == nil {
+			o.Properties = &Properties{}
+		}
+		o.Properties.SessionExpiryInterval = &interval
+	}
+}
+
 // WithOutgoingQueueSize sets the size of the internal outgoing packet buffer (default: 1000).
 func WithOutgoingQueueSize(size int) Option {
 	return func(o *clientOptions) {
