@@ -216,16 +216,16 @@ func WithConnectTimeout(duration time.Duration) Option {
 
 // WithReconnectBackoff configures automatic reconnection backoff parameters:
 //   - initial: initial sleep interval before the first reconnect retry (default: 1s)
-//   - max: maximum ceiling for exponential backoff (default: 2m)
+//   - maximum: maximum ceiling for exponential backoff (default: 2m)
 //   - jitter: when true, applies randomized Full Jitter (0..backoff) to prevent thundering herd spikes
 //
 // Example:
 //
 //	client, _ := mq.Dial("tcp://localhost:1883", mq.WithReconnectBackoff(1*time.Second, 10*time.Second, true))
-func WithReconnectBackoff(initial, max time.Duration, jitter bool) Option {
+func WithReconnectBackoff(initial, maximum time.Duration, jitter bool) Option {
 	return func(o *clientOptions) {
 		o.ReconnectBackoff = initial
-		o.MaxReconnectBackoff = max
+		o.MaxReconnectBackoff = maximum
 		o.EnableJitter = jitter
 	}
 }
