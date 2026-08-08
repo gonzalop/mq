@@ -78,6 +78,7 @@
 //   - WithSessionExpiryInterval(secs) - Set session expiry (v5.0)
 //   - WithConnectUserProperties(map) - Set user properties for CONNECT (v5.0)
 //   - WithAutoReconnect(bool) - Enable auto-reconnect (default: true)
+//   - WithReconnectBackoff(initial, max, jitter) - Set auto-reconnect initial backoff, max ceiling, and Full Jitter
 //   - WithTLS(config) - Enable TLS encryption
 //   - WithWill(topic, payload, qos, retained) - Set Last Will and Testament
 //   - WithWillDelayInterval(secs) - Set Will Delay Interval for LWT (v5.0)

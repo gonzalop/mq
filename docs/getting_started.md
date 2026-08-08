@@ -100,8 +100,7 @@ client, err := mq.DialContext(ctx, server, options...)
 - `WithReceiveMaximum(max uint16, policy LimitPolicy)` - Set maximum concurrent unacknowledged messages (Flow Control) (v5.0).
   - `mq.LimitPolicyIgnore` (Default/Recommended) - Log warning on overflow.
   - `mq.LimitPolicyStrict` - Disconnect on overflow.
-- `WithReconnectBackoff(duration time.Duration)` - Set the initial backoff for reconnection (default: 1s).
-- `WithMaxReconnectBackoff(duration time.Duration)` - Set the maximum backoff for reconnection (default: 2m).
+- `WithReconnectBackoff(initial, max time.Duration, jitter bool)` - Set auto-reconnection initial backoff, max ceiling, and Full Jitter (defaults: 1s, 2m, true).
 - `WithRequestProblemInformation(bool)` - Request extended error details (v5.0).
 - `WithRequestResponseInformation(bool)` - Request response topic info (v5.0).
 - `WithSessionExpiryInterval(seconds)` - Set session expiration time (v5.0).

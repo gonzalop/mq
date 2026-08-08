@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"time"
 
 	"github.com/gonzalop/mq/internal/packets"
@@ -232,21 +233,28 @@ func (c *Client) reconnectLoop() {
 	defer c.wg.Done()
 	defer c.activeLoops.Add(-1)
 
-	backoff := c.opts.ReconnectBackoff
+	baseBackoff := c.opts.ReconnectBackoff
 	maxBackoff := c.opts.MaxReconnectBackoff
-	if backoff == 0 {
-		backoff = time.Second
+	if baseBackoff == 0 {
+		baseBackoff = time.Second
 	}
 	if maxBackoff == 0 {
 		maxBackoff = 2 * time.Minute
 	}
 
+	backoff := baseBackoff
+
 	for {
 		select {
 		case <-c.disconnected:
+			sleepDuration := backoff
+			if c.opts.EnableJitter && backoff > 0 {
+				sleepDuration = time.Duration(rand.N(int64(backoff)))
+			}
+
 			// Wait before reconnecting with interruptible sleep
 			select {
-			case <-time.After(backoff):
+			case <-time.After(sleepDuration):
 			case <-c.stop:
 				return
 			}
@@ -270,10 +278,7 @@ func (c *Client) reconnectLoop() {
 				continue
 			}
 
-			backoff = c.opts.ReconnectBackoff
-			if backoff == 0 {
-				backoff = time.Second
-			}
+			backoff = baseBackoff
 
 			if c.opts.CleanSession {
 				c.internalResetState()

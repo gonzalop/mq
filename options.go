@@ -148,6 +148,10 @@ type clientOptions struct {
 	// MaxReconnectBackoff is the maximum interval to wait before reconnecting.
 	// Default is 2 minutes.
 	MaxReconnectBackoff time.Duration
+
+	// EnableJitter enables Full Jitter on reconnection backoff intervals.
+	// Default is true.
+	EnableJitter bool
 }
 
 // LogValue implements slog.LogValuer to mask sensitive information.
@@ -207,6 +211,22 @@ func WithAutoReconnect(enable bool) Option {
 func WithConnectTimeout(duration time.Duration) Option {
 	return func(o *clientOptions) {
 		o.ConnectTimeout = duration
+	}
+}
+
+// WithReconnectBackoff configures automatic reconnection backoff parameters:
+//   - initial: initial sleep interval before the first reconnect retry (default: 1s)
+//   - max: maximum ceiling for exponential backoff (default: 2m)
+//   - jitter: when true, applies randomized Full Jitter (0..backoff) to prevent thundering herd spikes
+//
+// Example:
+//
+//	client, _ := mq.Dial("tcp://localhost:1883", mq.WithReconnectBackoff(1*time.Second, 10*time.Second, true))
+func WithReconnectBackoff(initial, max time.Duration, jitter bool) Option {
+	return func(o *clientOptions) {
+		o.ReconnectBackoff = initial
+		o.MaxReconnectBackoff = max
+		o.EnableJitter = jitter
 	}
 }
 
@@ -691,5 +711,6 @@ func defaultOptions(server string) *clientOptions {
 
 		ReconnectBackoff:    1 * time.Second,
 		MaxReconnectBackoff: 2 * time.Minute,
+		EnableJitter:        true,
 	}
 }
