@@ -101,6 +101,9 @@ func (c *Client) writeLoop() {
 	for {
 		select {
 		case pkt := <-c.outgoing:
+			if pkt == nil {
+				continue // This can happen in quick disconnect/reconnect
+			}
 			c.opts.Logger.Debug("sending packet", "type", packets.PacketNames[pkt.Type()])
 			if _, err := pkt.WriteTo(bw); err != nil {
 				c.opts.Logger.Debug("write error, disconnecting", "error", err)
@@ -114,6 +117,9 @@ func (c *Client) writeLoop() {
 			count := len(c.outgoing)
 			for range count {
 				pkt := <-c.outgoing
+				if pkt == nil {
+					continue // This can happen in quick disconnect/reconnect
+				}
 				c.opts.Logger.Debug("sending packet (batch)", "type", packets.PacketNames[pkt.Type()])
 				if _, err := pkt.WriteTo(bw); err != nil {
 					c.opts.Logger.Debug("write error (batch), disconnecting", "error", err)
