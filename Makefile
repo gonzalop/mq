@@ -1,19 +1,20 @@
-.PHONY: all build clean coverage full fuzz fmt help integration lint test examples
+.PHONY: all build clean coverage fix full fuzz fmt help integration lint test examples
 
 EXAMPLE_SRCS := $(wildcard examples/*/main.go)
 EXAMPLES := $(foreach dir,$(patsubst %/main.go,%,$(EXAMPLE_SRCS)),$(dir)/$(notdir $(dir)))
 
-all: fmt lint build test
-	@echo "✅ Formatted, linted, built, tested."
+all: fmt fix lint build test
+	@echo "✅ Formatted, fixed, linted, built, tested."
 	@echo "ℹ️  Run 'make help' to see other available targets."
 
-full: clean fmt lint build test examples fuzz integration coverage benchmark
+full: clean fmt fix lint build test examples fuzz integration coverage benchmark
 
 help:
 	@echo "Available targets:"
-	@echo "  make          - Run format, lint, build, and test"
-	@echo "  make full     - Run format, lint, build, test, fuzz, integration, coverage, and benchmark (~3-4m)"
+	@echo "  make          - Run format, fix, lint, build, and test"
+	@echo "  make full     - Run format, fix, lint, build, test, fuzz, integration, coverage, and benchmark (~3-4m)"
 	@echo "  make fmt      - Format code with gofmt"
+	@echo "  make fix      - Update code with go fix"
 	@echo "  make lint     - Run linter (revive)"
 	@echo "  make build    - Build the project"
 	@echo "  make examples - Build all example binaries"
@@ -27,6 +28,10 @@ help:
 fmt:
 	@echo "🖌️  Formatting: gofmt -w ."
 	@gofmt -w .
+
+fix:
+	@echo "🔧 Fixing: go fix ./..."
+	@go fix ./...
 
 lint:
 	@if command -v revive >/dev/null 2>&1; then \

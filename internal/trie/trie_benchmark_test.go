@@ -13,7 +13,7 @@ func generateFiltersAndTopics(numFilters int) (filters []string, matchTopics []s
 
 	levels := []string{"sensors", "devices", "home", "office", "factory", "kitchen", "living-room", "basement", "temperature", "humidity", "status", "power", "light"}
 
-	for i := 0; i < numFilters; i++ {
+	for range numFilters {
 		// Construct a random 3-level topic filter
 		// e.g. sensors/living-room/temperature
 		// e.g. sensors/+/temperature
