@@ -3,6 +3,7 @@ package mq
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -54,12 +55,9 @@ func (c *Client) logicLoop() {
 // Assumes sessionLock is HELD.
 func (c *Client) removePending(packetID uint16) {
 	delete(c.pending, packetID)
-	for i, id := range c.pendingOrder {
-		if id == packetID {
-			c.pendingOrder = append(c.pendingOrder[:i], c.pendingOrder[i+1:]...)
-			break
-		}
-	}
+	c.pendingOrder = slices.DeleteFunc(c.pendingOrder, func(id uint16) bool {
+		return id == packetID
+	})
 }
 
 // internalResetState resets session state (e.g. on clean session reconnect).
