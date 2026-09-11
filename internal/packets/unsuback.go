@@ -1,6 +1,7 @@
 package packets
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -122,8 +123,7 @@ func DecodeUnsuback(buf []byte, version uint8) (*UnsubackPacket, error) {
 
 	// Reason Codes (Payload)
 	if offset < len(buf) {
-		pkt.ReasonCodes = make([]uint8, len(buf)-offset)
-		copy(pkt.ReasonCodes, buf[offset:])
+		pkt.ReasonCodes = bytes.Clone(buf[offset:])
 	}
 
 	return pkt, nil

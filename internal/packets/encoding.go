@@ -1,6 +1,7 @@
 package packets
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -65,7 +66,5 @@ func decodeBinary(buf []byte) ([]byte, int, error) {
 		return nil, 0, fmt.Errorf("buffer too short for binary data: need %d, have %d", 2+length, len(buf))
 	}
 
-	res := make([]byte, length)
-	copy(res, buf[2:2+length])
-	return res, 2 + length, nil
+	return bytes.Clone(buf[2 : 2+length]), 2 + length, nil
 }

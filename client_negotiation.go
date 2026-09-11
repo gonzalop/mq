@@ -124,12 +124,7 @@ func (c *Client) ServerCapabilities() ServerCapabilities {
 func (c *Client) ConnectionUserProperties() map[string]string {
 	// We return a copy to avoid race conditions if the map was mutable,
 	// though currently it's set once on connect.
-	if c.connackUserProperties == nil {
-		return nil
-	}
-	props := make(map[string]string, len(c.connackUserProperties))
-	maps.Copy(props, c.connackUserProperties)
-	return props
+	return maps.Clone(c.connackUserProperties)
 }
 
 // extractServerCapabilities extracts server capabilities from CONNACK properties.

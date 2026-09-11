@@ -1,6 +1,7 @@
 package packets
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -326,8 +327,7 @@ func DecodeConnect(buf []byte) (*ConnectPacket, error) {
 			return nil, fmt.Errorf("failed to decode will message: %w", err)
 		}
 		// Copy willMessage because the underlying buffer is reused
-		pkt.WillMessage = make([]byte, len(willMessage))
-		copy(pkt.WillMessage, willMessage)
+		pkt.WillMessage = bytes.Clone(willMessage)
 		offset += n
 	}
 

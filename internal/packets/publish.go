@@ -1,6 +1,7 @@
 package packets
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -196,8 +197,7 @@ func DecodePublish(buf []byte, fixedHeader *FixedHeader, version uint8) (*Publis
 	}
 
 	// Payload (rest of the buffer)
-	pkt.Payload = make([]byte, len(buf)-offset)
-	copy(pkt.Payload, buf[offset:])
+	pkt.Payload = bytes.Clone(buf[offset:])
 
 	return pkt, nil
 }

@@ -1,6 +1,7 @@
 package packets
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -114,8 +115,7 @@ func DecodeSuback(buf []byte, version uint8) (*SubackPacket, error) {
 
 	// Return codes (rest of the buffer)
 	if offset < len(buf) {
-		pkt.ReturnCodes = make([]uint8, len(buf)-offset)
-		copy(pkt.ReturnCodes, buf[offset:])
+		pkt.ReturnCodes = bytes.Clone(buf[offset:])
 	}
 
 	return pkt, nil
