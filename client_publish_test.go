@@ -30,7 +30,7 @@ func TestValidatePayloadFormat(t *testing.T) {
 			name:    "Payload Format Bytes (0)",
 			payload: []byte{0xFF, 0xFE},
 			props: &Properties{
-				PayloadFormat: uint8PtrForPayload(PayloadFormatBytes),
+				PayloadFormat: new(PayloadFormatBytes),
 			},
 			wantErr: false,
 		},
@@ -38,7 +38,7 @@ func TestValidatePayloadFormat(t *testing.T) {
 			name:    "Payload Format UTF-8 (1) - Valid",
 			payload: []byte("Hello World"),
 			props: &Properties{
-				PayloadFormat: uint8PtrForPayload(PayloadFormatUTF8),
+				PayloadFormat: new(PayloadFormatUTF8),
 			},
 			wantErr: false,
 		},
@@ -46,7 +46,7 @@ func TestValidatePayloadFormat(t *testing.T) {
 			name:    "Payload Format UTF-8 (1) - Invalid",
 			payload: []byte{0xFF, 0xFE},
 			props: &Properties{
-				PayloadFormat: uint8PtrForPayload(PayloadFormatUTF8),
+				PayloadFormat: new(PayloadFormatUTF8),
 			},
 			wantErr: true,
 		},
@@ -62,8 +62,9 @@ func TestValidatePayloadFormat(t *testing.T) {
 	}
 }
 
+//go:fix inline
 func uint8PtrForPayload(v uint8) *uint8 {
-	return &v
+	return new(v)
 }
 
 func TestReceiveMaximum_LimitExceeded(t *testing.T) {

@@ -34,7 +34,7 @@ func TestApplyTopicAlias(t *testing.T) {
 			maxAliases:  10,
 			nextID:      1,
 			topic:       "sensors/temp",
-			wantAliasID: uint16Ptr(1),
+			wantAliasID: new(uint16(1)),
 			wantTopic:   "sensors/temp", // First time sends both
 			wantNextID:  2,
 			wantMapSize: 1,
@@ -45,7 +45,7 @@ func TestApplyTopicAlias(t *testing.T) {
 			existingAlias: map[string]uint16{"sensors/temp": 5},
 			nextID:        6,
 			topic:         "sensors/temp",
-			wantAliasID:   uint16Ptr(5),
+			wantAliasID:   new(uint16(5)),
 			wantTopic:     "", // Subsequent sends empty topic
 			wantNextID:    6,  // Unchanged
 			wantMapSize:   1,
@@ -66,7 +66,7 @@ func TestApplyTopicAlias(t *testing.T) {
 			existingAlias: map[string]uint16{"topic1": 1},
 			nextID:        2,
 			topic:         "topic2",
-			wantAliasID:   uint16Ptr(2),
+			wantAliasID:   new(uint16(2)),
 			wantTopic:     "topic2",
 			wantNextID:    3,
 			wantMapSize:   2,
@@ -76,7 +76,7 @@ func TestApplyTopicAlias(t *testing.T) {
 			maxAliases:  200,
 			nextID:      200,
 			topic:       "last/topic",
-			wantAliasID: uint16Ptr(200),
+			wantAliasID: new(uint16(200)),
 			wantTopic:   "last/topic",
 			wantNextID:  201,
 			wantMapSize: 1,
@@ -512,8 +512,9 @@ func BenchmarkTopicAlias_Encoding_WithoutAlias(b *testing.B) {
 	}
 }
 
+//go:fix inline
 func uint16Ptr(v uint16) *uint16 {
-	return &v
+	return new(v)
 }
 
 func testLogger() *slog.Logger {

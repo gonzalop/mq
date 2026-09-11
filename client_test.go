@@ -772,8 +772,7 @@ func TestValidateConnack(t *testing.T) {
 				}
 
 				if tt.version == ProtocolV50 && tt.reasonStr != "" {
-					var mqttErr *MqttError
-					if errors.As(err, &mqttErr) {
+					if mqttErr, ok := errors.AsType[*MqttError](err); ok {
 						if mqttErr.Message != tt.reasonStr {
 							t.Errorf("MqttError.Message = %q, want %q", mqttErr.Message, tt.reasonStr)
 						}

@@ -15,7 +15,7 @@ The integration tests are in a separate Go module to keep the main `mq` library 
 ### Prerequisites
 
 - Docker or Podman must be installed and running
-- Go 1.24 or later
+- Go 1.26 or later
 
 ### Run Tests
 

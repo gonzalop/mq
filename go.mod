@@ -1,3 +1,3 @@
 module github.com/gonzalop/mq
 
-go 1.24.6
+go 1.26

@@ -8,7 +8,7 @@ We use `make` to manage the development lifecycle. See 'make help' for more info
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.26+
 - `golangci-lint` (for linting)
 - `podman` or `docker` (for integration tests)
 
