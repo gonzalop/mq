@@ -6,7 +6,7 @@ replace github.com/gonzalop/mq => ../
 
 require (
 	github.com/gonzalop/mq v0.0.0-00010101000000-000000000000
-	github.com/moby/moby/api v1.55.0
+	github.com/moby/moby/api v1.56.0
 	github.com/testcontainers/testcontainers-go v0.44.0
 )
 
