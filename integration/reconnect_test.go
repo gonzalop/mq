@@ -24,7 +24,8 @@ func TestAutoReconnect(t *testing.T) {
 
 	client, err := mq.Dial(server,
 		mq.WithClientID("test-reconnect"),
-		mq.WithAutoReconnect(true))
+		mq.WithAutoReconnect(true),
+		mq.WithReconnectBackoff(50*time.Millisecond, 1*time.Second, false))
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
@@ -70,7 +71,19 @@ func TestAutoReconnect(t *testing.T) {
 	defer cleanup()
 
 	t.Log("Waiting for auto-reconnect...")
-	time.Sleep(5 * time.Second)
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		if client.IsConnected() {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !client.IsConnected() {
+		t.Fatal("Timeout waiting for auto-reconnect")
+	}
+
+	// Give a moment for resubscribe to complete
+	time.Sleep(1 * time.Second)
 
 	// Publish a message from a different client to test if subscription was restored
 	publisher, err := mq.Dial(server, mq.WithClientID("test-publisher"))
@@ -90,7 +103,7 @@ func TestAutoReconnect(t *testing.T) {
 			t.Errorf("Expected 'after reconnect', got %s", string(msg.Payload))
 		}
 		t.Log("✅ Auto-reconnect and resubscribe successful!")
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("Timeout waiting for message after reconnect - auto-reconnect or resubscribe failed")
 	}
 

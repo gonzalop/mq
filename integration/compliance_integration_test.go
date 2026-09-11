@@ -28,6 +28,7 @@ func TestComplianceIntegration_AssignedClientID_Resumption(t *testing.T) {
 		mq.WithCleanSession(false),
 		mq.WithProtocolVersion(mq.ProtocolV50),
 		mq.WithAutoReconnect(true),
+		mq.WithReconnectBackoff(50*time.Millisecond, 1*time.Second, false),
 		mq.WithSessionExpiryInterval(3600))
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
@@ -90,7 +91,8 @@ func TestComplianceIntegration_NoLocal_Persistence(t *testing.T) {
 		mq.WithClientID("nolocal-reconnect-test"),
 		mq.WithCleanSession(true),
 		mq.WithProtocolVersion(mq.ProtocolV50),
-		mq.WithAutoReconnect(true))
+		mq.WithAutoReconnect(true),
+		mq.WithReconnectBackoff(50*time.Millisecond, 1*time.Second, false))
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
