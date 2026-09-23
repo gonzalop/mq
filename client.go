@@ -347,6 +347,11 @@ func (c *Client) connect(ctx context.Context) error {
 		!(c.opts.ProtocolVersion >= ProtocolV50 && c.opts.SessionExpirySet && c.opts.SessionExpiryInterval > 0) {
 		return fmt.Errorf("MQTT requires a non-empty ClientID when CleanSession is false")
 	}
+	// [MQTT-3.1.2-22]: if the username flag is 0, the password flag must be 0
+	// too. Sending a password without a username produces a malformed CONNECT.
+	if c.opts.Password != "" && c.opts.Username == "" {
+		return fmt.Errorf("a password requires a username ([MQTT-3.1.2-22])")
+	}
 
 	c.prepareConnectionState()
 
