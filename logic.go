@@ -67,7 +67,7 @@ func (c *Client) internalResetState() {
 	defer c.sessionLock.Unlock()
 	c.receivedQoS2 = make(map[uint16]struct{})
 	c.inboundUnacked = make(map[uint16]struct{})
-	c.pingPending = false
+	c.pingPending.Store(false)
 	select {
 	case <-c.pingPendingCh:
 	default:
