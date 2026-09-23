@@ -245,6 +245,14 @@ func (c *Client) finalizeConnection(connack *packets.ConnackPacket) {
 	go c.readLoop()
 	go c.writeLoop()
 
+	// A clean session drops any state the broker kept for this client, so the
+	// subscriptions registered through WithSubscription must be sent on every
+	// connection. For persistent sessions checkSessionPresent() already
+	// resubscribes when the broker reports no session.
+	if c.opts.CleanSession {
+		go c.resubscribeAll()
+	}
+
 	c.opts.Logger.Debug("client started", "client_id", c.opts.ClientID)
 }
 
