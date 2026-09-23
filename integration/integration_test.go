@@ -469,3 +469,71 @@ func TestCleanSession(t *testing.T) {
 		t.Fatal("Timeout waiting for offline message")
 	}
 }
+
+// TestInitialSubscriptionsSentOnFirstConnect_CleanSession verifies that topics
+// registered via WithSubscription receive messages on the initial connection
+// when CleanSession is true (the default), across both MQTT v3.1.1 and v5.0.
+func TestInitialSubscriptionsSentOnFirstConnect_CleanSession(t *testing.T) {
+	t.Parallel()
+	server, cleanup := startMosquitto(t, "")
+	defer cleanup()
+
+	for _, version := range []uint8{mq.ProtocolV311, mq.ProtocolV50} {
+		versionName := "v3.1.1"
+		if version == mq.ProtocolV50 {
+			versionName = "v5.0"
+		}
+
+		t.Run(versionName, func(t *testing.T) {
+			topic := fmt.Sprintf("test/initial-clean/%s/%d", versionName, time.Now().UnixNano())
+			received := make(chan mq.Message, 1)
+
+			subClient, err := mq.Dial(server,
+				mq.WithProtocolVersion(version),
+				mq.WithClientID(fmt.Sprintf("sub-clean-%s-%d", versionName, time.Now().UnixNano())),
+				mq.WithCleanSession(true),
+				mq.WithSubscription(topic, func(_ *mq.Client, msg mq.Message) {
+					received <- msg
+				}),
+			)
+			if err != nil {
+				t.Fatalf("Failed to connect subscriber: %v", err)
+			}
+			defer subClient.Disconnect(context.Background())
+
+			// Brief pause to allow the background SUBSCRIBE exchange to complete with the broker
+			time.Sleep(200 * time.Millisecond)
+
+			pubClient, err := mq.Dial(server,
+				mq.WithProtocolVersion(version),
+				mq.WithClientID(fmt.Sprintf("pub-clean-%s-%d", versionName, time.Now().UnixNano())),
+			)
+			if err != nil {
+				t.Fatalf("Failed to connect publisher: %v", err)
+			}
+			defer pubClient.Disconnect(context.Background())
+
+			payload := "hello initial clean subscription"
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			pubToken := pubClient.Publish(ctx, topic, []byte(payload), mq.WithQoS(1))
+			if err := pubToken.Wait(ctx); err != nil {
+				t.Fatalf("Failed to publish: %v", err)
+			}
+
+			select {
+			case msg := <-received:
+				if string(msg.Payload) != payload {
+					t.Errorf("Payload = %s, want %s", string(msg.Payload), payload)
+				}
+				if msg.Topic != topic {
+					t.Errorf("Topic = %s, want %s", msg.Topic, topic)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("Timeout waiting for message on initial clean session subscription (%s)", versionName)
+			}
+		})
+	}
+}
+
