@@ -37,7 +37,7 @@ type Client struct {
 	packetReceived chan struct{}       // Signal when packet received (for keepalive)
 	pingPendingCh  chan struct{}       // Signal when PINGRESP received
 	stop           chan struct{}       // Shutdown signal
-	pingPending    bool                // True if PINGREQ sent but no PINGRESP received yet
+	pingPending    atomic.Bool         // True if PINGREQ sent but no PINGRESP received yet
 
 	// Session State Lock guards:
 	// - pending

@@ -91,7 +91,7 @@ func (c *Client) writeLoop() {
 	lastSent := lastReceived
 
 	// Reset ping state and drain any stale PINGRESP signal from previous connection
-	c.pingPending = false
+	c.pingPending.Store(false)
 	select {
 	case <-c.pingPendingCh:
 	default:
@@ -142,7 +142,7 @@ func (c *Client) writeLoop() {
 
 		case <-c.pingPendingCh:
 			// PINGRESP received, clear pending flag
-			c.pingPending = false
+			c.pingPending.Store(false)
 
 		case <-tickerCh:
 			// Check if we've received anything recently (1.5x keepalive timeout)
@@ -163,7 +163,7 @@ func (c *Client) writeLoop() {
 			timeSinceSent := time.Since(lastSent)
 			timeSinceReceived := time.Since(lastReceived)
 
-			if !c.pingPending && (timeSinceSent >= threshold || timeSinceReceived >= threshold) {
+			if !c.pingPending.Load() && (timeSinceSent >= threshold || timeSinceReceived >= threshold) {
 				// Determine reason for PINGREQ
 				reason := "no receive"
 				if timeSinceSent >= threshold && timeSinceReceived >= threshold {
@@ -186,7 +186,7 @@ func (c *Client) writeLoop() {
 					return
 				}
 				lastSent = time.Now()
-				c.pingPending = true
+				c.pingPending.Store(true)
 			}
 
 		case <-c.stop:
@@ -207,7 +207,7 @@ func (c *Client) handleDisconnect() {
 		c.conn.Close()
 		c.conn = nil
 	}
-	c.pingPending = false
+	c.pingPending.Store(false)
 	select {
 	case <-c.pingPendingCh:
 	default:

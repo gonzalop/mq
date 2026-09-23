@@ -412,14 +412,14 @@ func TestKeepAliveZeroDisabled(t *testing.T) {
 // and pingPendingCh is drained when resetting client state or starting writeLoop.
 func TestKeepAlivePingPendingResetOnReconnect(t *testing.T) {
 	client := &Client{
-		pingPending:   true,
 		pingPendingCh: make(chan struct{}, 1),
 	}
+	client.pingPending.Store(true)
 	client.pingPendingCh <- struct{}{}
 
 	client.internalResetState()
 
-	if client.pingPending {
+	if client.pingPending.Load() {
 		t.Error("expected pingPending to be false after internalResetState")
 	}
 	select {
