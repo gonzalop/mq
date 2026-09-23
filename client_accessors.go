@@ -51,28 +51,32 @@ func (c *Client) Disconnect(ctx context.Context, opts ...DisconnectOption) error
 func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, props *Properties, block bool) error {
 	c.opts.Logger.Debug("disconnecting from server", "reason_code", reasonCode)
 
-	// Mark as disconnected first
-	if !c.connected.Swap(false) {
-		return nil // Already disconnected
+	// A graceful DISCONNECT only makes sense while the connection is up: it is
+	// what suppresses the will on the broker. When a reconnect is in progress
+	// there is nothing to send, but the loops below must still be stopped.
+	if c.connected.Swap(false) {
+		disconnectPkt := &packets.DisconnectPacket{
+			Version:    c.opts.ProtocolVersion,
+			ReasonCode: reasonCode,
+			Properties: toInternalProperties(props),
+		}
+		select {
+		case c.outgoing <- disconnectPkt:
+		case <-time.After(100 * time.Millisecond):
+			// Timeout sending disconnect, continue anyway
+		}
+
+		// Give it a moment to send
+		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Send DISCONNECT packet
-	disconnectPkt := &packets.DisconnectPacket{
-		Version:    c.opts.ProtocolVersion,
-		ReasonCode: reasonCode,
-		Properties: toInternalProperties(props),
+	// Stop all goroutines. Idempotent and safe to call while a reconnect is in
+	// progress (Disconnect may be invoked more than once). Clients built
+	// without NewClient (tests) may have no stop channel: there is then no
+	// loop to stop.
+	if c.stop != nil {
+		c.stopOnce.Do(func() { close(c.stop) })
 	}
-	select {
-	case c.outgoing <- disconnectPkt:
-	case <-time.After(100 * time.Millisecond):
-		// Timeout sending disconnect, continue anyway
-	}
-
-	// Give it a moment to send
-	time.Sleep(100 * time.Millisecond)
-
-	// Stop all goroutines
-	close(c.stop)
 
 	// Close connection to unblock readLoop
 	c.connLock.Lock()
