@@ -285,13 +285,10 @@ func (c *Client) reconnectLoop() {
 
 			backoff = baseBackoff
 
-			if c.opts.CleanSession {
-				c.internalResetState()
-			}
-
 			// finalizeConnection (inside connect above) is responsible for
-			// resubscribing: it does it directly for clean sessions and
-			// through checkSessionPresent for persistent ones.
+			// resetting clean session state and resubscribing: it does it
+			// directly for clean sessions and through checkSessionPresent for
+			// persistent ones.
 
 		case <-c.stop:
 			c.opts.Logger.Debug("reconnectLoop stopped")

@@ -220,7 +220,9 @@ func (c *Client) finalizeConnection(connack *packets.ConnackPacket) {
 
 	c.processConnackProperties(connack)
 
-	if !c.opts.CleanSession {
+	if c.opts.CleanSession {
+		c.internalResetState()
+	} else {
 		if err := c.checkSessionPresent(connack.SessionPresent); err != nil {
 			c.opts.Logger.Warn("failed to check session present", "error", err)
 		}
