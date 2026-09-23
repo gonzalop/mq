@@ -64,6 +64,7 @@ type Client struct {
 	connected   atomic.Bool
 	wg          sync.WaitGroup
 	activeLoops atomic.Int32
+	stopOnce    sync.Once // guards close(stop): Disconnect is idempotent
 
 	// connState holds the server capabilities and connection properties (MQTT v5.0).
 	// It is accessed atomically to prevent race conditions during reconnection.
