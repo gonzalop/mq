@@ -289,7 +289,9 @@ func (c *Client) reconnectLoop() {
 				c.internalResetState()
 			}
 
-			c.resubscribeAll()
+			// finalizeConnection (inside connect above) is responsible for
+			// resubscribing: it does it directly for clean sessions and
+			// through checkSessionPresent for persistent ones.
 
 		case <-c.stop:
 			c.opts.Logger.Debug("reconnectLoop stopped")
