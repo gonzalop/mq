@@ -31,6 +31,7 @@ func TestLifecycleHooks(t *testing.T) {
 	client, err := mq.Dial(server,
 		mq.WithClientID("test-hooks"),
 		mq.WithAutoReconnect(true),
+		mq.WithReconnectBackoff(50*time.Millisecond, 1*time.Second, false),
 		mq.WithOnConnect(func(_ *mq.Client) {
 			mu.Lock()
 			connectCount++
