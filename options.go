@@ -152,6 +152,13 @@ type clientOptions struct {
 	// EnableJitter enables Full Jitter on reconnection backoff intervals.
 	// Default is true.
 	EnableJitter bool
+
+	// MinStableConnectionDuration is the minimum duration a connection must
+	// remain alive to be considered stable. If a connection is severed before
+	// this threshold has elapsed, it is treated as a failed attempt for backoff
+	// purposes, escalating reconnection backoff to prevent tight reconnect loops.
+	// Default is 5 seconds (or 2 * ReconnectBackoff if ReconnectBackoff < 1s).
+	MinStableConnectionDuration time.Duration
 }
 
 // LogValue implements slog.LogValuer to mask sensitive information.
@@ -227,6 +234,23 @@ func WithReconnectBackoff(initial, maximum time.Duration, jitter bool) Option {
 		o.ReconnectBackoff = initial
 		o.MaxReconnectBackoff = maximum
 		o.EnableJitter = jitter
+	}
+}
+
+// WithMinStableConnectionDuration configures the minimum duration a connection must
+// remain active to be considered stable.
+//
+// When a connection drops before this duration has elapsed, the reconnection loop treats
+// the connection as failed and exponentially increases the backoff (up to MaxReconnectBackoff)
+// rather than immediately resetting back to ReconnectBackoff. This prevents tight reconnection
+// loops when connections are repeatedly severed shortly after CONNACK (e.g., duplicate client IDs,
+// broker kick, or network flapping).
+//
+// Default is 5 seconds (or 2 * ReconnectBackoff if ReconnectBackoff < 1s).
+// Pass a negative duration (e.g., -1) to disable this behavior and reset backoff immediately on CONNACK.
+func WithMinStableConnectionDuration(duration time.Duration) Option {
+	return func(o *clientOptions) {
+		o.MinStableConnectionDuration = duration
 	}
 }
 
@@ -753,8 +777,9 @@ func defaultOptions(server string) *clientOptions {
 		MaxHandlerConcurrency: 100,
 		MaxAuthExchanges:      10,
 
-		ReconnectBackoff:    1 * time.Second,
-		MaxReconnectBackoff: 2 * time.Minute,
-		EnableJitter:        true,
+		ReconnectBackoff:            1 * time.Second,
+		MaxReconnectBackoff:         2 * time.Minute,
+		EnableJitter:                true,
+		MinStableConnectionDuration: 5 * time.Second,
 	}
 }

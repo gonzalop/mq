@@ -301,6 +301,32 @@ func (c *Client) ResponseInformation() string {
 	return ""
 }
 
+// ConnectedAt returns the time when the current connection was established,
+// or a zero time if the client is not currently connected.
+func (c *Client) ConnectedAt() time.Time {
+	if !c.IsConnected() {
+		return time.Time{}
+	}
+	ts := c.connectedAt.Load()
+	if ts == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, ts)
+}
+
+// Uptime returns the duration for which the current connection has been active,
+// or 0 if the client is not currently connected.
+func (c *Client) Uptime() time.Duration {
+	if !c.IsConnected() {
+		return 0
+	}
+	ts := c.connectedAt.Load()
+	if ts == 0 {
+		return 0
+	}
+	return time.Since(time.Unix(0, ts))
+}
+
 // ClientStats holds connection and throughput statistics.
 type ClientStats struct {
 	PacketsSent     uint64

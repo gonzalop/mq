@@ -109,6 +109,9 @@ type Client struct {
 	bytesReceived   atomic.Uint64
 	reconnectCount  atomic.Uint64
 
+	// Connection timing (atomic Unix nano timestamp)
+	connectedAt atomic.Int64
+
 	// For reconnection
 	disconnected chan struct{}
 

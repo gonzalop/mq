@@ -240,11 +240,16 @@ func (c *Client) reconnectLoop() {
 
 	baseBackoff := c.opts.ReconnectBackoff
 	maxBackoff := c.opts.MaxReconnectBackoff
-	if baseBackoff == 0 {
+	if baseBackoff <= 0 {
 		baseBackoff = time.Second
 	}
-	if maxBackoff == 0 {
+	if maxBackoff <= 0 {
 		maxBackoff = 2 * time.Minute
+	}
+
+	minStable := c.opts.MinStableConnectionDuration
+	if minStable == 0 {
+		minStable = max(2*baseBackoff, 2*time.Second)
 	}
 
 	backoff := baseBackoff
@@ -252,6 +257,20 @@ func (c *Client) reconnectLoop() {
 	for {
 		select {
 		case <-c.disconnected:
+			// If this disconnection followed an established connection, check its uptime.
+			if connAt := c.connectedAt.Swap(0); connAt > 0 {
+				uptime := time.Since(time.Unix(0, connAt))
+				if minStable > 0 && uptime < minStable {
+					// Connection died prematurely (flapping): escalate backoff.
+					backoff = min(backoff*2, maxBackoff)
+					c.opts.Logger.Debug("connection severed below stable threshold, escalating backoff",
+						"uptime", uptime, "threshold", minStable, "backoff", backoff)
+				} else {
+					// Connection was stable: reset backoff to base.
+					backoff = baseBackoff
+				}
+			}
+
 			sleepDuration := backoff
 			if c.opts.EnableJitter && backoff > 0 {
 				sleepDuration = time.Duration(rand.N(int64(backoff)))
@@ -283,12 +302,13 @@ func (c *Client) reconnectLoop() {
 				continue
 			}
 
-			backoff = baseBackoff
-
 			// finalizeConnection (inside connect above) is responsible for
-			// resetting clean session state and resubscribing: it does it
-			// directly for clean sessions and through checkSessionPresent for
-			// persistent ones.
+			// setting c.connectedAt, resetting clean session state and
+			// resubscribing: it does it directly for clean sessions and through
+			// checkSessionPresent for persistent ones.
+			//
+			// Note: backoff is NOT reset here. It will only reset if the newly
+			// established connection remains alive for at least minStable duration.
 
 		case <-c.stop:
 			c.opts.Logger.Debug("reconnectLoop stopped")

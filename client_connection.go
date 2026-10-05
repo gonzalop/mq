@@ -230,6 +230,7 @@ func (c *Client) finalizeConnection(connack *packets.ConnackPacket) {
 
 	c.opts.Logger.Debug("connection established", "server", c.opts.Server)
 	c.connected.Store(true)
+	c.connectedAt.Store(time.Now().UnixNano())
 
 	if c.opts.Authenticator != nil {
 		if err := c.opts.Authenticator.Complete(); err != nil {
