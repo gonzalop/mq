@@ -536,4 +536,3 @@ func TestInitialSubscriptionsSentOnFirstConnect_CleanSession(t *testing.T) {
 		})
 	}
 }
-

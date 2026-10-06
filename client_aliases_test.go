@@ -512,11 +512,6 @@ func BenchmarkTopicAlias_Encoding_WithoutAlias(b *testing.B) {
 	}
 }
 
-//go:fix inline
-func uint16Ptr(v uint16) *uint16 {
-	return new(v)
-}
-
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

@@ -62,11 +62,6 @@ func TestValidatePayloadFormat(t *testing.T) {
 	}
 }
 
-//go:fix inline
-func uint8PtrForPayload(v uint8) *uint8 {
-	return new(v)
-}
-
 func TestReceiveMaximum_LimitExceeded(t *testing.T) {
 	// Create a client with ReceiveMaximum = 2
 	c := &Client{trie: newTopicTrie(),

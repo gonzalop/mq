@@ -91,7 +91,7 @@ loop:
 		}
 	}
 
-	server, cleanup = startMosquitto(t, "# Dedicated for hooks test restart", port)
+	_, cleanup = startMosquitto(t, "# Dedicated for hooks test restart", port)
 	defer cleanup()
 
 	select {

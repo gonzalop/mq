@@ -101,18 +101,7 @@ func (c *Client) ServerCapabilities() ServerCapabilities {
 	if state == nil {
 		return ServerCapabilities{}
 	}
-	caps := state.caps
-
-	return ServerCapabilities{
-		MaximumPacketSize:           caps.MaximumPacketSize,
-		ReceiveMaximum:              caps.ReceiveMaximum,
-		TopicAliasMaximum:           caps.TopicAliasMaximum,
-		MaximumQoS:                  caps.MaximumQoS,
-		RetainAvailable:             caps.RetainAvailable,
-		WildcardAvailable:           caps.WildcardAvailable,
-		SubscriptionIDAvailable:     caps.SubscriptionIDAvailable,
-		SharedSubscriptionAvailable: caps.SharedSubscriptionAvailable,
-	}
+	return ServerCapabilities(state.caps)
 }
 
 // ConnectionUserProperties returns the User Properties received from the server
