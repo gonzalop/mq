@@ -63,8 +63,10 @@ func main() {
 	}
 
 	// Load credentials from environment
-	if v := os.Getenv("MQTT_PASSWORD"); v != "" {
-		opts = append(opts, mq.WithCredentials(os.Getenv("MQTT_USERNAME"), v))
+	username := os.Getenv("MQTT_USERNAME")
+	password := os.Getenv("MQTT_PASSWORD")
+	if username != "" {
+		opts = append(opts, mq.WithCredentials(username, password))
 	}
 
 	client, err := mq.Dial(server, opts...)

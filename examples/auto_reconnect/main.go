@@ -43,9 +43,10 @@ func main() {
 		mq.WithClientID("auto-reconnect-example"),
 		mq.WithAutoReconnect(true),
 		mq.WithKeepAlive(10 * time.Second),
+		mq.WithMinStableConnectionDuration(5 * time.Second), // Anti-flapping: escalate backoff if connection drops before 5s
 		mq.WithOnConnect(func(c *mq.Client) {
 			connectionCount++
-			fmt.Printf("\n✅ Connected (connection #%d) at %s\n", connectionCount, time.Now().Format("15:04:05"))
+			fmt.Printf("\n✅ Connected (connection #%d) at %s\n", connectionCount, c.ConnectedAt().Format("15:04:05"))
 
 			// Resubscribe on each connection
 			fmt.Println("   Subscribing to 'test/reconnect'...")
@@ -98,13 +99,16 @@ func main() {
 			if err := token.Wait(context.Background()); err != nil {
 				fmt.Printf("⚠️  Publish failed: %v (will retry on reconnect)\n", err)
 			} else {
-				fmt.Printf("📤 Published: %s\n", payload)
+				fmt.Printf("📤 Published: %s (uptime: %s)\n", payload, client.Uptime().Round(time.Second))
 			}
 
 		case <-sigChan:
 			fmt.Println("\n\n📊 Statistics:")
 			fmt.Printf("   Total connections: %d\n", connectionCount)
 			fmt.Printf("   Total disconnections: %d\n", disconnectionCount)
+			if client.IsConnected() {
+				fmt.Printf("   Current uptime: %s\n", client.Uptime().Round(time.Second))
+			}
 			fmt.Printf("   Messages published: %d\n", messageCount)
 			fmt.Println("\nDisconnecting gracefully...")
 			return

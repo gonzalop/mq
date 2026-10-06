@@ -53,7 +53,7 @@ Auto-Reconnect Example
    Subscribing to 'test/reconnect'...
    ✓ Subscribed
 
-📤 Published: Message #1 at 14:23:50
+📤 Published: Message #1 at 14:23:50 (uptime: 5s)
 📨 Received: Message #1
 
 ❌ Connection lost (disconnection #1) at 14:23:55: read tcp: connection reset
@@ -63,5 +63,5 @@ Auto-Reconnect Example
    Subscribing to 'test/reconnect'...
    ✓ Subscribed
 
-📤 Published: Message #2 at 14:24:05
+📤 Published: Message #2 at 14:24:05 (uptime: 3s)
 ```
