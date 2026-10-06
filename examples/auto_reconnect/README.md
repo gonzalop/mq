@@ -4,8 +4,9 @@ This example demonstrates automatic reconnection when the MQTT connection is los
 
 ## Features Demonstrated
 
-- Automatic reconnection with `WithAutoReconnect(true)`
+- Automatic reconnection with exponential backoff and anti-flapping escalation
 - Connection lifecycle hooks (`OnConnect`, `OnConnectionLost`)
+- Connection health and uptime tracking (`ConnectedAt`, `Uptime`)
 - Automatic resubscription after reconnect
 - Graceful handling of publish failures during disconnection
 

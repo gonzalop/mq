@@ -15,7 +15,7 @@ A lightweight, idiomatic MQTT client library for Go with full support for v3.1.1
   - **Radix Tree Routing**: O(K) topic matching for high-subscription environments.
   - **Non-blocking I/O**: Core state machine uses a non-blocking logic loop to maximize throughput.
 - **Persistence**: Durable Session Persistence (CleanSession=false) with incremental disk storage and optional asynchronous background worker (see [docs/persistence.md](docs/persistence.md)).
-- **Auto-Reconnect**: Built-in exponential backoff (see [Examples](./examples))
+- **Auto-Reconnect**: Built-in exponential backoff with anti-flapping protection (see [Examples](./examples))
 - **Transport**: TCP and TLS directly, WebSockets via `WithDialer` (see [Examples](./examples))
 - **Middleware/Interceptors**: Intercept inbound/outbound messages for logging, metrics, or tracing.
 - **Context Awareness**: `context.Context` support for cancellation/timeouts

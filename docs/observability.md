@@ -278,3 +278,24 @@ func main() {
 	defer client.Disconnect(context.Background())
 }
 ```
+
+---
+
+## 5. Built-in Connection Health & Uptime Monitoring
+
+For readiness checks, health endpoints, or heartbeat monitors that do not require full telemetry pipelines, `mq` provides lightweight zero-dependency accessor methods:
+
+```go
+// Check connection state and active duration
+if client.IsConnected() {
+    log.Printf("Connected since: %v (uptime: %v)", client.ConnectedAt(), client.Uptime())
+} else {
+    log.Println("Client currently disconnected, reconnecting in background...")
+}
+
+// Inspect packet and reconnect counters
+stats := client.GetStats()
+log.Printf("Packets: %d sent, %d received | Reconnects: %d",
+    stats.PacketsSent, stats.PacketsReceived, stats.ReconnectCount)
+```
+

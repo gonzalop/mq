@@ -157,7 +157,7 @@ type clientOptions struct {
 	// remain alive to be considered stable. If a connection is severed before
 	// this threshold has elapsed, it is treated as a failed attempt for backoff
 	// purposes, escalating reconnection backoff to prevent tight reconnect loops.
-	// Default is 5 seconds (or 2 * ReconnectBackoff if ReconnectBackoff < 1s).
+	// Default is 5 seconds (or max(2 * ReconnectBackoff, 2s) if unset/zero).
 	MinStableConnectionDuration time.Duration
 }
 
@@ -246,7 +246,7 @@ func WithReconnectBackoff(initial, maximum time.Duration, jitter bool) Option {
 // loops when connections are repeatedly severed shortly after CONNACK (e.g., duplicate client IDs,
 // broker kick, or network flapping).
 //
-// Default is 5 seconds (or 2 * ReconnectBackoff if ReconnectBackoff < 1s).
+// Default is 5 seconds (or max(2 * ReconnectBackoff, 2s) if unset/zero).
 // Pass a negative duration (e.g., -1) to disable this behavior and reset backoff immediately on CONNACK.
 func WithMinStableConnectionDuration(duration time.Duration) Option {
 	return func(o *clientOptions) {
@@ -720,6 +720,9 @@ func WithTLS(config *tls.Config) Option {
 }
 
 // WithCredentials sets the username and password for authentication.
+//
+// Per [MQTT-3.1.2-22], a non-empty password requires a non-empty username;
+// attempting to connect with a password but an empty username will return an error.
 func WithCredentials(username, password string) Option {
 	return func(o *clientOptions) {
 		o.Username = username

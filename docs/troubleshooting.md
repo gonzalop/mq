@@ -8,10 +8,12 @@ This guide covers common pitfalls and edge cases when working with MQTT clients.
 
 **The Problem**: Two instances of your application (e.g., prod and staging, or two replicas) accidentally share the same `ClientID`.
 
-**What Happens**: The server kicks Client A to let Client B connect. Client A sees the disconnect, auto-reconnects, kicking Client B. They fight forever, consuming massive bandwidth and CPU, while appearing "unstable."
+**What Happens**: The server kicks Client A to let Client B connect. Client A sees the disconnect, auto-reconnects, kicking Client B. If unchecked, they thrash back and forth.
+
+**Built-in Protection**: The library includes automatic anti-flapping backoff escalation (`WithMinStableConnectionDuration`). Because each connection dies before the stability threshold, the client exponentially increases its reconnection delay (up to `MaxReconnectBackoff`) rather than spinning at the base backoff interval.
 
 **How to Detect**:
-- **MQTT 3.1.1**: Generic `io.EOF` or "connection reset" errors in logs.
+- **MQTT 3.1.1**: Generic `io.EOF` or "connection reset" errors in logs, with increasing reconnect intervals.
 - **MQTT 5.0**: May receive `DISCONNECT` with Reason Code `0x8E` (Session Taken Over), but often the race condition results in an abrupt TCP reset before the packet arrives.
   - If the `DISCONNECT` packet is received, your `OnConnectionLost` callback will receive an `*MqttError` with the reason code and optional reason string from the server.
 

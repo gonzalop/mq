@@ -360,23 +360,46 @@ client.Publish(context.Background(), longTopic, []byte("22.5"), mq.WithAlias())
 
 Networks are unreliable. Your client configuration should assume connections will drop.
 
-### Automatic Reconnection
-The client enables `WithAutoReconnect(true)` by default. It uses an **exponential backoff** strategy (starting at 1s, doubling up to 2m) to avoid hammering the server during outages.
+### Automatic Reconnection & Anti-Flapping Protection
+The client enables `WithAutoReconnect(true)` by default. It uses an **exponential backoff** strategy (starting at 1s, doubling up to 2m) with full jitter to avoid hammering the server during outages. You can tune backoff intervals using `WithReconnectBackoff(initial, maximum, jitter)`.
 
-**Best Practice:** Do not disable this unless you have a specific reason to implement your own recovery logic.
+**Anti-Flapping Backoff Escalation**:
+If a connection is severed shortly after CONNACK (such as due to broker kicks, duplicate Client IDs, or flapping network links), reconnecting immediately at the base interval can cause aggressive reconnect loops. To prevent this, the client tracks connection uptime:
+- A connection must remain active for at least `MinStableConnectionDuration` (default: **5 seconds**) before the backoff interval resets to the base duration.
+- If the connection drops before this threshold, the attempt is treated as a failure and the backoff interval escalates exponentially (up to `MaxReconnectBackoff`).
+- Configure this threshold with `WithMinStableConnectionDuration(duration)`. Pass a negative duration (e.g. `-1`) to disable anti-flapping escalation and reset backoff immediately on CONNACK.
+
+```go
+// Example: Custom backoff intervals and 10s stability threshold
+client, err := mq.Dial(server,
+    mq.WithAutoReconnect(true),
+    mq.WithReconnectBackoff(2*time.Second, 1*time.Minute, true),
+    mq.WithMinStableConnectionDuration(10*time.Second),
+)
+```
+
+**Best Practice:** Do not disable auto-reconnect unless you have a specific reason to implement your own recovery logic.
 
 ### Monitoring Connectivity
-Use the lifecycle callbacks to update your application state or UI.
+Use lifecycle callbacks to react to state changes, and use client accessors to query connection state and uptime:
 
 ```go
 client, err := mq.Dial(server,
     mq.WithOnConnect(func(c *mq.Client) {
-        slog.Info("Connected")
+        slog.Info("Connected to broker")
     }),
     mq.WithOnConnectionLost(func(c *mq.Client, err error) {
         slog.Error("Connection lost", "error", err)
     }),
 )
+
+// Query connection status and active duration anytime:
+if client.IsConnected() {
+    slog.Info("Connection active",
+        "connected_at", client.ConnectedAt(),
+        "uptime", client.Uptime(),
+    )
+}
 ```
 
 ### Last Will & Testament (LWT)

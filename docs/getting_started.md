@@ -89,6 +89,7 @@ client, err := mq.DialContext(ctx, server, options...)
 - `WithMaxPacketSize(bytes int)` - Set maximum packet size sent in CONNECT properties (v5.0) and enforce limit locally.
 - `WithMaxPayloadSize(bytes int)` - Set maximum outgoing payload size (default: 256MB).
 - `WithMaxTopicLength(bytes int)` - Set maximum topic length (default: 65535).
+- `WithMinStableConnectionDuration(duration time.Duration)` - Set minimum uptime before a connection is deemed stable (default: 5s). Drops earlier escalate backoff; pass negative duration to disable.
 - `WithOnConnect(func)` - Set callback for successful connection.
 - `WithOnConnectionLost(func)` - Set callback for connection loss.
 - `WithProtocolVersion(version uint8)` - Set MQTT protocol version (default: v5.0).
@@ -293,9 +294,16 @@ client.Subscribe(context.Background(), "sensors/temp", mq.AtLeastOnce, handler)
 
 ## Monitoring & Stats
 
-The client exposes atomic statistics suitable for monitoring connection health and throughput in production.
+The client exposes connection status, uptime metrics, and atomic throughput statistics suitable for health checks and production monitoring.
 
 ```go
+// Connection status and uptime
+if client.IsConnected() {
+    fmt.Printf("Connected at: %s\n", client.ConnectedAt().Format(time.RFC3339))
+    fmt.Printf("Current uptime: %v\n", client.Uptime())
+}
+
+// Throughput and event statistics
 stats := client.GetStats()
 
 fmt.Printf("Connected: %v\n", stats.Connected)
