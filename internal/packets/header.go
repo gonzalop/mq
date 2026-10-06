@@ -1,6 +1,7 @@
 package packets
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 )
@@ -51,26 +52,7 @@ func (h *FixedHeader) WriteTo(w io.Writer) (int64, error) {
 	// Create a small buffer for the header: 1 byte type+flags + max 4 bytes length
 	var buf [5]byte
 	buf[0] = firstByte
-
-	// Encode remaining length directly
-	// Similar to encodeVarInt but writing to our stack buffer
-	// Adapted from varint.go logic to avoid allocating slice
-	x := h.RemainingLength
-	n := 1 // Start at buf[1]
-
-	for {
-		b := byte(x % 128)
-		x /= 128
-		if x > 0 {
-			b |= 128
-		}
-		buf[n] = b
-		n++
-
-		if x == 0 {
-			break
-		}
-	}
+	n := 1 + binary.PutUvarint(buf[1:], uint64(h.RemainingLength))
 
 	nw, err := w.Write(buf[:n])
 	return int64(nw), err

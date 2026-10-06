@@ -2,6 +2,7 @@ package packets
 
 import (
 	"bytes"
+	"io"
 	"testing"
 )
 
@@ -206,3 +207,24 @@ func BenchmarkPublishPacket_WriteTo(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkFixedHeader_WriteTo_Fallback measures the performance of non-ByteWriter fallback.
+func BenchmarkFixedHeader_WriteTo_Fallback(b *testing.B) {
+	header := FixedHeader{
+		PacketType:      PUBLISH,
+		Flags:           0x02,
+		RemainingLength: 1050,
+	}
+
+	gw := &genericWriter{w: io.Discard}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		if _, err := header.WriteTo(gw); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
