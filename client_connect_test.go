@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -223,7 +224,6 @@ func TestConnackUserProperties(t *testing.T) {
 
 	// Verify V3.1.1 ignores them
 	c.opts.ProtocolVersion = ProtocolV311
-	c.connackUserProperties = nil // Reset
 	c.processConnackProperties(connack)
 
 	if c.ConnectionUserProperties() != nil {
@@ -357,4 +357,33 @@ func TestWithWillDelayInterval(t *testing.T) {
 	if pkt.WillProperties.WillDelayInterval != 120 {
 		t.Errorf("WillDelayInterval = %d, want 120", pkt.WillProperties.WillDelayInterval)
 	}
+}
+
+// Regression test for Finding 6: CONNACK processing races with ConnectionUserProperties and
+// applyTopicAlias under -race.
+func TestConnackProperties_ConcurrentAccessRace(_ *testing.T) {
+	opts := defaultOptions("tcp://x")
+	opts.TopicAliasMaximum = 10
+	c := &Client{trie: newTopicTrie(), opts: opts, topicAliases: map[string]uint16{}, nextAliasID: 1, maxAliases: 10}
+	connack := &packets.ConnackPacket{Properties: &packets.Properties{
+		UserProperties:    []packets.UserProperty{{Key: "k", Value: "v"}, {Key: "k2", Value: "v2"}},
+		TopicAliasMaximum: 10,
+		Presence:          packets.PresTopicAliasMaximum,
+	}}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for range 200 {
+			c.processConnackProperties(connack)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := range 200 {
+			_ = c.ConnectionUserProperties()
+			c.applyTopicAlias(&packets.PublishPacket{Topic: "t/" + string(rune('a'+i%5))})
+		}
+	}()
+	wg.Wait()
 }

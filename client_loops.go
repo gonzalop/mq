@@ -339,29 +339,21 @@ func (c *Client) processPublishQueueLocked() []packets.Packet {
 			break
 		}
 
-		// Peek from queue
+		if cap(c.outgoing) > 0 && len(c.outgoing) == cap(c.outgoing) {
+			break
+		}
+
+		// Pop from queue
 		req := c.publishQueue[0]
+		c.publishQueue = c.publishQueue[1:]
 
 		// Try to prepare
 		pkt, ok := c.preparePublishLocked(req)
 		if !ok {
+			// preparePublishLocked already completed req.token with ErrNoPacketIDsAvailable
 			break
 		}
 
-		// We must check if the outgoing channel is full to prevent discarding
-		// the message from the queue and putting it in pending state too early.
-		// If capacity is 0 (unbuffered), we can't reliably check len vs cap without blocking,
-		// but outgoing should always be buffered (default is non-zero).
-		if cap(c.outgoing) > 0 && len(c.outgoing) == cap(c.outgoing) {
-			c.removePending(pkt.PacketID)
-			if pkt.QoS > 0 {
-				c.inFlightCount--
-			}
-			break
-		}
-
-		// Success, remove from queue
-		c.publishQueue = c.publishQueue[1:]
 		toSend = append(toSend, pkt)
 	}
 	return toSend

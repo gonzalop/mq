@@ -458,12 +458,12 @@ func (c *Client) resubscribeAll() {
 			}
 
 			// Store pending operation BEFORE sending packet to avoid race conditions
-			c.pending[pkt.PacketID] = &pendingOp{
+			c.addPendingLocked(pkt.PacketID, &pendingOp{
 				packet:    pkt,
 				token:     newToken(),
 				qos:       1,
 				timestamp: time.Now(),
-			}
+			})
 
 			select {
 			case c.outgoing <- pkt:

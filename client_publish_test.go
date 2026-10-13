@@ -1,6 +1,8 @@
 package mq
 
 import (
+	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -509,5 +511,66 @@ func TestPersistencePendingOrder(t *testing.T) {
 		if id != expectedOrder[i] {
 			t.Errorf("At index %d, expected PacketID %d, got %d", i, expectedOrder[i], id)
 		}
+	}
+}
+
+// recSessionStore records which pending publishes are currently persisted.
+type recSessionStore struct {
+	dummySessionStore
+	mu    sync.Mutex
+	saved map[uint16]bool
+}
+
+func (r *recSessionStore) SavePendingPublish(id uint16, _ *PersistedPublish) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.saved[id] = true
+	return nil
+}
+
+func (r *recSessionStore) DeletePendingPublish(id uint16) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.saved, id)
+	return nil
+}
+
+// Finding 3 (part b): rolling back a queued publish because outgoing is full
+// must not leave it in the session store.
+func TestPublishQueue_FullOutgoingLeavesStoreClean(t *testing.T) {
+	store := &recSessionStore{saved: map[uint16]bool{}}
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.SessionStore = store
+	opts.OutgoingQueueSize = 1
+	c := newTestClient(opts)
+	c.outgoing <- &packets.PingreqPacket{} // fill the channel
+	c.publishQueue = []*publishRequest{{ctx: context.Background(), packet: &packets.PublishPacket{Topic: "t", QoS: 1}, token: newToken()}}
+
+	c.processPublishQueueLocked()
+
+	if len(store.saved) != 0 {
+		t.Errorf("%d orphan pending publish(es) left in the store after rollback", len(store.saved))
+	}
+}
+
+// Finding 3 (part a): when packet IDs are exhausted the token fails, so the
+// request must leave the queue and must never be sent afterwards.
+func TestPublishQueue_FailedPublishIsNotSentLater(t *testing.T) {
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.OutgoingQueueSize = 10
+	c := newTestClient(opts)
+	for i := 1; i <= 65535; i++ {
+		c.pending[uint16(i)] = &pendingOp{token: newToken()}
+	}
+	tok := newToken()
+	c.publishQueue = []*publishRequest{{ctx: context.Background(), packet: &packets.PublishPacket{Topic: "t", QoS: 1}, token: tok}}
+
+	c.processPublishQueueLocked()
+	failed := tok.Error() != nil
+	delete(c.pending, 7) // free one ID
+	sent := c.processPublishQueueLocked()
+
+	if failed && len(sent) > 0 {
+		t.Errorf("token already failed (%v) but the publish was sent later anyway", tok.Error())
 	}
 }

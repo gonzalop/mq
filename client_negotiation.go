@@ -60,6 +60,9 @@ type connectionState struct {
 
 	// serverReference is the server reference URI provided by the server.
 	serverReference string
+
+	// userProperties holds user properties received in CONNACK.
+	userProperties map[string]string
 }
 
 // ServerCapabilities represents the capabilities and limits advertised by the MQTT server.
@@ -111,9 +114,11 @@ func (c *Client) ServerCapabilities() ServerCapabilities {
 // This is only populated for MQTT v5.0 connections.
 // Returns a copy of the map to prevent concurrent modification.
 func (c *Client) ConnectionUserProperties() map[string]string {
-	// We return a copy to avoid race conditions if the map was mutable,
-	// though currently it's set once on connect.
-	return maps.Clone(c.connackUserProperties)
+	state := c.connState.Load()
+	if state == nil || state.userProperties == nil {
+		return nil
+	}
+	return maps.Clone(state.userProperties)
 }
 
 // extractServerCapabilities extracts server capabilities from CONNACK properties.
@@ -212,9 +217,11 @@ func (c *Client) processConnackProperties(connack *packets.ConnackPacket) {
 		if c.opts.TopicAliasMaximum > 0 && connack.Properties.Presence&packets.PresTopicAliasMaximum != 0 {
 			serverLimit := connack.Properties.TopicAliasMaximum
 			if serverLimit > 0 {
+				c.topicAliasesLock.Lock()
 				c.maxAliases = min(serverLimit, c.opts.TopicAliasMaximum)
 				c.topicAliases = make(map[string]uint16)
 				c.nextAliasID = 1
+				c.topicAliasesLock.Unlock()
 				c.opts.Logger.Debug("topic aliases enabled",
 					"client_accepts", c.opts.TopicAliasMaximum,
 					"server_accepts", serverLimit,
@@ -239,24 +246,20 @@ func (c *Client) processConnackProperties(connack *packets.ConnackPacket) {
 			newState.sessionExpiry = c.requestedSessionExpiry
 		}
 
+		if len(connack.Properties.UserProperties) > 0 {
+			newState.userProperties = make(map[string]string, len(connack.Properties.UserProperties))
+			for _, up := range connack.Properties.UserProperties {
+				newState.userProperties[up.Key] = up.Value
+			}
+			c.opts.Logger.Debug("received connack user properties", "count", len(newState.userProperties))
+		}
+
 		// Update the connection state atomically
 		c.connState.Store(newState)
-
-		// Note: User properties are currently kept in Client for convenience,
-		// but they are not accessed concurrently in a way that risks races
-		// during normal operation (only updated here).
-		if len(connack.Properties.UserProperties) > 0 {
-			c.connackUserProperties = make(map[string]string)
-			for _, up := range connack.Properties.UserProperties {
-				c.connackUserProperties[up.Key] = up.Value
-			}
-			c.opts.Logger.Debug("received connack user properties", "count", len(c.connackUserProperties))
-		}
 	} else {
 		// Use default capabilities for older protocols or if no properties sent
 		c.connState.Store(&connectionState{
 			caps: extractServerCapabilities(nil),
 		})
-		c.connackUserProperties = nil
 	}
 }

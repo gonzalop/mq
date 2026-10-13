@@ -99,9 +99,6 @@ type Client struct {
 	// Session expiry interval (MQTT v5.0)
 	requestedSessionExpiry uint32 // Original user request (preserved on reconnect)
 
-	// User Properties received in CONNACK (MQTT v5.0)
-	connackUserProperties map[string]string
-
 	// Stats (atomic)
 	packetsSent     atomic.Uint64
 	packetsReceived atomic.Uint64

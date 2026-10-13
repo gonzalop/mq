@@ -171,8 +171,14 @@ func TestTokenReasonCode_Pubrec(t *testing.T) {
 			packet:    &packets.PublishPacket{PacketID: 1, QoS: 2},
 			timestamp: time.Now(),
 		}
+		c.pendingOrder = []uint16{1}
+		c.inFlightCount = 1
 
 		c.handlePubrec(&packets.PubrecPacket{PacketID: 1, ReasonCode: 0x80, Version: 5})
+
+		if c.inFlightCount != 0 {
+			t.Errorf("expected inFlightCount = 0 after rejected PUBREC, got %d", c.inFlightCount)
+		}
 
 		select {
 		case <-tok.Done():

@@ -96,13 +96,12 @@ func (c *Client) internalPublish(req *publishRequest) {
 		return
 	}
 
-	c.pending[pkt.PacketID] = &pendingOp{
+	c.addPendingLocked(pkt.PacketID, &pendingOp{
 		packet:    pkt,
 		token:     req.token,
 		qos:       pkt.QoS,
 		timestamp: time.Now(),
-	}
-	c.pendingOrder = append(c.pendingOrder, pkt.PacketID)
+	})
 
 	if pkt.QoS > 0 {
 		c.inFlightCount++
@@ -120,13 +119,7 @@ func (c *Client) internalPublish(req *publishRequest) {
 	case c.outgoing <- pkt:
 	case <-req.ctx.Done():
 		c.sessionLock.Lock()
-		delete(c.pending, pkt.PacketID)
-		for i, id := range c.pendingOrder {
-			if id == pkt.PacketID {
-				c.pendingOrder = append(c.pendingOrder[:i], c.pendingOrder[i+1:]...)
-				break
-			}
-		}
+		c.removePending(pkt.PacketID)
 		if pkt.QoS > 0 {
 			c.inFlightCount--
 		}
@@ -153,13 +146,12 @@ func (c *Client) preparePublishLocked(req *publishRequest) (*packets.PublishPack
 		return nil, false
 	}
 
-	c.pending[pkt.PacketID] = &pendingOp{
+	c.addPendingLocked(pkt.PacketID, &pendingOp{
 		packet:    pkt,
 		token:     req.token,
 		qos:       pkt.QoS,
 		timestamp: time.Now(),
-	}
-	c.pendingOrder = append(c.pendingOrder, pkt.PacketID)
+	})
 
 	if pkt.QoS > 0 {
 		c.inFlightCount++
@@ -202,12 +194,11 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 		return
 	}
 
-	c.pending[pkt.PacketID] = &pendingOp{
+	c.addPendingLocked(pkt.PacketID, &pendingOp{
 		packet:    pkt,
 		token:     req.token,
 		timestamp: time.Now(),
-	}
-	c.pendingOrder = append(c.pendingOrder, pkt.PacketID)
+	})
 
 	// Register before receiving SUBACK to avoid racing
 	// with the server since it might sent messages right away
@@ -257,13 +248,7 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 	case c.outgoing <- pkt:
 	case <-req.ctx.Done():
 		c.sessionLock.Lock()
-		delete(c.pending, pkt.PacketID)
-		for i, id := range c.pendingOrder {
-			if id == pkt.PacketID {
-				c.pendingOrder = append(c.pendingOrder[:i], c.pendingOrder[i+1:]...)
-				break
-			}
-		}
+		c.removePending(pkt.PacketID)
 		for _, topic := range pkt.Topics {
 			c.removeSubscriptionLocked(topic)
 		}
@@ -300,12 +285,11 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 		return
 	}
 
-	c.pending[pkt.PacketID] = &pendingOp{
+	c.addPendingLocked(pkt.PacketID, &pendingOp{
 		packet:    pkt,
 		token:     req.token,
 		timestamp: time.Now(),
-	}
-	c.pendingOrder = append(c.pendingOrder, pkt.PacketID)
+	})
 
 	c.opts.Logger.Debug("unsubscribing", "packet_id", pkt.PacketID, "topics", req.topics)
 
@@ -318,13 +302,7 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 	case c.outgoing <- pkt:
 	case <-req.ctx.Done():
 		c.sessionLock.Lock()
-		delete(c.pending, pkt.PacketID)
-		for i, id := range c.pendingOrder {
-			if id == pkt.PacketID {
-				c.pendingOrder = append(c.pendingOrder[:i], c.pendingOrder[i+1:]...)
-				break
-			}
-		}
+		c.removePending(pkt.PacketID)
 		c.sessionLock.Unlock()
 		req.token.complete(req.ctx.Err())
 	case <-c.stop:

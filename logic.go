@@ -51,6 +51,13 @@ func (c *Client) logicLoop() {
 	}
 }
 
+// addPendingLocked adds a pending operation to both pending and pendingOrder.
+// Assumes sessionLock is HELD.
+func (c *Client) addPendingLocked(packetID uint16, op *pendingOp) {
+	c.pending[packetID] = op
+	c.pendingOrder = append(c.pendingOrder, packetID)
+}
+
 // removePending removes a packet ID from both pending and pendingOrder.
 // Assumes sessionLock is HELD.
 func (c *Client) removePending(packetID uint16) {
@@ -372,6 +379,23 @@ func (c *Client) sendAck(p *packets.PublishPacket) {
 	}
 }
 
+// finishPublishLocked completes a pending publish, cleans up tracking and store,
+// and drains the publish queue.
+// Assumes sessionLock is HELD.
+func (c *Client) finishPublishLocked(op *pendingOp, packetID uint16, err error) []packets.Packet {
+	op.token.complete(err)
+	c.removePending(packetID)
+
+	if c.opts.SessionStore != nil {
+		if storeErr := c.opts.SessionStore.DeletePendingPublish(packetID); storeErr != nil {
+			c.opts.Logger.Warn("failed to delete pending publish", "packet_id", packetID, "error", storeErr)
+		}
+	}
+
+	c.inFlightCount--
+	return c.processPublishQueueLocked()
+}
+
 // handleAck processes a PUBACK or PUBCOMP packet.
 func (c *Client) handleAck(packetID uint16, reasonCode uint8) []packets.Packet {
 	c.sessionLock.Lock()
@@ -387,17 +411,7 @@ func (c *Client) handleAck(packetID uint16, reasonCode uint8) []packets.Packet {
 				}
 			}
 		}
-		op.token.complete(err)
-		c.removePending(packetID)
-
-		if c.opts.SessionStore != nil {
-			if err := c.opts.SessionStore.DeletePendingPublish(packetID); err != nil {
-				c.opts.Logger.Warn("failed to delete pending publish", "packet_id", packetID, "error", err)
-			}
-		}
-
-		c.inFlightCount--
-		return c.processPublishQueueLocked()
+		return c.finishPublishLocked(op, packetID, err)
 	}
 	return nil
 }
@@ -412,9 +426,7 @@ func (c *Client) handlePubrec(p *packets.PubrecPacket) []packets.Packet {
 		if c.opts.ProtocolVersion >= ProtocolV50 {
 			op.token.reasonCode = ReasonCode(p.ReasonCode)
 			if p.ReasonCode >= 0x80 {
-				op.token.complete(&MqttError{ReasonCode: ReasonCode(p.ReasonCode)})
-				c.removePending(p.PacketID)
-				return c.processPublishQueueLocked()
+				return c.finishPublishLocked(op, p.PacketID, &MqttError{ReasonCode: ReasonCode(p.ReasonCode)})
 			}
 		}
 

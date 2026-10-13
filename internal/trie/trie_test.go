@@ -111,3 +111,19 @@ func TestTopicTrie_Remove(t *testing.T) {
 		t.Errorf("Expected 0 handlers, got %d", len(got))
 	}
 }
+
+func TestTopicTrie_WildcardSkipsDollarTopics(t *testing.T) {
+	tr := New[int]()
+	tr.Insert("#", 1)
+	tr.Insert("+/x", 2)
+	tr.Insert("$SYS/#", 3)
+	tr.Insert("$SYS/+/version", 4)
+
+	// [MQTT-4.7.2-1]: Root wildcard filters must not match topics starting with '$'
+	if got := tr.Match("$SYS/x"); len(got) != 1 || got[0] != 3 {
+		t.Errorf("expected only $SYS/# (3) to match, got %v", got)
+	}
+	if got := tr.Match("$SYS/broker/version"); len(got) != 2 {
+		t.Errorf("expected $SYS/# and $SYS/+/version to match, got %v", got)
+	}
+}

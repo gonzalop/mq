@@ -480,3 +480,23 @@ func TestHandleAuth_SuccessReset(t *testing.T) {
 		t.Errorf("expected count reset to 0, got %d", client.authExchangeCount.Load())
 	}
 }
+
+// Regression test for Finding 7: Reauthenticate must honor its context when outgoing is full.
+func TestReauthenticate_HonorsContextWhenOutgoingFull(t *testing.T) {
+	opts := defaultOptions("tcp://x")
+	opts.Authenticator = &tokenAuthenticator{token: "test"}
+	c := &Client{opts: opts, outgoing: make(chan packets.Packet, 1), stop: make(chan struct{})}
+	c.connected.Store(true)
+	c.outgoing <- &packets.PingreqPacket{} // full
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- c.Reauthenticate(ctx) }()
+	select {
+	case <-done:
+	case <-time.After(300 * time.Millisecond):
+		<-c.outgoing // unblock the goroutine
+		t.Error("Reauthenticate ignored its context and blocked on a full outgoing channel")
+	}
+}

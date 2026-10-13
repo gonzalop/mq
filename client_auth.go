@@ -41,8 +41,7 @@ import (
 //	        }
 //	    }
 //	}()
-func (c *Client) Reauthenticate(_ context.Context) error {
-	// ctx is currently unused but kept for future use and API consistency.
+func (c *Client) Reauthenticate(ctx context.Context) error {
 	if c.opts.ProtocolVersion < ProtocolV50 {
 		return fmt.Errorf("re-authentication requires MQTT v5.0")
 	}
@@ -73,7 +72,13 @@ func (c *Client) Reauthenticate(_ context.Context) error {
 	}
 
 	c.authExchangeCount.Store(0)
-	c.outgoing <- authPkt
+	select {
+	case c.outgoing <- authPkt:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.stop:
+		return ErrClientDisconnected
+	}
 	c.opts.Logger.Debug("initiated re-authentication", "method", c.opts.Authenticator.Method())
 
 	return nil

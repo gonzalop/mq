@@ -81,9 +81,15 @@ func (t *TopicTrie[T]) Match(topic string) []T {
 }
 
 func (t *TopicTrie[T]) matchRecursive(node *topicNode[T], parts []string, index int, handlers *[]T) {
+	// [MQTT-4.7.2-1]: Wildcard filters starting with '#' or '+' must not match
+	// topic names beginning with '$'.
+	isDollarTopicAtRoot := index == 0 && len(parts) > 0 && len(parts[0]) > 0 && parts[0][0] == '$'
+
 	// 1. Check for multi-level wildcard matches at this level
-	if wildcardNode, ok := node.children["#"]; ok {
-		*handlers = append(*handlers, wildcardNode.handlers...)
+	if !isDollarTopicAtRoot {
+		if wildcardNode, ok := node.children["#"]; ok {
+			*handlers = append(*handlers, wildcardNode.handlers...)
+		}
 	}
 
 	// 2. Check if we've reached the end of the topic
@@ -95,8 +101,10 @@ func (t *TopicTrie[T]) matchRecursive(node *topicNode[T], parts []string, index 
 	part := parts[index]
 
 	// 3. Check for single-level wildcard match
-	if singleWildcardNode, ok := node.children["+"]; ok {
-		t.matchRecursive(singleWildcardNode, parts, index+1, handlers)
+	if !isDollarTopicAtRoot {
+		if singleWildcardNode, ok := node.children["+"]; ok {
+			t.matchRecursive(singleWildcardNode, parts, index+1, handlers)
+		}
 	}
 
 	// 4. Check for exact match

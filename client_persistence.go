@@ -43,8 +43,7 @@ func (c *Client) loadSessionState() error {
 				c.inFlightCount++
 			}
 		}
-		c.pending[id] = op
-		c.pendingOrder = append(c.pendingOrder, id)
+		c.addPendingLocked(id, op)
 	}
 
 	// 2. Load Subscriptions
