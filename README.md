@@ -100,6 +100,8 @@ The library is built around a non-blocking logic loop and a high-performance Rad
 - [Examples Index](examples/README.md)
 - [Client Configuration Best Practices](docs/client_configuration_best_practices.md)
 - [Auth Patterns](docs/auth.md)
+- [Design Patterns](docs/patterns.md)
+- [Observability & Metrics](docs/observability.md)
 - [Interceptors](docs/interceptors.md)
 - [Persistence](docs/persistence.md)
 - [Troubleshooting](docs/troubleshooting.md)

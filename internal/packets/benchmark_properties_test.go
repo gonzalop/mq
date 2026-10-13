@@ -227,4 +227,3 @@ func BenchmarkFixedHeader_WriteTo_Fallback(b *testing.B) {
 		}
 	}
 }
-
