@@ -317,9 +317,9 @@ func (c *Client) Unsubscribe(ctx context.Context, topic string, opts ...Unsubscr
 // This is called automatically by the reconnect loop.
 func (c *Client) resubscribeAll() {
 	c.sessionLock.Lock()
-	defer c.sessionLock.Unlock()
 
 	if len(c.subscriptions) == 0 {
+		c.sessionLock.Unlock()
 		return
 	}
 
@@ -335,6 +335,8 @@ func (c *Client) resubscribeAll() {
 	// Batch subscriptions to avoid exceeding server limits
 	// Most servers limit SUBSCRIBE packets to 100-200 topics
 	const batchSize = 100
+
+	var packetsToSend []*packets.SubscribePacket
 
 	for i := 0; i < len(topics); i += batchSize {
 		end := min(i+batchSize, len(topics))
@@ -421,6 +423,7 @@ func (c *Client) resubscribeAll() {
 			packetID := c.nextID()
 			if packetID == 0 {
 				c.opts.Logger.Error("failed to resubscribe: no packet IDs available")
+				c.sessionLock.Unlock()
 				return
 			}
 
@@ -465,17 +468,21 @@ func (c *Client) resubscribeAll() {
 				timestamp: time.Now(),
 			})
 
-			select {
-			case c.outgoing <- pkt:
-			case <-c.stop:
-				return
-			}
-
-			c.opts.Logger.Debug("resubscribe packet sent",
-				"packet_id", pkt.PacketID,
-				"sub_id", g.id,
-				"topics_count", len(g.topics))
+			packetsToSend = append(packetsToSend, pkt)
 		}
+	}
+	c.sessionLock.Unlock()
+
+	for _, pkt := range packetsToSend {
+		select {
+		case c.outgoing <- pkt:
+		case <-c.stop:
+			return
+		}
+
+		c.opts.Logger.Debug("resubscribe packet sent",
+			"packet_id", pkt.PacketID,
+			"topics_count", len(pkt.Topics))
 	}
 }
 

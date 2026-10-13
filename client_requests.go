@@ -292,20 +292,24 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 	})
 
 	c.opts.Logger.Debug("unsubscribing", "packet_id", pkt.PacketID, "topics", req.topics)
-
-	for _, topic := range req.topics {
-		c.removeSubscriptionLocked(topic)
-	}
-
 	c.sessionLock.Unlock()
+
 	select {
 	case c.outgoing <- pkt:
+		c.sessionLock.Lock()
+		for _, topic := range req.topics {
+			c.removeSubscriptionLocked(topic)
+		}
+		c.sessionLock.Unlock()
 	case <-req.ctx.Done():
 		c.sessionLock.Lock()
 		c.removePending(pkt.PacketID)
 		c.sessionLock.Unlock()
 		req.token.complete(req.ctx.Err())
 	case <-c.stop:
+		c.sessionLock.Lock()
+		c.removePending(pkt.PacketID)
+		c.sessionLock.Unlock()
 		req.token.complete(fmt.Errorf("client stopped"))
 	}
 }

@@ -96,9 +96,11 @@ func (c *Client) handleAuth(p *packets.AuthPacket) []packets.Packet {
 	// Reset counter on success
 	if p.ReasonCode == uint8(ReasonCodeSuccess) {
 		c.authExchangeCount.Store(0)
-		if err := c.opts.Authenticator.Complete(); err != nil {
-			c.opts.Logger.Warn("authenticator completion failed", "error", err)
-		}
+		go func() {
+			if err := c.opts.Authenticator.Complete(); err != nil {
+				c.opts.Logger.Warn("authenticator completion failed", "error", err)
+			}
+		}()
 		return nil
 	}
 
@@ -124,23 +126,29 @@ func (c *Client) handleAuth(p *packets.AuthPacket) []packets.Packet {
 		}
 	}
 
-	responseData, err := c.opts.Authenticator.HandleChallenge(challengeData, p.ReasonCode)
-	if err != nil {
-		c.opts.Logger.Error("authentication challenge failed", "error", err)
-		// Note: We can't use disconnectWithReason here because we're in logicLoop
-		return nil
-	}
+	go func() {
+		responseData, err := c.opts.Authenticator.HandleChallenge(challengeData, p.ReasonCode)
+		if err != nil {
+			c.opts.Logger.Error("authentication challenge failed", "error", err)
+			return
+		}
 
-	// Send AUTH response
-	authResp := &packets.AuthPacket{
-		ReasonCode: packets.AuthReasonContinue, // Continue authentication
-		Properties: &packets.Properties{
-			AuthenticationMethod: c.opts.Authenticator.Method(),
-			AuthenticationData:   responseData,
-			Presence:             packets.PresAuthenticationMethod,
-		},
-		Version: c.opts.ProtocolVersion,
-	}
+		// Send AUTH response
+		authResp := &packets.AuthPacket{
+			ReasonCode: packets.AuthReasonContinue, // Continue authentication
+			Properties: &packets.Properties{
+				AuthenticationMethod: c.opts.Authenticator.Method(),
+				AuthenticationData:   responseData,
+				Presence:             packets.PresAuthenticationMethod,
+			},
+			Version: c.opts.ProtocolVersion,
+		}
 
-	return []packets.Packet{authResp}
+		select {
+		case c.outgoing <- authResp:
+		case <-c.stop:
+		}
+	}()
+
+	return nil
 }

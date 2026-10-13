@@ -122,8 +122,6 @@ func (c *Client) resetAllTopicAliases() {
 	c.topicAliasesLock.Unlock()
 
 	c.sessionLock.Lock()
-	defer c.sessionLock.Unlock()
-
 	// 1. Reset pending packets (QoS > 0)
 	for _, op := range c.pending {
 		if pub, ok := op.packet.(*packets.PublishPacket); ok {
@@ -135,9 +133,10 @@ func (c *Client) resetAllTopicAliases() {
 	for _, req := range c.publishQueue {
 		c.resetPacketTopicAlias(req.packet)
 	}
+	c.sessionLock.Unlock()
 
 	// 3. Reset outgoing channel (mostly QoS 0)
-	// We drain and re-queue to ensure no stale aliases remain.
+	// We drain and re-queue without holding sessionLock.
 	count := len(c.outgoing)
 	for range count {
 		select {
@@ -145,9 +144,11 @@ func (c *Client) resetAllTopicAliases() {
 			if pub, ok := pkt.(*packets.PublishPacket); ok {
 				c.resetPacketTopicAlias(pub)
 			}
-			// Re-queue. Since we are holding sessionLock, logicLoop won't
-			// be pushing more packets that could fill the channel and block us.
-			c.outgoing <- pkt
+			select {
+			case c.outgoing <- pkt:
+			default:
+				// Channel is full; packet is preserved in pending/store for QoS > 0
+			}
 		default:
 			// Channel was drained by something else
 		}

@@ -568,3 +568,50 @@ func TestResubscribeAll_TrackedInPendingOrder(t *testing.T) {
 		t.Errorf("pending=%d pendingOrder=%d, want 1/1", len(c.pending), len(c.pendingOrder))
 	}
 }
+
+// Regression test for Finding 5: resubscribeAll must not hold sessionLock while blocked on a full
+// outgoing channel.
+func TestResubscribeAll_DoesNotBlockUnderLock(t *testing.T) {
+	c := &Client{trie: newTopicTrie(), pending: map[uint16]*pendingOp{}, subscriptions: map[string]subscriptionEntry{},
+		opts: defaultOptions("tcp://x"), outgoing: make(chan packets.Packet, 1), stop: make(chan struct{})}
+	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
+	c.subscriptions["a/b"] = subscriptionEntry{qos: 1}
+	c.outgoing <- &packets.PingreqPacket{} // full, nobody drains
+	defer close(c.stop)
+
+	go c.resubscribeAll()
+	time.Sleep(50 * time.Millisecond)
+
+	locked := make(chan struct{})
+	go func() {
+		c.sessionLock.Lock()
+		c.sessionLock.Unlock()
+		close(locked)
+	}()
+	select {
+	case <-locked:
+	case <-time.After(200 * time.Millisecond):
+		t.Error("sessionLock held while resubscribeAll is blocked sending to outgoing")
+	}
+}
+
+// Regression test for Finding 9: a cancelled Unsubscribe that never reached the network must keep
+// the local subscription.
+func TestUnsubscribe_CancelledKeepsHandler(t *testing.T) {
+	c := &Client{trie: newTopicTrie(), pending: map[uint16]*pendingOp{}, subscriptions: map[string]subscriptionEntry{},
+		opts: defaultOptions("tcp://x"), outgoing: make(chan packets.Packet, 1), stop: make(chan struct{})}
+	c.addSubscriptionLocked("a/b", subscriptionEntry{handler: func(*Client, Message) {}, qos: 1})
+	c.outgoing <- &packets.PingreqPacket{} // full, so the send cannot happen
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	tok := newToken()
+	c.internalUnsubscribe(&unsubscribeRequest{ctx: ctx, packet: &packets.UnsubscribePacket{Topics: []string{"a/b"}}, topics: []string{"a/b"}, token: tok})
+
+	if tok.Error() == nil {
+		t.Fatal("expected the unsubscribe token to fail with the context error")
+	}
+	if _, ok := c.subscriptions["a/b"]; !ok || len(c.trie.Match("a/b")) == 0 {
+		t.Error("local subscription removed although UNSUBSCRIBE was never sent")
+	}
+}

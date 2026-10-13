@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 // Simple token authenticator for testing
 type tokenAuthenticator struct {
 	token          string
+	mu             sync.Mutex
 	challengeCount int
 }
 
@@ -26,8 +28,16 @@ func (t *tokenAuthenticator) InitialData() ([]byte, error) {
 }
 
 func (t *tokenAuthenticator) HandleChallenge(_ []byte, _ uint8) ([]byte, error) {
+	t.mu.Lock()
 	t.challengeCount++
+	t.mu.Unlock()
 	return []byte("challenge-response"), nil
+}
+
+func (t *tokenAuthenticator) getChallengeCount() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.challengeCount
 }
 
 func (t *tokenAuthenticator) Complete() error {
@@ -85,9 +95,7 @@ func TestHandleAuth(t *testing.T) {
 		Version: 5,
 	}
 
-	for _, p := range client.handleAuth(authPkt) {
-		client.outgoing <- p
-	}
+	_ = client.handleAuth(authPkt)
 
 	// Verify response was sent
 	select {
@@ -105,13 +113,13 @@ func TestHandleAuth(t *testing.T) {
 			t.Errorf("expected 'challenge-response', got %s", authResp.Properties.AuthenticationData)
 		}
 
-	default:
-		t.Error("expected AUTH response to be sent")
+	case <-time.After(time.Second):
+		t.Fatal("expected AUTH response to be sent")
 	}
 
 	// Verify HandleChallenge was called
-	if auth.challengeCount != 1 {
-		t.Errorf("expected 1 challenge, got %d", auth.challengeCount)
+	if auth.getChallengeCount() != 1 {
+		t.Errorf("expected 1 challenge, got %d", auth.getChallengeCount())
 	}
 }
 
@@ -435,12 +443,22 @@ func TestHandleAuth_LimitEnforcement(t *testing.T) {
 	// First challenge
 	authPkt := &packets.AuthPacket{ReasonCode: packets.AuthReasonContinue, Version: 5}
 	_ = client.handleAuth(authPkt)
+	select {
+	case <-client.outgoing:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for auth response")
+	}
 	if client.authExchangeCount.Load() != 1 {
 		t.Errorf("expected count 1, got %d", client.authExchangeCount.Load())
 	}
 
 	// Second challenge
 	_ = client.handleAuth(authPkt)
+	select {
+	case <-client.outgoing:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for auth response")
+	}
 	if client.authExchangeCount.Load() != 2 {
 		t.Errorf("expected count 2, got %d", client.authExchangeCount.Load())
 	}
@@ -498,5 +516,38 @@ func TestReauthenticate_HonorsContextWhenOutgoingFull(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 		<-c.outgoing // unblock the goroutine
 		t.Error("Reauthenticate ignored its context and blocked on a full outgoing channel")
+	}
+}
+
+type blockingAuth struct{ block chan struct{} }
+
+func (a *blockingAuth) Method() string               { return "TEST" }
+func (a *blockingAuth) InitialData() ([]byte, error) { return nil, nil }
+func (a *blockingAuth) Complete() error              { return nil }
+func (a *blockingAuth) HandleChallenge(_ []byte, _ uint8) ([]byte, error) {
+	if a.block != nil {
+		<-a.block
+	}
+	return nil, nil
+}
+
+// Regression test for Finding 8: a slow Authenticator.HandleChallenge must not stall handleIncoming
+// (and therefore the logic loop).
+func TestAuth_ChallengeDoesNotBlockLogicLoop(t *testing.T) {
+	opts := defaultOptions("tcp://x")
+	auth := &blockingAuth{block: make(chan struct{})}
+	defer close(auth.block)
+	opts.Authenticator = auth
+	c := &Client{opts: opts, outgoing: make(chan packets.Packet, 10), stop: make(chan struct{})}
+
+	done := make(chan struct{})
+	go func() {
+		c.handleIncoming(&packets.AuthPacket{ReasonCode: packets.AuthReasonContinue, Properties: &packets.Properties{}})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(200 * time.Millisecond):
+		t.Error("handleIncoming blocked on a slow Authenticator.HandleChallenge")
 	}
 }

@@ -81,7 +81,7 @@ Subscription matching is performed using a high-performance **Radix Tree** (`top
 
 ## Deadlock Prevention
 
--   **No Blocking IO under Lock**: We never perform network I/O or disk I/O (via `SessionStore`) while holding a mutex.
+-   **No Blocking Network I/O under Lock**: We never perform network I/O while holding a mutex. Calls to `SessionStore` run under `sessionLock` by design to preserve strict ordering of save/delete operations; `AsyncStore` is provided for slow or remote storage backends.
 -   **Async Callbacks**: All user callbacks are invoked in separate goroutines.
 -   **Lock Ordering**: The library maintains a strict hierarchy to prevent circular waits.
 
