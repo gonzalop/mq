@@ -243,10 +243,16 @@ func (c *Client) finalizeConnection(connack *packets.ConnackPacket) {
 			c.opts.OnConnect(c)
 		}()
 	}
+	connDone := make(chan struct{})
+	c.connLock.Lock()
+	c.connDone = connDone
+	conn := c.conn
+	c.connLock.Unlock()
+
 	c.wg.Add(2)
 	c.activeLoops.Add(2)
-	go c.readLoop()
-	go c.writeLoop()
+	go c.runReadLoop(conn)
+	go c.runWriteLoop(conn, connDone, c.opts.KeepAlive)
 
 	// A clean session drops any state the broker kept for this client, so the
 	// subscriptions registered through WithSubscription must be sent on every

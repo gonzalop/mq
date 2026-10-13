@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -363,5 +364,80 @@ func TestClient_ConnectedAtAndUptime(t *testing.T) {
 	}
 	if client.Uptime() != 0 {
 		t.Errorf("expected 0 Uptime after disconnect, got %v", client.Uptime())
+	}
+}
+
+// Regression test for Finding 1: after a server-side drop and reconnect, only one writeLoop must
+// exist and the stale one must not kill the new connection.
+func TestReconnect_NoStaleWriteLoop(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	var connN atomic.Int32
+	conn2Closed := make(chan struct{})
+	var conn2Pubs atomic.Int32
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			n := connN.Add(1)
+			go func(c net.Conn, n int32) {
+				defer c.Close()
+				if _, err := packets.ReadPacket(c, ProtocolV50, 0); err != nil {
+					return
+				}
+				_, _ = (&packets.ConnackPacket{}).WriteTo(c)
+				if n == 1 {
+					time.Sleep(50 * time.Millisecond)
+					return // drop the first connection
+				}
+				for {
+					p, err := packets.ReadPacket(c, ProtocolV50, 0)
+					if err != nil {
+						close(conn2Closed)
+						return
+					}
+					if _, ok := p.(*packets.PublishPacket); ok {
+						conn2Pubs.Add(1)
+					}
+				}
+			}(c, n)
+		}
+	}()
+
+	c, err := Dial("tcp://"+ln.Addr().String(),
+		WithClientID("finding1"),
+		WithReconnectBackoff(10*time.Millisecond, 10*time.Millisecond, false),
+		WithMinStableConnectionDuration(-1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect(context.Background())
+
+	deadline := time.Now().Add(2 * time.Second)
+	for connN.Load() < 2 || !c.IsConnected() {
+		if time.Now().After(deadline) {
+			t.Fatal("client did not reconnect")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	for range 20 {
+		c.Publish(context.Background(), "a/b", []byte("x"))
+	}
+	select {
+	case <-conn2Closed:
+		t.Errorf("new connection was closed by the client after publishing; server got %d/20 publishes", conn2Pubs.Load())
+	case <-time.After(300 * time.Millisecond):
+	}
+	if n := c.activeLoops.Load(); n != 4 {
+		t.Errorf("activeLoops = %d after reconnect, want 4 (logic, reconnect, read, write)", n)
 	}
 }

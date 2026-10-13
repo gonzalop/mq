@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"net"
 	"time"
 
 	"github.com/gonzalop/mq/internal/packets"
@@ -13,13 +14,16 @@ import (
 
 // readLoop continuously reads packets from the network.
 func (c *Client) readLoop() {
-	defer c.wg.Done()
-	defer c.activeLoops.Add(-1)
-	defer c.handleDisconnect()
-
 	c.connLock.RLock()
 	conn := c.conn
 	c.connLock.RUnlock()
+	c.runReadLoop(conn)
+}
+
+func (c *Client) runReadLoop(conn net.Conn) {
+	defer c.wg.Done()
+	defer c.activeLoops.Add(-1)
+	defer c.handleDisconnect(conn)
 
 	if conn == nil {
 		return
@@ -63,26 +67,33 @@ func (c *Client) readLoop() {
 
 // writeLoop continuously writes packets to the network and handles keepalive.
 func (c *Client) writeLoop() {
-	defer c.wg.Done()
-	defer c.activeLoops.Add(-1)
-
-	var ticker *time.Ticker
-	var tickerCh <-chan time.Time
-
-	if c.opts.KeepAlive > 0 {
-		// Ticker runs 4 times per keepalive interval for better resolution
-		ticker = time.NewTicker(c.opts.KeepAlive / 4)
-		defer ticker.Stop()
-		tickerCh = ticker.C
-	}
-
 	c.connLock.RLock()
 	conn := c.conn
+	connDone := c.connDone
 	c.connLock.RUnlock()
+	if connDone == nil {
+		connDone = make(chan struct{})
+	}
+	c.runWriteLoop(conn, connDone, c.opts.KeepAlive)
+}
+
+func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive time.Duration) {
+	defer c.wg.Done()
+	defer c.activeLoops.Add(-1)
 
 	if conn == nil {
 		c.opts.Logger.Debug("writeLoop started but not connected")
 		return
+	}
+
+	var ticker *time.Ticker
+	var tickerCh <-chan time.Time
+
+	if keepAlive > 0 {
+		// Ticker runs 4 times per keepalive interval for better resolution
+		ticker = time.NewTicker(keepAlive / 4)
+		defer ticker.Stop()
+		tickerCh = ticker.C
 	}
 
 	cw := &countingWriter{Writer: conn, c: c}
@@ -103,10 +114,14 @@ func (c *Client) writeLoop() {
 			if pkt == nil {
 				continue // This can happen in quick disconnect/reconnect
 			}
+			hasDisconnect := false
+			if _, ok := pkt.(*packets.DisconnectPacket); ok {
+				hasDisconnect = true
+			}
 			c.opts.Logger.Debug("sending packet", "type", packets.PacketNames[pkt.Type()])
 			if _, err := pkt.WriteTo(bw); err != nil {
 				c.opts.Logger.Debug("write error, disconnecting", "error", err)
-				c.handleDisconnect()
+				c.handleDisconnect(conn)
 				return
 			}
 			c.packetsSent.Add(1)
@@ -119,10 +134,13 @@ func (c *Client) writeLoop() {
 				if pkt == nil {
 					continue // This can happen in quick disconnect/reconnect
 				}
+				if _, ok := pkt.(*packets.DisconnectPacket); ok {
+					hasDisconnect = true
+				}
 				c.opts.Logger.Debug("sending packet (batch)", "type", packets.PacketNames[pkt.Type()])
 				if _, err := pkt.WriteTo(bw); err != nil {
 					c.opts.Logger.Debug("write error (batch), disconnecting", "error", err)
-					c.handleDisconnect()
+					c.handleDisconnect(conn)
 					return
 				}
 				c.packetsSent.Add(1)
@@ -132,7 +150,17 @@ func (c *Client) writeLoop() {
 			// Flush after batch
 			if err := bw.Flush(); err != nil {
 				c.opts.Logger.Debug("flush error, disconnecting", "error", err)
-				c.handleDisconnect()
+				c.handleDisconnect(conn)
+				return
+			}
+
+			if hasDisconnect {
+				if c.disconnectFlushed != nil {
+					select {
+					case c.disconnectFlushed <- struct{}{}:
+					default:
+					}
+				}
 				return
 			}
 
@@ -146,12 +174,12 @@ func (c *Client) writeLoop() {
 
 		case <-tickerCh:
 			// Check if we've received anything recently (1.5x keepalive timeout)
-			timeout := c.opts.KeepAlive + c.opts.KeepAlive/2 // 1.5x keepalive
+			timeout := keepAlive + keepAlive/2 // 1.5x keepalive
 			if time.Since(lastReceived) >= timeout {
 				c.opts.Logger.Debug("keepalive timeout, no packets received",
 					"timeout", timeout,
 					"last_received", time.Since(lastReceived))
-				c.handleDisconnect()
+				c.handleDisconnect(conn)
 				return
 			}
 
@@ -159,7 +187,7 @@ func (c *Client) writeLoop() {
 			// OR if we haven't received anything for 3/4 of the keepalive interval.
 			// This ensures we actively probe the connection even when publishing regularly.
 			// Only send if no PINGREQ is currently pending (waiting for PINGRESP).
-			threshold := c.opts.KeepAlive - (c.opts.KeepAlive / 4)
+			threshold := keepAlive - (keepAlive / 4)
 			timeSinceSent := time.Since(lastSent)
 			timeSinceReceived := time.Since(lastReceived)
 
@@ -178,35 +206,67 @@ func (c *Client) writeLoop() {
 
 				ping := &packets.PingreqPacket{}
 				if _, err := ping.WriteTo(bw); err != nil {
-					c.handleDisconnect()
+					c.handleDisconnect(conn)
 					return
 				}
 				if err := bw.Flush(); err != nil {
-					c.handleDisconnect()
+					c.handleDisconnect(conn)
 					return
 				}
 				lastSent = time.Now()
 				c.pingPending.Store(true)
 			}
 
+		case <-connDone:
+			c.opts.Logger.Debug("writeLoop stopped: connection closed")
+			return
+
 		case <-c.stop:
 			c.opts.Logger.Debug("writeLoop stopped")
-			return
+			// Flush any pending packets (such as DisconnectPacket) before exiting
+			for {
+				select {
+				case pkt := <-c.outgoing:
+					if pkt == nil {
+						continue
+					}
+					if _, err := pkt.WriteTo(bw); err != nil {
+						return
+					}
+					c.packetsSent.Add(1)
+					if _, ok := pkt.(*packets.DisconnectPacket); ok {
+						_ = bw.Flush()
+						if c.disconnectFlushed != nil {
+							select {
+							case c.disconnectFlushed <- struct{}{}:
+							default:
+							}
+						}
+						return
+					}
+				default:
+					_ = bw.Flush()
+					return
+				}
+			}
 		}
 	}
 }
 
-// handleDisconnect handles connection loss.
-func (c *Client) handleDisconnect() {
-	if !c.connected.Swap(false) {
-		return // Already disconnected
+// handleDisconnect handles connection loss for the given connection.
+func (c *Client) handleDisconnect(conn net.Conn) {
+	c.connLock.Lock()
+	if c.conn != conn || conn == nil {
+		c.connLock.Unlock()
+		return // Stale or already disconnected
 	}
 
-	c.connLock.Lock()
-	if c.conn != nil {
-		c.conn.Close()
-		c.conn = nil
+	c.conn = nil
+	if c.connDone != nil {
+		close(c.connDone)
+		c.connDone = nil
 	}
+	conn.Close()
 	c.pingPending.Store(false)
 	select {
 	case <-c.pingPendingCh:
@@ -219,6 +279,10 @@ func (c *Client) handleDisconnect() {
 		c.lastDisconnectReason = nil // Clear it after use
 	}
 	c.connLock.Unlock()
+
+	if !c.connected.Swap(false) {
+		return // Already disconnected
+	}
 
 	if c.opts.OnConnectionLost != nil {
 		go func() {

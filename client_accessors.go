@@ -51,6 +51,11 @@ func (c *Client) Disconnect(ctx context.Context, opts ...DisconnectOption) error
 func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, props *Properties, block bool) error {
 	c.opts.Logger.Debug("disconnecting from server", "reason_code", reasonCode)
 
+	c.connLock.RLock()
+	conn := c.conn
+	connDone := c.connDone
+	c.connLock.RUnlock()
+
 	// A graceful DISCONNECT only makes sense while the connection is up: it is
 	// what suppresses the will on the broker. When a reconnect is in progress
 	// there is nothing to send, but the loops below must still be stopped.
@@ -60,14 +65,36 @@ func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, pro
 			ReasonCode: reasonCode,
 			Properties: toInternalProperties(props),
 		}
-		select {
-		case c.outgoing <- disconnectPkt:
-		case <-time.After(100 * time.Millisecond):
-			// Timeout sending disconnect, continue anyway
-		}
 
-		// Give it a moment to send
-		time.Sleep(100 * time.Millisecond)
+		if conn != nil {
+			if c.disconnectFlushed != nil {
+				select {
+				case <-c.disconnectFlushed:
+				default:
+				}
+			}
+
+			// Send DISCONNECT packet to outgoing and wait for writeLoop to flush it
+			select {
+			case c.outgoing <- disconnectPkt:
+				if c.disconnectFlushed != nil {
+					select {
+					case <-c.disconnectFlushed:
+					case <-connDone:
+					case <-ctx.Done():
+					case <-time.After(50 * time.Millisecond):
+					}
+				}
+			case <-connDone:
+			case <-ctx.Done():
+			case <-time.After(50 * time.Millisecond):
+			}
+		} else if c.outgoing != nil {
+			select {
+			case c.outgoing <- disconnectPkt:
+			default:
+			}
+		}
 	}
 
 	// Stop all goroutines. Idempotent and safe to call while a reconnect is in
@@ -78,11 +105,15 @@ func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, pro
 		c.stopOnce.Do(func() { close(c.stop) })
 	}
 
-	// Close connection to unblock readLoop
+	// Close connection and signal connDone to unblock readLoop and writeLoop
 	c.connLock.Lock()
 	if c.conn != nil {
 		c.conn.Close()
 		c.conn = nil
+	}
+	if c.connDone != nil {
+		close(c.connDone)
+		c.connDone = nil
 	}
 	c.connLock.Unlock()
 

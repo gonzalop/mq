@@ -3,6 +3,9 @@ package mq
 import (
 	"context"
 	"testing"
+	"time"
+
+	"github.com/gonzalop/mq/internal/packets"
 )
 
 // TestDisconnectWhenNotConnectedStopsLoops checks that Disconnect still stops
@@ -33,5 +36,19 @@ func TestDisconnectWhenNotConnectedStopsLoops(t *testing.T) {
 	// Idempotent: a second call must not panic on a double close.
 	if err := c.disconnectWithReason(context.Background(), uint8(ReasonCodeNormalDisconnect), nil, true); err != nil {
 		t.Fatalf("second Disconnect returned error: %v", err)
+	}
+}
+
+// Regression test for Finding 11: a graceful Disconnect should not take a fixed 100ms+ when the
+// DISCONNECT can be written immediately.
+func TestDisconnect_NoFixedSleep(t *testing.T) {
+	opts := defaultOptions("tcp://x")
+	c := &Client{opts: opts, outgoing: make(chan packets.Packet, 10), stop: make(chan struct{})}
+	c.connected.Store(true)
+
+	start := time.Now()
+	_ = c.disconnectWithReason(context.Background(), 0, nil, false)
+	if d := time.Since(start); d >= 100*time.Millisecond {
+		t.Errorf("disconnect took %v; it sleeps a fixed 100ms", d)
 	}
 }

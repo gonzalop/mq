@@ -29,15 +29,17 @@ type Client struct {
 
 	// Connection
 	conn     net.Conn
+	connDone chan struct{} // Closed when conn is disconnected
 	connLock sync.RWMutex
 
 	// Channels for goroutine communication
-	outgoing       chan packets.Packet // Packets to send
-	incoming       chan packets.Packet // Packets received
-	packetReceived chan struct{}       // Signal when packet received (for keepalive)
-	pingPendingCh  chan struct{}       // Signal when PINGRESP received
-	stop           chan struct{}       // Shutdown signal
-	pingPending    atomic.Bool         // True if PINGREQ sent but no PINGRESP received yet
+	outgoing          chan packets.Packet // Packets to send
+	incoming          chan packets.Packet // Packets received
+	packetReceived    chan struct{}       // Signal when packet received (for keepalive)
+	pingPendingCh     chan struct{}       // Signal when PINGRESP received
+	stop              chan struct{}       // Shutdown signal
+	disconnectFlushed chan struct{}       // Signal when DISCONNECT packet has been flushed
+	pingPending       atomic.Bool         // True if PINGREQ sent but no PINGRESP received yet
 
 	// Session State Lock guards:
 	// - pending
@@ -193,15 +195,16 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 		outgoing: make(chan packets.Packet, options.OutgoingQueueSize),
 		incoming: make(chan packets.Packet, options.IncomingQueueSize),
 
-		packetReceived:  make(chan struct{}, 1),
-		pingPendingCh:   make(chan struct{}, 1),
-		stop:            make(chan struct{}),
-		pending:         make(map[uint16]*pendingOp),
-		subscriptions:   make(map[string]subscriptionEntry),
-		receivedAliases: make(map[uint16]string),
-		receivedQoS2:    make(map[uint16]struct{}),
-		inboundUnacked:  make(map[uint16]struct{}),
-		disconnected:    make(chan struct{}, 1),
+		packetReceived:    make(chan struct{}, 1),
+		pingPendingCh:     make(chan struct{}, 1),
+		stop:              make(chan struct{}),
+		disconnectFlushed: make(chan struct{}, 1),
+		pending:           make(map[uint16]*pendingOp),
+		subscriptions:     make(map[string]subscriptionEntry),
+		receivedAliases:   make(map[uint16]string),
+		receivedQoS2:      make(map[uint16]struct{}),
+		inboundUnacked:    make(map[uint16]struct{}),
+		disconnected:      make(chan struct{}, 1),
 	}
 	c.connState.Store(&connectionState{
 		caps: extractServerCapabilities(nil),
