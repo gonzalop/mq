@@ -214,7 +214,20 @@ func (c *Client) validateConnack(conn net.Conn, connack *packets.ConnackPacket) 
 }
 
 // finalizeConnection processes CONNACK properties and starts background loops.
-func (c *Client) finalizeConnection(connack *packets.ConnackPacket) {
+// It fails if Disconnect stopped the client while the connection was being
+// established: the new connection is then closed and nothing is started.
+func (c *Client) finalizeConnection(connack *packets.ConnackPacket) error {
+	if c.stopped() {
+		c.connLock.Lock()
+		conn := c.conn
+		c.conn = nil
+		c.connLock.Unlock()
+		if conn != nil {
+			conn.Close()
+		}
+		return ErrClientDisconnected
+	}
+
 	// Taken first, before resubscribeAll can add new SUBSCRIBEs to pending.
 	c.sessionLock.Lock()
 	resend := c.takeResendLocked()
@@ -279,6 +292,7 @@ resendLoop:
 	}
 
 	c.opts.Logger.Debug("client started", "client_id", c.opts.ClientID)
+	return nil
 }
 
 // prepareConnectionState resets internal state before a connection attempt.

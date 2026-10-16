@@ -362,17 +362,26 @@ func (c *Client) connect(ctx context.Context) error {
 	c.lastDisconnectReason = nil
 	c.connLock.Unlock()
 
+	// Cancelling ctx (its timeout, or Disconnect during a reconnect) must
+	// interrupt the handshake: its reads only honour the context's deadline.
+	stopClose := context.AfterFunc(ctx, func() { conn.Close() })
+
 	cr := &countingReader{Reader: conn, c: c}
 	cw := &countingWriter{Writer: conn, c: c}
 
 	// 1. Send CONNECT
 	if err := c.sendConnectPacket(cw); err != nil {
+		stopClose()
 		conn.Close()
 		return err
 	}
 
 	// 2. Handshake (CONNACK / AUTH)
 	connack, err := c.performHandshake(ctx, cr, cw)
+	if !stopClose() && err == nil {
+		// ctx was cancelled and conn closed right as the handshake finished.
+		err = fmt.Errorf("connect cancelled: %w", ctx.Err())
+	}
 	if err != nil {
 		return err
 	}
@@ -383,9 +392,7 @@ func (c *Client) connect(ctx context.Context) error {
 	}
 
 	// 4. Initialize Session
-	c.finalizeConnection(connack)
-
-	return nil
+	return c.finalizeConnection(connack)
 }
 
 type countingReader struct {

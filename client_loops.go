@@ -423,7 +423,15 @@ func (c *Client) reconnectLoop() {
 			c.reconnectCount.Add(1)
 
 			// Attempt to reconnect
+			// Disconnect cancels an attempt in progress.
 			ctx, cancel := context.WithTimeout(context.Background(), c.opts.ConnectTimeout)
+			go func() {
+				select {
+				case <-c.stop:
+					cancel()
+				case <-ctx.Done():
+				}
+			}()
 			err := c.connect(ctx)
 			cancel()
 

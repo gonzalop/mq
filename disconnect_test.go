@@ -196,3 +196,94 @@ func TestDisconnect_StoreCloseRespectsContext(t *testing.T) {
 		t.Errorf("Disconnect() = %v, want a session store flushing error", err)
 	}
 }
+
+// TestDisconnectDuringReconnect checks that Disconnect called while a
+// reconnect attempt is dialing stops that attempt: when the dial completes
+// afterwards, the new connection is closed, OnConnect does not run, and
+// Disconnect returns without timing out.
+func TestDisconnectDuringReconnect(t *testing.T) {
+	var dials, connects atomic.Int32
+	dialing := make(chan struct{})
+	release := make(chan struct{})
+	secondClosed := make(chan struct{})
+
+	serve := func(srv net.Conn, dropAfterConnack bool) {
+		defer srv.Close()
+		if _, err := packets.ReadPacket(srv, 4, 0); err != nil {
+			return
+		}
+		if _, err := (&packets.ConnackPacket{ReturnCode: packets.ConnAccepted}).WriteTo(srv); err != nil {
+			return
+		}
+		if dropAfterConnack {
+			return
+		}
+		for {
+			if _, err := packets.ReadPacket(srv, 4, 0); err != nil {
+				return
+			}
+		}
+	}
+
+	dialer := DialFunc(func(context.Context, string, string) (net.Conn, error) {
+		cli, srv := net.Pipe()
+		if dials.Add(1) == 1 {
+			go serve(srv, true) // drop the first connection to start a reconnect
+			return cli, nil
+		}
+		// The reconnect attempt: dial completes only after Disconnect began,
+		// and ignores ctx like a slow network would.
+		close(dialing)
+		<-release
+		go func() {
+			serve(srv, false)
+			close(secondClosed)
+		}()
+		return cli, nil
+	})
+
+	c, err := Dial("tcp://mock:1883",
+		WithClientID("reconnect-stop"),
+		WithProtocolVersion(ProtocolV311),
+		WithDialer(dialer),
+		WithReconnectBackoff(10*time.Millisecond, 10*time.Millisecond, false),
+		WithOnConnect(func(*Client) { connects.Add(1) }),
+	)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+
+	select {
+	case <-dialing:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reconnect attempt never started")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	disconnected := make(chan error, 1)
+	go func() { disconnected <- c.Disconnect(ctx) }()
+
+	time.Sleep(50 * time.Millisecond) // let Disconnect stop the client
+	close(release)
+
+	select {
+	case err := <-disconnected:
+		if err != nil {
+			t.Errorf("Disconnect: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Disconnect did not return")
+	}
+
+	select {
+	case <-secondClosed:
+	case <-time.After(time.Second):
+		t.Error("the connection completed after Disconnect was left open")
+	}
+
+	time.Sleep(50 * time.Millisecond) // OnConnect runs in a goroutine
+	if n := connects.Load(); n != 1 {
+		t.Errorf("OnConnect ran %d times, want 1 (not for the connection completed after Disconnect)", n)
+	}
+}
