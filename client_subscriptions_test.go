@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"maps"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -613,5 +614,54 @@ func TestUnsubscribe_CancelledKeepsHandler(t *testing.T) {
 	}
 	if _, ok := c.subscriptions["a/b"]; !ok || len(c.trie.Match("a/b")) == 0 {
 		t.Error("local subscription removed although UNSUBSCRIBE was never sent")
+	}
+}
+
+// TestSharedSubscriptionRouting checks that a shared subscription
+// ($share/<group>/<filter>) receives messages published on <filter>, and that
+// removing it does not take away the handler of a plain subscription to the
+// same filter.
+func TestSharedSubscriptionRouting(t *testing.T) {
+	c := newTestClient(nil)
+	var shared, plain atomic.Int32
+	c.addSubscriptionLocked("$share/workers/jobs/#", subscriptionEntry{handler: func(*Client, Message) { shared.Add(1) }})
+	c.addSubscriptionLocked("jobs/#", subscriptionEntry{handler: func(*Client, Message) { plain.Add(1) }})
+
+	call := func() {
+		for _, h := range c.matchHandlers("jobs/1") {
+			h(c, Message{})
+		}
+	}
+
+	call()
+	if shared.Load() != 1 || plain.Load() != 1 {
+		t.Fatalf("jobs/1: shared=%d plain=%d, want 1 and 1", shared.Load(), plain.Load())
+	}
+
+	c.removeSubscriptionLocked("$share/workers/jobs/#")
+	call()
+	if shared.Load() != 1 || plain.Load() != 2 {
+		t.Errorf("after removing shared: shared=%d plain=%d, want 1 and 2", shared.Load(), plain.Load())
+	}
+
+	if _, ok := c.subscriptions["$share/workers/jobs/#"]; ok {
+		t.Error("shared subscription still in the subscriptions map")
+	}
+}
+
+func TestTrieFilter(t *testing.T) {
+	tests := map[string]string{
+		"jobs/#":                "jobs/#",
+		"$share/g/jobs/#":       "jobs/#",
+		"$share/g/a/+/b":        "a/+/b",
+		"$SYS/broker/uptime":    "$SYS/broker/uptime",
+		"$share/g":              "$share/g", // malformed: left as is
+		"$sharex/g/jobs/#":      "$sharex/g/jobs/#",
+		"$share/workers/$SYS/x": "$SYS/x",
+	}
+	for in, want := range tests {
+		if got := trieFilter(in); got != want {
+			t.Errorf("trieFilter(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

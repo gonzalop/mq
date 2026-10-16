@@ -512,15 +512,27 @@ type subscriptionEntry struct {
 	qos     uint8
 }
 
+// trieFilter returns the filter under which a subscription's handler is stored
+// in the trie. A shared subscription ($share/<group>/<filter>) receives
+// messages on topics matching <filter>.
+func trieFilter(topic string) string {
+	if rest, ok := strings.CutPrefix(topic, "$share/"); ok {
+		if _, filter, ok := strings.Cut(rest, "/"); ok {
+			return filter
+		}
+	}
+	return topic
+}
+
 // addSubscriptionLocked adds a subscription to both the map and the trie.
 // Assumes sessionLock is HELD.
 func (c *Client) addSubscriptionLocked(topic string, entry subscriptionEntry) {
-	if _, exists := c.subscriptions[topic]; exists {
-		c.trie.Remove(topic)
-	}
+	_, exists := c.subscriptions[topic]
 	c.subscriptions[topic] = entry
-	if entry.handler != nil {
-		c.trie.Insert(topic, entry.handler)
+	if exists {
+		c.refreshTrieLocked(trieFilter(topic))
+	} else if entry.handler != nil {
+		c.trie.Insert(trieFilter(topic), entry.handler)
 	}
 }
 
@@ -528,7 +540,20 @@ func (c *Client) addSubscriptionLocked(topic string, entry subscriptionEntry) {
 // Assumes sessionLock is HELD.
 func (c *Client) removeSubscriptionLocked(topic string) {
 	delete(c.subscriptions, topic)
-	c.trie.Remove(topic)
+	c.refreshTrieLocked(trieFilter(topic))
+}
+
+// refreshTrieLocked rebuilds the trie entry for filter from c.subscriptions.
+// Several subscriptions can share one trie filter (e.g. "jobs/#" and
+// "$share/g/jobs/#"), and trie.Remove drops all of their handlers.
+// Assumes sessionLock is HELD.
+func (c *Client) refreshTrieLocked(filter string) {
+	c.trie.Remove(filter)
+	for topic, entry := range c.subscriptions {
+		if entry.handler != nil && trieFilter(topic) == filter {
+			c.trie.Insert(filter, entry.handler)
+		}
+	}
 }
 
 // wrapHandler applies handler interceptors to a MessageHandler.
