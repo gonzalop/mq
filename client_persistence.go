@@ -23,7 +23,6 @@ func (c *Client) loadSessionState() error {
 	}
 
 	c.pending = make(map[uint16]*pendingOp)
-	c.pendingOrder = nil
 	c.inFlightCount = 0
 
 	// Collect and sort keys numerically to preserve chronological order

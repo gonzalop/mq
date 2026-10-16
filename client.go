@@ -56,7 +56,7 @@ type Client struct {
 	// State (managed by logicLoop to avoid races)
 	nextPacketID  uint16
 	pending       map[uint16]*pendingOp // Outgoing in-flight packets (PUBLISH QoS 1/2, SUBSCRIBE, UNSUBSCRIBE)
-	pendingOrder  []uint16              // Order of pending packets for retransmission
+	pendingSeq    uint64                // Sequence number for the next pending op (resend order)
 	subscriptions map[string]subscriptionEntry
 	trie          *topicTrie          // Efficient topic matching
 	receivedQoS2  map[uint16]struct{} // Track received QoS 2 packet IDs to prevent duplicates
@@ -147,6 +147,7 @@ type pendingOp struct {
 	packet packets.Packet
 	token  *token
 	qos    uint8
+	seq    uint64 // Creation order, to resend in the original order
 }
 
 // MessageHandler is called when a message is received on a subscribed topic.

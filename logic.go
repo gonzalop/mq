@@ -1,8 +1,10 @@
 package mq
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -47,7 +49,6 @@ func (c *Client) logicLoop() {
 			// Clear rather than nil the map: a late Publish racing with the
 			// stop must not write into a nil map.
 			clear(c.pending)
-			c.pendingOrder = nil
 			c.publishQueue = nil
 			c.sessionLock.Unlock()
 			return
@@ -65,20 +66,19 @@ func (c *Client) stopped() bool {
 	}
 }
 
-// addPendingLocked adds a pending operation to both pending and pendingOrder.
+// addPendingLocked adds a pending operation, numbering it so a reconnect can
+// resend in the original order (packet IDs wrap around, so they cannot).
 // Assumes sessionLock is HELD.
 func (c *Client) addPendingLocked(packetID uint16, op *pendingOp) {
+	op.seq = c.pendingSeq
+	c.pendingSeq++
 	c.pending[packetID] = op
-	c.pendingOrder = append(c.pendingOrder, packetID)
 }
 
-// removePending removes a packet ID from both pending and pendingOrder.
+// removePending removes a pending operation.
 // Assumes sessionLock is HELD.
 func (c *Client) removePending(packetID uint16) {
 	delete(c.pending, packetID)
-	c.pendingOrder = slices.DeleteFunc(c.pendingOrder, func(id uint16) bool {
-		return id == packetID
-	})
 }
 
 // internalResetState resets session state (e.g. on clean session reconnect).
@@ -569,13 +569,13 @@ func (c *Client) handleUnsuback(p *packets.UnsubackPacket) []packets.Packet {
 // copies with DUP set, so a stored packet is never modified.
 // Assumes sessionLock is HELD and no write loop is running.
 func (c *Client) takeResendLocked() []packets.Packet {
-	toSend := make([]packets.Packet, 0, len(c.pendingOrder))
-	tracked := make(map[packets.Packet]struct{}, len(c.pending))
-	for _, id := range c.pendingOrder {
-		op, ok := c.pending[id]
-		if !ok {
-			continue
-		}
+	ops := slices.SortedFunc(maps.Values(c.pending), func(a, b *pendingOp) int {
+		return cmp.Compare(a.seq, b.seq)
+	})
+
+	toSend := make([]packets.Packet, 0, len(ops))
+	tracked := make(map[packets.Packet]struct{}, len(ops))
+	for _, op := range ops {
 		tracked[op.packet] = struct{}{}
 		if pub, ok := op.packet.(*packets.PublishPacket); ok {
 			dup := *pub

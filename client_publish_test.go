@@ -3,6 +3,7 @@ package mq
 import (
 	"context"
 	"net"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -402,45 +403,24 @@ func TestOrderedRetransmission(t *testing.T) {
 	}
 }
 
-// TestRemovePending verifies that removePending correctly cleans up both
-// the map and the order slice.
-func TestRemovePending(t *testing.T) {
-	c := &Client{trie: newTopicTrie(),
-		pending:      make(map[uint16]*pendingOp),
-		pendingOrder: []uint16{1, 2, 3, 4, 5},
+// TestResendOrderAcrossPacketIDWrap checks that the resend order follows the
+// order operations were created in, not their packet IDs, which wrap around.
+func TestResendOrderAcrossPacketIDWrap(t *testing.T) {
+	c := newTestClient(defaultOptions("tcp://localhost:1883"))
+	for _, id := range []uint16{65534, 65535, 1} {
+		c.addPendingLocked(id, &pendingOp{packet: &packets.PublishPacket{PacketID: id, QoS: 1, Topic: "t"}})
 	}
-	for _, id := range c.pendingOrder {
-		c.pending[id] = &pendingOp{}
-	}
+	// An acked operation leaves no trace.
+	c.addPendingLocked(2, &pendingOp{packet: &packets.PublishPacket{PacketID: 2, QoS: 1, Topic: "t"}})
+	c.removePending(2)
 
-	// Remove middle element
-	c.removePending(3)
-
-	if _, exists := c.pending[3]; exists {
-		t.Error("ID 3 still exists in pending map")
+	toSend := c.takeResendLocked()
+	var got []uint16
+	for _, p := range toSend {
+		got = append(got, p.(*packets.PublishPacket).PacketID)
 	}
-	expectedOrder := []uint16{1, 2, 4, 5}
-	if len(c.pendingOrder) != len(expectedOrder) {
-		t.Errorf("Expected order length %d, got %d", len(expectedOrder), len(c.pendingOrder))
-	}
-	for i, id := range c.pendingOrder {
-		if id != expectedOrder[i] {
-			t.Errorf("At index %d, expected %d, got %d", i, expectedOrder[i], id)
-		}
-	}
-
-	// Remove first element
-	c.removePending(1)
-	expectedOrder = []uint16{2, 4, 5}
-	if len(c.pendingOrder) != len(expectedOrder) {
-		t.Errorf("Expected order length %d, got %d", len(expectedOrder), len(c.pendingOrder))
-	}
-
-	// Remove last element
-	c.removePending(5)
-	expectedOrder = []uint16{2, 4}
-	if len(c.pendingOrder) != len(expectedOrder) {
-		t.Errorf("Expected order length %d, got %d", len(expectedOrder), len(c.pendingOrder))
+	if want := []uint16{65534, 65535, 1}; !slices.Equal(got, want) {
+		t.Errorf("resend order = %v, want %v", got, want)
 	}
 }
 
@@ -490,16 +470,14 @@ func TestPersistencePendingOrder(t *testing.T) {
 		t.Errorf("Expected inFlightCount 3, got %d", c.inFlightCount)
 	}
 
-	// Verify pendingOrder is populated and sorted numerically
+	// Restored publishes are resent in packet ID order
 	expectedOrder := []uint16{1, 5, 10, 20}
-	if len(c.pendingOrder) != len(expectedOrder) {
-		t.Fatalf("Expected pendingOrder length %d, got %d", len(expectedOrder), len(c.pendingOrder))
+	var got []uint16
+	for _, p := range c.takeResendLocked() {
+		got = append(got, p.(*packets.PublishPacket).PacketID)
 	}
-
-	for i, id := range c.pendingOrder {
-		if id != expectedOrder[i] {
-			t.Errorf("At index %d, expected PacketID %d, got %d", i, expectedOrder[i], id)
-		}
+	if !slices.Equal(got, expectedOrder) {
+		t.Errorf("resend order = %v, want %v", got, expectedOrder)
 	}
 }
 

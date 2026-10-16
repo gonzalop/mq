@@ -554,9 +554,9 @@ func TestSubscriptionOverwriting(t *testing.T) {
 	}
 }
 
-// Regression test for Finding 10: resubscribe operations must be tracked in pendingOrder like
-// every other pending operation.
-func TestResubscribeAll_TrackedInPendingOrder(t *testing.T) {
+// Regression test for Finding 10: resubscribe operations must be tracked in pending like
+// every other pending operation, so they are resent after a reconnect.
+func TestResubscribeAll_TrackedInPending(t *testing.T) {
 	c := &Client{trie: newTopicTrie(), pending: map[uint16]*pendingOp{}, subscriptions: map[string]subscriptionEntry{},
 		opts: defaultOptions("tcp://x"), outgoing: make(chan packets.Packet, 10), stop: make(chan struct{})}
 	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
@@ -564,8 +564,8 @@ func TestResubscribeAll_TrackedInPendingOrder(t *testing.T) {
 
 	c.resubscribeAll()
 
-	if len(c.pending) != 1 || len(c.pendingOrder) != 1 {
-		t.Errorf("pending=%d pendingOrder=%d, want 1/1", len(c.pending), len(c.pendingOrder))
+	if len(c.pending) != 1 {
+		t.Errorf("pending=%d, want 1", len(c.pending))
 	}
 }
 

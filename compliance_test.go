@@ -204,7 +204,6 @@ func TestCompliance_QoS2_Retransmission(t *testing.T) {
 		token:  &token{},
 	}
 	c.pending[100] = op
-	c.pendingOrder = append(c.pendingOrder, 100)
 
 	// Simulate receiving PUBREC
 	// The handler should return PUBREL

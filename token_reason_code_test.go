@@ -169,7 +169,6 @@ func TestTokenReasonCode_Pubrec(t *testing.T) {
 			qos:    2,
 			packet: &packets.PublishPacket{PacketID: 1, QoS: 2},
 		}
-		c.pendingOrder = []uint16{1}
 		c.inFlightCount = 1
 
 		c.handlePubrec(&packets.PubrecPacket{PacketID: 1, ReasonCode: 0x80, Version: 5})
