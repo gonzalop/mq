@@ -665,3 +665,57 @@ func TestTrieFilter(t *testing.T) {
 		}
 	}
 }
+
+// TestResubscribeAll_SkipsForbiddenTopicsKeepsAlignment checks that topics the
+// server does not accept are left out of the resubscription, and that QoS and
+// options stay matched to the right topic for the ones that are sent.
+func TestResubscribeAll_SkipsForbiddenTopicsKeepsAlignment(t *testing.T) {
+	opts := defaultOptions("tcp://x:1883")
+	opts.ProtocolVersion = ProtocolV50
+	opts.Logger = testLogger()
+	c := newTestClient(opts)
+	st := &connectionState{caps: extractServerCapabilities(nil)}
+	st.caps.WildcardAvailable = false
+	c.connState.Store(st)
+
+	c.subscriptions["a/b"] = subscriptionEntry{qos: 1, options: SubscribeOptions{NoLocal: true, RetainHandling: 1}}
+	c.subscriptions["c/#"] = subscriptionEntry{qos: 2, options: SubscribeOptions{RetainAsPublished: true}}
+	c.subscriptions["d/e"] = subscriptionEntry{qos: 0, options: SubscribeOptions{RetainHandling: 2}}
+
+	c.resubscribeAll()
+
+	var pkt *packets.SubscribePacket
+	select {
+	case p := <-c.outgoing:
+		pkt = p.(*packets.SubscribePacket)
+	case <-time.After(time.Second):
+		t.Fatal("no SUBSCRIBE sent")
+	}
+	if len(c.outgoing) != 0 {
+		t.Fatalf("expected one SUBSCRIBE, %d more queued", len(c.outgoing))
+	}
+
+	type sub struct {
+		qos            uint8
+		noLocal, rap   bool
+		retainHandling uint8
+	}
+	want := map[string]sub{
+		"a/b": {qos: 1, noLocal: true, retainHandling: 1},
+		"d/e": {qos: 0, retainHandling: 2},
+	}
+	if len(pkt.Topics) != len(want) {
+		t.Fatalf("topics = %v, want a/b and d/e", pkt.Topics)
+	}
+	for i, topic := range pkt.Topics {
+		w, ok := want[topic]
+		if !ok {
+			t.Errorf("unexpected topic %q in resubscription", topic)
+			continue
+		}
+		got := sub{pkt.QoS[i], pkt.NoLocal[i], pkt.RetainAsPublished[i], pkt.RetainHandling[i]}
+		if got != w {
+			t.Errorf("%s: got %+v, want %+v", topic, got, w)
+		}
+	}
+}
