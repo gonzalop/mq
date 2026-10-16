@@ -168,8 +168,14 @@ func TestCompliance_ProtocolError_Disconnect(t *testing.T) {
 		t.Fatal("timeout waiting for client to disconnect")
 	}
 
-	if client.IsConnected() {
-		t.Error("client should be disconnected")
+	// The server returns as soon as it reads the DISCONNECT; the client marks
+	// itself disconnected right after flushing it.
+	deadline := time.Now().Add(time.Second)
+	for client.IsConnected() {
+		if time.Now().After(deadline) {
+			t.Fatal("client should be disconnected")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
