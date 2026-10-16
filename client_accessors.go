@@ -143,18 +143,36 @@ func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, pro
 		}
 	}
 
-	// Close session store if it implements Closer or has a Close method
+	// Close the session store, bounded by the same deadline: AsyncStore.Close
+	// waits for its queued writes, and a slow or stuck store must not make
+	// Disconnect ignore ctx.
 	if c.opts != nil && c.opts.SessionStore != nil {
-		if closer, ok := c.opts.SessionStore.(interface{ Close() error }); ok {
-			if err := closer.Close(); err != nil {
-				c.opts.Logger.Warn("session store close failed", "error", err)
+		closed := make(chan error, 1)
+		go func() { closed <- closeSessionStore(c.opts.SessionStore) }()
+		select {
+		case closeErr := <-closed:
+			if closeErr != nil {
+				c.opts.Logger.Warn("session store close failed", "error", closeErr)
 			}
-		} else if closer, ok := c.opts.SessionStore.(interface{ Close() }); ok {
-			closer.Close()
+		case <-waitCtx.Done():
+			if err == nil {
+				err = fmt.Errorf("session store still flushing: %w", waitCtx.Err())
+			}
 		}
 	}
 
 	return err
+}
+
+// closeSessionStore closes store if it has a Close method.
+func closeSessionStore(store SessionStore) error {
+	switch closer := store.(type) {
+	case interface{ Close() error }:
+		return closer.Close()
+	case interface{ Close() }:
+		closer.Close()
+	}
+	return nil
 }
 
 // AssignedClientID returns the client ID assigned by the server.

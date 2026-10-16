@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -159,5 +160,39 @@ func TestProtocolErrorReconnects(t *testing.T) {
 	}
 	if c.stopped() {
 		t.Error("client was stopped by a protocol error")
+	}
+}
+
+type blockingCloseStore struct {
+	dummySessionStore
+	release chan struct{}
+}
+
+func (b *blockingCloseStore) Close() error {
+	<-b.release
+	return nil
+}
+
+// TestDisconnect_StoreCloseRespectsContext checks that a session store whose
+// Close does not return (e.g. an AsyncStore draining to a stuck backend) does
+// not make Disconnect ignore its context.
+func TestDisconnect_StoreCloseRespectsContext(t *testing.T) {
+	store := &blockingCloseStore{release: make(chan struct{})}
+	defer close(store.release)
+
+	opts := defaultOptions("tcp://x:1883")
+	opts.SessionStore = store
+	c := newTestClient(opts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err := c.Disconnect(ctx)
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("Disconnect took %v with a 100ms context", d)
+	}
+	if err == nil || !strings.Contains(err.Error(), "session store still flushing") {
+		t.Errorf("Disconnect() = %v, want a session store flushing error", err)
 	}
 }
