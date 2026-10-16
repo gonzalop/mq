@@ -3,6 +3,7 @@ package mq
 import (
 	"context"
 	"maps"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -187,5 +188,39 @@ func TestCheckSessionPresent_ClearsReceivedQoS2(t *testing.T) {
 	}
 	if len(c.receivedQoS2) != 0 {
 		t.Errorf("in-memory QoS 2 IDs not cleared: %v", c.receivedQoS2)
+	}
+}
+
+// TestLoadSessionState_RestoredHandlerIsWrapped checks that a subscription
+// restored from the store and joined to its WithSubscription handler still
+// runs through the handler interceptors.
+func TestLoadSessionState_RestoredHandlerIsWrapped(t *testing.T) {
+	store := newMockSubscriptionStore()
+	store.storedSubs["a/b"] = &PersistedSubscription{QoS: 1}
+
+	var intercepted, handled atomic.Int32
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.SessionStore = store
+	WithSubscription("a/b", func(*Client, Message) { handled.Add(1) })(opts)
+	WithHandlerInterceptor(func(next MessageHandler) MessageHandler {
+		return func(c *Client, m Message) {
+			intercepted.Add(1)
+			next(c, m)
+		}
+	})(opts)
+
+	c := newTestClient(opts)
+	if err := c.loadSessionState(); err != nil {
+		t.Fatalf("loadSessionState: %v", err)
+	}
+
+	handlers := c.matchHandlers("a/b")
+	if len(handlers) != 1 {
+		t.Fatalf("got %d handlers for a/b, want 1", len(handlers))
+	}
+	handlers[0](c, Message{Topic: "a/b"})
+
+	if handled.Load() != 1 || intercepted.Load() != 1 {
+		t.Errorf("handled=%d intercepted=%d, want 1 and 1", handled.Load(), intercepted.Load())
 	}
 }

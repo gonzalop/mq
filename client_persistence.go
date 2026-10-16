@@ -60,7 +60,7 @@ func (c *Client) loadSessionState() error {
 	for topic, sub := range subs {
 		entry := c.convertFromPersistedSubscription(sub)
 		if handler, ok := c.opts.InitialSubscriptions[topic]; ok {
-			entry.handler = handler
+			entry.handler = c.wrapHandler(handler)
 		}
 		c.addSubscriptionLocked(topic, entry)
 	}
