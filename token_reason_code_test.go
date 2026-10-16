@@ -141,10 +141,9 @@ func TestTokenReasonCode_Pubrec(t *testing.T) {
 		c := setupV5Client()
 		tok := newToken()
 		c.pending[1] = &pendingOp{
-			token:     tok,
-			qos:       2,
-			packet:    &packets.PublishPacket{PacketID: 1, QoS: 2},
-			timestamp: time.Now(),
+			token:  tok,
+			qos:    2,
+			packet: &packets.PublishPacket{PacketID: 1, QoS: 2},
 		}
 
 		c.handlePubrec(&packets.PubrecPacket{PacketID: 1, ReasonCode: 0x10, Version: 5})
@@ -166,10 +165,9 @@ func TestTokenReasonCode_Pubrec(t *testing.T) {
 		c := setupV5Client()
 		tok := newToken()
 		c.pending[1] = &pendingOp{
-			token:     tok,
-			qos:       2,
-			packet:    &packets.PublishPacket{PacketID: 1, QoS: 2},
-			timestamp: time.Now(),
+			token:  tok,
+			qos:    2,
+			packet: &packets.PublishPacket{PacketID: 1, QoS: 2},
 		}
 		c.pendingOrder = []uint16{1}
 		c.inFlightCount = 1

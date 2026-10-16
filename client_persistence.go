@@ -3,7 +3,6 @@ package mq
 import (
 	"fmt"
 	"slices"
-	"time"
 
 	"github.com/gonzalop/mq/internal/packets"
 )
@@ -198,10 +197,9 @@ func (c *Client) convertFromPersistedPublish(p *PersistedPublish) *pendingOp {
 	}
 
 	return &pendingOp{
-		packet:    pkt,
-		token:     newToken(),
-		qos:       p.QoS,
-		timestamp: time.Now(), // Reset timestamp for retry logic
+		packet: pkt,
+		token:  newToken(),
+		qos:    p.QoS,
 	}
 }
 

@@ -215,6 +215,11 @@ func (c *Client) validateConnack(conn net.Conn, connack *packets.ConnackPacket) 
 
 // finalizeConnection processes CONNACK properties and starts background loops.
 func (c *Client) finalizeConnection(connack *packets.ConnackPacket) {
+	// Taken first, before resubscribeAll can add new SUBSCRIBEs to pending.
+	c.sessionLock.Lock()
+	resend := c.takeResendLocked()
+	c.sessionLock.Unlock()
+
 	// Reset keepalive to requested value before processing server override
 	c.opts.KeepAlive = c.requestedKeepAlive
 
@@ -253,6 +258,17 @@ func (c *Client) finalizeConnection(connack *packets.ConnackPacket) {
 	c.activeLoops.Add(2)
 	go c.runReadLoop(conn)
 	go c.runWriteLoop(conn, connDone, c.opts.KeepAlive)
+
+resendLoop:
+	for _, pkt := range resend {
+		select {
+		case c.outgoing <- pkt:
+		case <-connDone:
+			break resendLoop
+		case <-c.stop:
+			break resendLoop
+		}
+	}
 
 	// A clean session drops any state the broker kept for this client, so the
 	// subscriptions registered through WithSubscription must be sent on every

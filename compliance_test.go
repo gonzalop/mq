@@ -193,10 +193,9 @@ func TestCompliance_QoS2_Retransmission(t *testing.T) {
 		Topic:    "test",
 	}
 	op := &pendingOp{
-		packet:    pkt,
-		qos:       2,
-		timestamp: time.Now().Add(-20 * time.Second), // Expired
-		token:     &token{},
+		packet: pkt,
+		qos:    2,
+		token:  &token{},
 	}
 	c.pending[100] = op
 	c.pendingOrder = append(c.pendingOrder, 100)
@@ -208,9 +207,6 @@ func TestCompliance_QoS2_Retransmission(t *testing.T) {
 		c.outgoing <- p
 	}
 
-	// Backdate timestamp again to trigger retryPending
-	c.pending[100].timestamp = time.Now().Add(-20 * time.Second)
-
 	// Check outgoing for PUBREL (first one from handlePubrec)
 	select {
 	case p := <-c.outgoing:
@@ -221,8 +217,8 @@ func TestCompliance_QoS2_Retransmission(t *testing.T) {
 		t.Errorf("No packet sent after PUBREC")
 	}
 
-	// Simulate timeout and retry
-	for _, p := range c.retryPending() {
+	// Simulate a reconnect
+	for _, p := range c.takeResendLocked() {
 		c.outgoing <- p
 	}
 

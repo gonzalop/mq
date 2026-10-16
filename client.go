@@ -144,10 +144,9 @@ type unsubscribeRequest struct {
 
 // pendingOp tracks an in-flight operation (publish, subscribe, etc.)
 type pendingOp struct {
-	packet    packets.Packet
-	token     *token
-	qos       uint8
-	timestamp time.Time
+	packet packets.Packet
+	token  *token
+	qos    uint8
 }
 
 // MessageHandler is called when a message is received on a subscribed topic.

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/gonzalop/mq/internal/packets"
 )
@@ -462,10 +461,9 @@ func (c *Client) resubscribeAll() {
 
 			// Store pending operation BEFORE sending packet to avoid race conditions
 			c.addPendingLocked(pkt.PacketID, &pendingOp{
-				packet:    pkt,
-				token:     newToken(),
-				qos:       1,
-				timestamp: time.Now(),
+				packet: pkt,
+				token:  newToken(),
+				qos:    1,
 			})
 
 			packetsToSend = append(packetsToSend, pkt)

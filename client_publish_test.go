@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -350,53 +351,54 @@ func TestDeferredAcknowledgment(t *testing.T) {
 	}
 }
 
-// TestOrderedRetransmission verifies that pending packets are retransmitted
-// in the same order they were originally sent.
+// TestOrderedRetransmission verifies that on reconnect pending packets are
+// resent once, in the order they were originally sent, as DUP copies, and that
+// queued copies of them are dropped while untracked packets are kept.
 func TestOrderedRetransmission(t *testing.T) {
 	opts := defaultOptions("tcp://localhost:1883")
 	c := newTestClient(opts)
 
-	// 1. Manually populate pending packets in a specific order
-	// We'll use very old timestamps to trigger immediate retransmission
-	oldTime := time.Now().Add(-1 * time.Hour)
-
 	packetIDs := []uint16{10, 5, 20, 1}
+	stored := make(map[uint16]*packets.PublishPacket)
 	for _, id := range packetIDs {
-		c.sessionLock.Lock()
-		c.pending[id] = &pendingOp{
-			packet:    &packets.PublishPacket{PacketID: id, QoS: 1, Topic: "test"},
-			timestamp: oldTime,
-		}
-		c.pendingOrder = append(c.pendingOrder, id)
-		c.sessionLock.Unlock()
+		pkt := &packets.PublishPacket{PacketID: id, QoS: 1, Topic: "test"}
+		stored[id] = pkt
+		c.addPendingLocked(id, &pendingOp{packet: pkt})
 	}
 
-	// 2. Run retryPending
+	// Still queued from the lost connection: a copy of an in-flight publish
+	// (replaced by the resend) and a QoS 0 publish (kept, after the resend).
+	qos0 := &packets.PublishPacket{QoS: 0, Topic: "qos0"}
+	c.outgoing <- stored[5]
+	c.outgoing <- qos0
+
 	c.sessionLock.Lock()
-	toResend := c.retryPending()
+	toSend := c.takeResendLocked()
 	c.sessionLock.Unlock()
 
-	for _, p := range toResend {
-		c.outgoing <- p
+	if len(toSend) != len(packetIDs)+1 {
+		t.Fatalf("got %d packets to send, want %d", len(toSend), len(packetIDs)+1)
 	}
-
-	// 3. Verify order in outgoing channel
-	for _, expectedID := range packetIDs {
-		select {
-		case pkt := <-c.outgoing:
-			if p, ok := pkt.(*packets.PublishPacket); ok {
-				if p.PacketID != expectedID {
-					t.Errorf("Expected retransmission of %d, got %d", expectedID, p.PacketID)
-				}
-				if !p.Dup {
-					t.Errorf("Expected DUP flag to be set for %d", expectedID)
-				}
-			} else {
-				t.Errorf("Expected PUBLISH, got %T", pkt)
-			}
-		case <-time.After(100 * time.Millisecond):
-			t.Errorf("Packet %d was never retransmitted", expectedID)
+	for i, expectedID := range packetIDs {
+		p, ok := toSend[i].(*packets.PublishPacket)
+		if !ok {
+			t.Fatalf("packet %d: expected PUBLISH, got %T", i, toSend[i])
 		}
+		if p.PacketID != expectedID {
+			t.Errorf("packet %d: expected retransmission of %d, got %d", i, expectedID, p.PacketID)
+		}
+		if !p.Dup {
+			t.Errorf("expected DUP flag to be set for %d", expectedID)
+		}
+		if p == stored[expectedID] || stored[expectedID].Dup {
+			t.Errorf("stored packet %d was modified instead of copied", expectedID)
+		}
+	}
+	if toSend[len(packetIDs)] != qos0 {
+		t.Errorf("expected the queued QoS 0 publish last, got %#v", toSend[len(packetIDs)])
+	}
+	if len(c.outgoing) != 0 {
+		t.Errorf("outgoing should be drained, has %d", len(c.outgoing))
 	}
 }
 
@@ -560,5 +562,93 @@ func TestPublishQueue_FailedPublishIsNotSentLater(t *testing.T) {
 
 	if failed && len(sent) > 0 {
 		t.Errorf("token already failed (%v) but the publish was sent later anyway", tok.Error())
+	}
+}
+
+// TestResendOnReconnect checks that an unacked QoS 1 publish is resent exactly
+// once, with DUP set, after the connection drops, and that its token then
+// completes on the new connection's PUBACK.
+func TestResendOnReconnect(t *testing.T) {
+	var dials atomic.Int32
+	firstPublish := make(chan uint16, 1)
+	resent := make(chan *packets.PublishPacket, 10)
+
+	dialer := DialFunc(func(context.Context, string, string) (net.Conn, error) {
+		n := dials.Add(1)
+		cli, srv := net.Pipe()
+		go func() {
+			defer srv.Close()
+			if _, err := packets.ReadPacket(srv, 4, 0); err != nil {
+				return
+			}
+			connack := &packets.ConnackPacket{ReturnCode: packets.ConnAccepted, SessionPresent: n > 1}
+			if _, err := connack.WriteTo(srv); err != nil {
+				return
+			}
+			for {
+				pkt, err := packets.ReadPacket(srv, 4, 0)
+				if err != nil {
+					return
+				}
+				pub, ok := pkt.(*packets.PublishPacket)
+				if !ok {
+					continue
+				}
+				if n == 1 {
+					// Drop the connection without acking.
+					firstPublish <- pub.PacketID
+					return
+				}
+				resent <- pub
+				ack := &packets.PubackPacket{PacketID: pub.PacketID}
+				if _, err := ack.WriteTo(srv); err != nil {
+					return
+				}
+			}
+		}()
+		return cli, nil
+	})
+
+	c, err := Dial("tcp://mock:1883",
+		WithClientID("resend"),
+		WithCleanSession(false),
+		WithProtocolVersion(ProtocolV311),
+		WithDialer(dialer),
+		WithReconnectBackoff(10*time.Millisecond, 10*time.Millisecond, false),
+	)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer c.Disconnect(context.Background())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	tok := c.Publish(ctx, "a/b", []byte("x"), WithQoS(1))
+
+	var id uint16
+	select {
+	case id = <-firstPublish:
+	case <-ctx.Done():
+		t.Fatal("first connection never received the PUBLISH")
+	}
+
+	if err := tok.Wait(ctx); err != nil {
+		t.Fatalf("publish token: %v", err)
+	}
+
+	select {
+	case pub := <-resent:
+		if pub.PacketID != id || !pub.Dup {
+			t.Errorf("resent PUBLISH: id=%d dup=%v, want id=%d dup=true", pub.PacketID, pub.Dup, id)
+		}
+	default:
+		t.Fatal("token completed but no resent PUBLISH was seen")
+	}
+
+	// Exactly once: no further copies.
+	select {
+	case pub := <-resent:
+		t.Errorf("PUBLISH resent more than once (id=%d dup=%v)", pub.PacketID, pub.Dup)
+	case <-time.After(200 * time.Millisecond):
 	}
 }

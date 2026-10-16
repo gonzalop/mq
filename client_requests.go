@@ -3,7 +3,6 @@ package mq
 import (
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/gonzalop/mq/internal/packets"
 )
@@ -106,10 +105,9 @@ func (c *Client) internalPublish(req *publishRequest) {
 	}
 
 	c.addPendingLocked(pkt.PacketID, &pendingOp{
-		packet:    pkt,
-		token:     req.token,
-		qos:       pkt.QoS,
-		timestamp: time.Now(),
+		packet: pkt,
+		token:  req.token,
+		qos:    pkt.QoS,
 	})
 
 	if pkt.QoS > 0 {
@@ -156,10 +154,9 @@ func (c *Client) preparePublishLocked(req *publishRequest) (*packets.PublishPack
 	}
 
 	c.addPendingLocked(pkt.PacketID, &pendingOp{
-		packet:    pkt,
-		token:     req.token,
-		qos:       pkt.QoS,
-		timestamp: time.Now(),
+		packet: pkt,
+		token:  req.token,
+		qos:    pkt.QoS,
 	})
 
 	if pkt.QoS > 0 {
@@ -209,9 +206,8 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 	}
 
 	c.addPendingLocked(pkt.PacketID, &pendingOp{
-		packet:    pkt,
-		token:     req.token,
-		timestamp: time.Now(),
+		packet: pkt,
+		token:  req.token,
 	})
 
 	// Register before receiving SUBACK to avoid racing
@@ -305,9 +301,8 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 	}
 
 	c.addPendingLocked(pkt.PacketID, &pendingOp{
-		packet:    pkt,
-		token:     req.token,
-		timestamp: time.Now(),
+		packet: pkt,
+		token:  req.token,
 	})
 
 	c.opts.Logger.Debug("unsubscribing", "packet_id", pkt.PacketID, "topics", req.topics)

@@ -52,10 +52,9 @@ func TestHandlePubcomp(t *testing.T) {
 	packetID := uint16(10)
 	tkn := newToken()
 	op := &pendingOp{
-		packet:    &packets.PublishPacket{PacketID: packetID, QoS: 2},
-		token:     tkn,
-		qos:       2,
-		timestamp: time.Now(),
+		packet: &packets.PublishPacket{PacketID: packetID, QoS: 2},
+		token:  tkn,
+		qos:    2,
 	}
 	c.pending[packetID] = op
 	c.inFlightCount = 1
@@ -102,10 +101,9 @@ func TestHandlePubcomp_V5_Error(t *testing.T) {
 	packetID := uint16(11)
 	tkn := newToken()
 	op := &pendingOp{
-		packet:    &packets.PublishPacket{PacketID: packetID, QoS: 2},
-		token:     tkn,
-		qos:       2,
-		timestamp: time.Now(),
+		packet: &packets.PublishPacket{PacketID: packetID, QoS: 2},
+		token:  tkn,
+		qos:    2,
 	}
 	c.pending[packetID] = op
 	c.inFlightCount = 1
@@ -194,10 +192,9 @@ func TestHandlePubcomp_WithSessionStore(t *testing.T) {
 	packetID := uint16(12)
 	tkn := newToken()
 	op := &pendingOp{
-		packet:    &packets.PublishPacket{PacketID: packetID, QoS: 2},
-		token:     tkn,
-		qos:       2,
-		timestamp: time.Now(),
+		packet: &packets.PublishPacket{PacketID: packetID, QoS: 2},
+		token:  tkn,
+		qos:    2,
 	}
 	c.pending[packetID] = op
 	c.inFlightCount = 1
@@ -242,10 +239,9 @@ func TestHandlePubcomp_WithSessionStore_Error(t *testing.T) {
 	packetID := uint16(13)
 	tkn := newToken()
 	op := &pendingOp{
-		packet:    &packets.PublishPacket{PacketID: packetID, QoS: 2},
-		token:     tkn,
-		qos:       2,
-		timestamp: time.Now(),
+		packet: &packets.PublishPacket{PacketID: packetID, QoS: 2},
+		token:  tkn,
+		qos:    2,
 	}
 	c.pending[packetID] = op
 	c.inFlightCount = 1

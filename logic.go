@@ -16,8 +16,11 @@ func (c *Client) logicLoop() {
 	defer c.wg.Done()
 	defer c.activeLoops.Add(-1)
 
-	retryTicker := time.NewTicker(5 * time.Second)
-	defer retryTicker.Stop()
+	// Safety net for the flow control queue: it is normally drained when acks
+	// free in-flight slots, but processPublishQueueLocked stops early when the
+	// outgoing channel is full.
+	queueTicker := time.NewTicker(5 * time.Second)
+	defer queueTicker.Stop()
 
 	for {
 		select {
@@ -25,12 +28,11 @@ func (c *Client) logicLoop() {
 			toSend := c.handleIncoming(pkt)
 			c.sendPackets(toSend)
 
-		case <-retryTicker.C:
+		case <-queueTicker.C:
 			c.sessionLock.Lock()
-			toResend := c.retryPending()
-			toResend = append(toResend, c.processPublishQueueLocked()...)
+			toSend := c.processPublishQueueLocked()
 			c.sessionLock.Unlock()
-			c.sendPackets(toResend)
+			c.sendPackets(toSend)
 
 		case <-c.stop:
 			c.opts.Logger.Debug("logicLoop stopped")
@@ -93,17 +95,17 @@ func (c *Client) internalResetState() {
 	}
 }
 
-// sendPackets sends a slice of packets to the outgoing channel without holding the lock.
-// It uses a non-blocking send to ensure the logicLoop never stalls.
-// Retransmissions for QoS 1/2 will be handled by retryPending if they fail here.
+// sendPackets sends a slice of packets to the outgoing channel without holding
+// the lock. It blocks while the channel is full: packets are only resent after
+// a reconnect, so dropping a PUBREL, a PUBCOMP or a publish released from the
+// flow control queue would stall that flow until then. A full channel means the
+// network is slow, and blocking here pushes back on the read loop.
 func (c *Client) sendPackets(packets []packets.Packet) {
 	for _, pkt := range packets {
 		select {
 		case c.outgoing <- pkt:
 		case <-c.stop:
 			return
-		default:
-			c.opts.Logger.Debug("outgoing channel full, dropping packet (will retry if QoS > 0)", "type", fmt.Sprintf("%T", pkt))
 		}
 	}
 }
@@ -442,7 +444,6 @@ func (c *Client) handlePubrec(p *packets.PubrecPacket) []packets.Packet {
 		pubrel := &packets.PubrelPacket{PacketID: p.PacketID, Version: c.opts.ProtocolVersion}
 		// Update pending operation to track PUBREL for retransmission
 		op.packet = pubrel
-		op.timestamp = time.Now()
 		return []packets.Packet{pubrel}
 	}
 	return nil
@@ -564,29 +565,41 @@ func (c *Client) handleUnsuback(p *packets.UnsubackPacket) []packets.Packet {
 	return nil
 }
 
-// retryPending retransmits packets that haven't been acknowledged.
-// Returns a slice of packets that should be retransmitted.
-func (c *Client) retryPending() []packets.Packet {
-	now := time.Now()
-	var toResend []packets.Packet
-
-	for _, packetID := range c.pendingOrder {
-		op, ok := c.pending[packetID]
+// takeResendLocked returns what a new connection must send first: every
+// in-flight packet once, in its original order (a reconnect is the only time
+// MQTT allows a resend, [MQTT-4.4.0-1]), followed by the untracked packets
+// (QoS 0, acks) still queued in outgoing. Queued copies of in-flight packets
+// are dropped, since the resend replaces them. PUBLISH packets are resent as
+// copies with DUP set, so a stored packet is never modified.
+// Assumes sessionLock is HELD and no write loop is running.
+func (c *Client) takeResendLocked() []packets.Packet {
+	toSend := make([]packets.Packet, 0, len(c.pendingOrder))
+	tracked := make(map[packets.Packet]struct{}, len(c.pending))
+	for _, id := range c.pendingOrder {
+		op, ok := c.pending[id]
 		if !ok {
 			continue
 		}
-
-		if now.Sub(op.timestamp) > 10*time.Second {
-			// Resend with DUP flag if it's a PUBLISH
-			if pub, ok := op.packet.(*packets.PublishPacket); ok {
-				pub.Dup = true
-			}
-
-			toResend = append(toResend, op.packet)
-			op.timestamp = now
+		tracked[op.packet] = struct{}{}
+		if pub, ok := op.packet.(*packets.PublishPacket); ok {
+			dup := *pub
+			dup.Dup = true
+			toSend = append(toSend, &dup)
+		} else {
+			toSend = append(toSend, op.packet)
 		}
 	}
-	return toResend
+
+	for range len(c.outgoing) {
+		select {
+		case pkt := <-c.outgoing:
+			if _, ok := tracked[pkt]; !ok && pkt != nil {
+				toSend = append(toSend, pkt)
+			}
+		default:
+		}
+	}
+	return toSend
 }
 
 // nextID generates the next packet ID (1-65535, cycling).

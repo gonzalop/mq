@@ -47,7 +47,9 @@ The `logicLoop` is the single-threaded state machine that manages the client's i
 
 ### `sendPackets` Strategy
 
-The `sendPackets` helper uses a non-blocking `select` when sending to the `outgoing` channel. If the channel is full, the packet is dropped (and will be retransmitted later if it's a QoS 1 or 2 packet). This ensures that a stalled `writeLoop` (due to network backpressure) cannot block the `logicLoop`, allowing it to continue processing ACKs from the server and freeing up resources.
+The `sendPackets` helper is called without holding `sessionLock` and blocks while the `outgoing` channel is full (it gives up when the client stops). In-flight packets are only resent after a reconnect ([MQTT-4.4.0-1]), so dropping a response such as PUBREL or PUBCOMP would stall that flow until then. A full channel means the network is slow; blocking the `logicLoop` pushes back on the `readLoop` the same way TCP does.
+
+On every new connection, `finalizeConnection` takes the in-flight packets (in their original order, PUBLISH as DUP copies) and queues them before anything else, dropping copies of them still left in `outgoing` from the lost connection.
 
 ## Request Flow
 
