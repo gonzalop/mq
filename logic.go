@@ -199,16 +199,14 @@ func (c *Client) processTopicAlias(p *packets.PublishPacket) error {
 
 	// Validate alias ID
 	if aliasID == 0 {
-		c.opts.Logger.Error("server sent invalid topic alias 0")
 		c.dropConnection(ReasonCodeTopicAliasInvalid)
-		return nil
+		return fmt.Errorf("server sent invalid topic alias 0")
 	}
 
 	// Check if server violated our declared maximum
 	if c.opts.TopicAliasMaximum > 0 && aliasID > c.opts.TopicAliasMaximum {
-		c.opts.Logger.Error("server exceeded topic alias maximum", "alias", aliasID, "max", c.opts.TopicAliasMaximum)
 		c.dropConnection(ReasonCodeTopicAliasInvalid)
-		return nil
+		return fmt.Errorf("server sent topic alias %d above our maximum %d", aliasID, c.opts.TopicAliasMaximum)
 	}
 
 	if p.Topic == "" {
@@ -218,9 +216,8 @@ func (c *Client) processTopicAlias(p *packets.PublishPacket) error {
 		c.receivedAliasesLock.RUnlock()
 
 		if !exists {
-			c.opts.Logger.Error("server sent unknown topic alias", "alias", aliasID)
 			c.dropConnection(ReasonCodeMalformedPacket)
-			return nil
+			return fmt.Errorf("server sent unknown topic alias %d", aliasID)
 		}
 
 		p.Topic = topic

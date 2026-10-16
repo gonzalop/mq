@@ -4,6 +4,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/gonzalop/mq/internal/packets"
 )
@@ -273,10 +274,40 @@ func TestHandleIncomingTopicAlias(t *testing.T) {
 				Presence:   packets.PresTopicAlias,
 			},
 		}
-		c.handlePublish(p)
+		if pkts := c.handlePublish(p); len(pkts) != 0 {
+			t.Errorf("expected no ack for unknown alias, got %v", pkts)
+		}
 
 		if p.Topic != "" {
 			t.Errorf("expected topic to remain empty for unknown alias")
+		}
+	})
+
+	// The message must be discarded, not handed to the default handler with
+	// an empty topic.
+	t.Run("unknown alias is not delivered", func(t *testing.T) {
+		opts := defaultOptions("tcp://x:1883")
+		opts.ProtocolVersion = ProtocolV50
+		opts.Logger = testLogger()
+		delivered := make(chan string, 1)
+		opts.DefaultPublishHandler = func(_ *Client, m Message) { delivered <- m.Topic }
+		c := newTestClient(opts)
+
+		p := &packets.PublishPacket{
+			QoS:      1,
+			PacketID: 7,
+			Properties: &packets.Properties{
+				TopicAlias: 99,
+				Presence:   packets.PresTopicAlias,
+			},
+		}
+		if pkts := c.handlePublish(p); len(pkts) != 0 {
+			t.Errorf("expected no ack for unknown alias, got %v", pkts)
+		}
+		select {
+		case topic := <-delivered:
+			t.Errorf("message with unknown alias was delivered (topic %q)", topic)
+		case <-time.After(100 * time.Millisecond):
 		}
 	})
 }
