@@ -1,6 +1,8 @@
 package mq
 
 import (
+	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -196,4 +198,59 @@ func (r *raceCheckingSessionStore) LoadPendingPublishes() (map[uint16]*Persisted
 		r.loadSuccess = false
 	}
 	return nil, nil
+}
+
+type slowCountingStore struct {
+	dummySessionStore
+	saved atomic.Int32
+}
+
+func (s *slowCountingStore) SavePendingPublish(_ uint16, _ *PersistedPublish) error {
+	time.Sleep(5 * time.Millisecond)
+	s.saved.Add(1)
+	return nil
+}
+
+// TestAsyncStore_CloseDrainsQueue checks that Close returns only after every
+// queued write reached the wrapped store, so exiting right after Disconnect
+// loses nothing.
+func TestAsyncStore_CloseDrainsQueue(t *testing.T) {
+	store := &slowCountingStore{}
+	asyncStore := NewAsyncStore(store, 10)
+	for i := uint16(1); i <= 10; i++ {
+		_ = asyncStore.SavePendingPublish(i, &PersistedPublish{Topic: "test"})
+	}
+
+	if err := asyncStore.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if n := store.saved.Load(); n != 10 {
+		t.Errorf("Close returned with %d of 10 writes done", n)
+	}
+
+	// A second Close must not block.
+	if err := asyncStore.Close(); err != nil {
+		t.Errorf("second Close: %v", err)
+	}
+}
+
+type failingSaveStore struct {
+	dummySessionStore
+}
+
+func (*failingSaveStore) SavePendingPublish(_ uint16, _ *PersistedPublish) error {
+	return errors.New("disk full")
+}
+
+// TestAsyncStore_CloseReturnsError checks that an error from an asynchronous
+// write is reported by Close instead of being discarded.
+func TestAsyncStore_CloseReturnsError(t *testing.T) {
+	asyncStore := NewAsyncStore(&failingSaveStore{}, 10)
+	_ = asyncStore.SavePendingPublish(1, &PersistedPublish{Topic: "test"})
+	_ = asyncStore.SavePendingPublish(2, &PersistedPublish{Topic: "test"})
+
+	err := asyncStore.Close()
+	if err == nil || err.Error() != "disk full" {
+		t.Errorf("Close() = %v, want the store error \"disk full\"", err)
+	}
 }

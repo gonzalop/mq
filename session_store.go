@@ -118,8 +118,10 @@ type AsyncStore struct {
 	store SessionStore
 	mu    sync.Mutex
 	cond  *sync.Cond
-	queue []func()
+	queue []func() error
 	stop  bool
+	done  chan struct{} // closed when run has finished the queue after Close
+	err   error         // first error from store; written by run before done
 }
 
 // NewAsyncStore creates a new AsyncStore wrapping the provided store.
@@ -127,7 +129,8 @@ type AsyncStore struct {
 func NewAsyncStore(store SessionStore, bufferSize int) *AsyncStore {
 	as := &AsyncStore{
 		store: store,
-		queue: make([]func(), 0, bufferSize),
+		queue: make([]func() error, 0, bufferSize),
+		done:  make(chan struct{}),
 	}
 	as.cond = sync.NewCond(&as.mu)
 
@@ -143,18 +146,21 @@ func (as *AsyncStore) run() {
 		}
 		if len(as.queue) == 0 && as.stop {
 			as.mu.Unlock()
+			close(as.done)
 			return
 		}
 		op := as.queue[0]
 		as.queue = as.queue[1:]
 		as.mu.Unlock()
 
-		op()
+		if err := op(); err != nil && as.err == nil {
+			as.err = err
+		}
 	}
 }
 
 // enqueue adds an operation to the queue without blocking.
-func (as *AsyncStore) enqueue(op func()) {
+func (as *AsyncStore) enqueue(op func() error) {
 	as.mu.Lock()
 	defer as.mu.Unlock()
 	if as.stop {
@@ -164,13 +170,17 @@ func (as *AsyncStore) enqueue(op func()) {
 	as.cond.Signal()
 }
 
-// Close stops the background worker.
+// Close stops the background worker after it has run every queued operation,
+// so nothing is lost when the program exits right after Disconnect. It returns
+// the first error the wrapped store returned from an asynchronous operation.
+// Operations enqueued after Close are dropped.
 func (as *AsyncStore) Close() error {
 	as.mu.Lock()
 	as.stop = true
 	as.cond.Signal()
 	as.mu.Unlock()
-	return nil
+	<-as.done
+	return as.err
 }
 
 // flush blocks until all currently enqueued operations have completed.
@@ -181,8 +191,9 @@ func (as *AsyncStore) flush() {
 		return
 	}
 	ch := make(chan struct{})
-	as.queue = append(as.queue, func() {
+	as.queue = append(as.queue, func() error {
 		close(ch)
+		return nil
 	})
 	as.cond.Signal()
 	as.mu.Unlock()
@@ -191,16 +202,16 @@ func (as *AsyncStore) flush() {
 
 // SavePendingPublish implements SessionStore.
 func (as *AsyncStore) SavePendingPublish(packetID uint16, pub *PersistedPublish) error {
-	as.enqueue(func() {
-		_ = as.store.SavePendingPublish(packetID, pub)
+	as.enqueue(func() error {
+		return as.store.SavePendingPublish(packetID, pub)
 	})
 	return nil
 }
 
 // DeletePendingPublish implements SessionStore.
 func (as *AsyncStore) DeletePendingPublish(packetID uint16) error {
-	as.enqueue(func() {
-		_ = as.store.DeletePendingPublish(packetID)
+	as.enqueue(func() error {
+		return as.store.DeletePendingPublish(packetID)
 	})
 	return nil
 }
@@ -213,24 +224,24 @@ func (as *AsyncStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, erro
 
 // ClearPendingPublishes implements SessionStore.
 func (as *AsyncStore) ClearPendingPublishes() error {
-	as.enqueue(func() {
-		_ = as.store.ClearPendingPublishes()
+	as.enqueue(func() error {
+		return as.store.ClearPendingPublishes()
 	})
 	return nil
 }
 
 // SaveSubscription implements SessionStore.
 func (as *AsyncStore) SaveSubscription(topic string, sub *PersistedSubscription) error {
-	as.enqueue(func() {
-		_ = as.store.SaveSubscription(topic, sub)
+	as.enqueue(func() error {
+		return as.store.SaveSubscription(topic, sub)
 	})
 	return nil
 }
 
 // DeleteSubscription implements SessionStore.
 func (as *AsyncStore) DeleteSubscription(topic string) error {
-	as.enqueue(func() {
-		_ = as.store.DeleteSubscription(topic)
+	as.enqueue(func() error {
+		return as.store.DeleteSubscription(topic)
 	})
 	return nil
 }
@@ -243,16 +254,16 @@ func (as *AsyncStore) LoadSubscriptions() (map[string]*PersistedSubscription, er
 
 // SaveReceivedQoS2 implements SessionStore.
 func (as *AsyncStore) SaveReceivedQoS2(packetID uint16) error {
-	as.enqueue(func() {
-		_ = as.store.SaveReceivedQoS2(packetID)
+	as.enqueue(func() error {
+		return as.store.SaveReceivedQoS2(packetID)
 	})
 	return nil
 }
 
 // DeleteReceivedQoS2 implements SessionStore.
 func (as *AsyncStore) DeleteReceivedQoS2(packetID uint16) error {
-	as.enqueue(func() {
-		_ = as.store.DeleteReceivedQoS2(packetID)
+	as.enqueue(func() error {
+		return as.store.DeleteReceivedQoS2(packetID)
 	})
 	return nil
 }
@@ -265,8 +276,8 @@ func (as *AsyncStore) LoadReceivedQoS2() (map[uint16]struct{}, error) {
 
 // ClearReceivedQoS2 implements SessionStore.
 func (as *AsyncStore) ClearReceivedQoS2() error {
-	as.enqueue(func() {
-		_ = as.store.ClearReceivedQoS2()
+	as.enqueue(func() error {
+		return as.store.ClearReceivedQoS2()
 	})
 	return nil
 }

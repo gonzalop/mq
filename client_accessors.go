@@ -146,7 +146,9 @@ func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, pro
 	// Close session store if it implements Closer or has a Close method
 	if c.opts != nil && c.opts.SessionStore != nil {
 		if closer, ok := c.opts.SessionStore.(interface{ Close() error }); ok {
-			_ = closer.Close()
+			if err := closer.Close(); err != nil {
+				c.opts.Logger.Warn("session store close failed", "error", err)
+			}
 		} else if closer, ok := c.opts.SessionStore.(interface{ Close() }); ok {
 			closer.Close()
 		}
