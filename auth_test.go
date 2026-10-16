@@ -301,6 +301,11 @@ func TestEnhancedAuthenticationFlow(t *testing.T) {
 			errCh <- fmt.Errorf("expected AUTH ReasonCode 0x18, got 0x%02x", authResp.ReasonCode)
 			return
 		}
+		// Section 3.15.2.2.2: omitting the Authentication Method in AUTH is a Protocol Error.
+		if authResp.Properties.AuthenticationMethod != "PING-PONG" {
+			errCh <- fmt.Errorf("expected AuthMethod 'PING-PONG' in AUTH response, got %q", authResp.Properties.AuthenticationMethod)
+			return
+		}
 		if string(authResp.Properties.AuthenticationData) != "PONG" {
 			errCh <- fmt.Errorf("expected AuthData 'PONG', got %q", authResp.Properties.AuthenticationData)
 			return

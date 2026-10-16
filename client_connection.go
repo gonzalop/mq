@@ -335,6 +335,7 @@ func (c *Client) performHandshake(ctx context.Context, r io.Reader, w io.Writer)
 				Properties: &packets.Properties{
 					AuthenticationMethod: c.opts.Authenticator.Method(),
 					AuthenticationData:   respData,
+					Presence:             packets.PresAuthenticationMethod,
 				},
 			}
 
