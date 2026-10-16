@@ -97,7 +97,7 @@ func (c *Client) checkSessionPresent(sessionPresent bool) error {
 	// Only clear ephemeral state like QoS 2 received IDs.
 	// Pending publishes and subscriptions are preserved for re-delivery/re-subscription.
 	if c.opts.SessionStore != nil {
-		if err := c.opts.SessionStore.DeleteReceivedQoS2(0); err != nil {
+		if err := c.opts.SessionStore.ClearReceivedQoS2(); err != nil {
 			c.opts.Logger.Warn("failed to clear stale QoS2 IDs", "error", err)
 		}
 	}

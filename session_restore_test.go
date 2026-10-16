@@ -149,3 +149,43 @@ func TestSessionStoreAutoClose(t *testing.T) {
 		t.Error("expected SessionStore Close() to be called automatically on Disconnect()")
 	}
 }
+
+// qos2ClearRecorder records how the client clears received QoS 2 IDs.
+type qos2ClearRecorder struct {
+	MockSessionStoreForRestore
+	cleared   bool
+	deletedID []uint16
+}
+
+func (r *qos2ClearRecorder) ClearReceivedQoS2() error { r.cleared = true; return nil }
+func (r *qos2ClearRecorder) DeleteReceivedQoS2(id uint16) error {
+	r.deletedID = append(r.deletedID, id)
+	return nil
+}
+
+// TestCheckSessionPresent_ClearsReceivedQoS2 checks that a CONNACK without a
+// session clears the stored QoS 2 IDs through ClearReceivedQoS2. It used to
+// call DeleteReceivedQoS2(0), which only FileStore treated as "clear all":
+// other stores kept stale IDs, and new messages reusing them were dropped as
+// duplicates.
+func TestCheckSessionPresent_ClearsReceivedQoS2(t *testing.T) {
+	store := &qos2ClearRecorder{}
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.SessionStore = store
+	c := newTestClient(opts)
+	c.receivedQoS2[5] = struct{}{}
+
+	if err := c.checkSessionPresent(false); err != nil {
+		t.Fatalf("checkSessionPresent: %v", err)
+	}
+
+	if !store.cleared {
+		t.Error("ClearReceivedQoS2 was not called")
+	}
+	if len(store.deletedID) != 0 {
+		t.Errorf("DeleteReceivedQoS2 called with %v, want no calls", store.deletedID)
+	}
+	if len(c.receivedQoS2) != 0 {
+		t.Errorf("in-memory QoS 2 IDs not cleared: %v", c.receivedQoS2)
+	}
+}

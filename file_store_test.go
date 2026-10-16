@@ -161,6 +161,10 @@ func TestFileStore_PendingPublishes(t *testing.T) {
 			t.Fatalf("LoadPendingPublishes failed: %v", err)
 		}
 
+		if err := store.SavePendingPublish(1, &PersistedPublish{Topic: "after/clear", QoS: 1}); err != nil {
+			t.Errorf("SavePendingPublish after clear failed: %v", err)
+		}
+
 		if len(loaded) != 0 {
 			t.Errorf("LoadPendingPublishes returned %d items after clear, want 0", len(loaded))
 		}
@@ -312,6 +316,10 @@ func TestFileStore_ReceivedQoS2(t *testing.T) {
 		loaded, err := store.LoadReceivedQoS2()
 		if err != nil {
 			t.Fatalf("LoadReceivedQoS2 failed: %v", err)
+		}
+
+		if err := store.SaveReceivedQoS2(1); err != nil {
+			t.Errorf("SaveReceivedQoS2 after clear failed: %v", err)
 		}
 
 		if len(loaded) != 0 {

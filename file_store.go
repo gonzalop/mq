@@ -183,7 +183,7 @@ func (f *FileStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error)
 
 // ClearPendingPublishes removes all pending publishes from disk.
 func (f *FileStore) ClearPendingPublishes() error {
-	return os.RemoveAll(filepath.Join(f.dir, "pending"))
+	return f.resetDir("pending")
 }
 
 // SaveSubscription stores a subscription to disk.
@@ -269,10 +269,6 @@ func (f *FileStore) SaveReceivedQoS2(packetID uint16) error {
 
 // DeleteReceivedQoS2 removes a QoS 2 packet ID.
 func (f *FileStore) DeleteReceivedQoS2(packetID uint16) error {
-	if packetID == 0 {
-		return f.ClearReceivedQoS2()
-	}
-
 	path := filepath.Join(f.dir, "qos2", fmt.Sprintf("%d.json", packetID))
 	err := os.Remove(path)
 	if os.IsNotExist(err) {
@@ -314,20 +310,28 @@ func (f *FileStore) LoadReceivedQoS2() (map[uint16]struct{}, error) {
 
 // ClearReceivedQoS2 removes all received QoS 2 packet IDs.
 func (f *FileStore) ClearReceivedQoS2() error {
-	return os.RemoveAll(filepath.Join(f.dir, "qos2"))
+	return f.resetDir("qos2")
 }
 
 // Clear removes all session state from disk.
 func (f *FileStore) Clear() error {
-	// Instead of iterating, just remove all subdirectories and recreate them
 	for _, sub := range []string{"pending", "subscriptions", "qos2"} {
-		path := filepath.Join(f.dir, sub)
-		if err := os.RemoveAll(path); err != nil {
-			return fmt.Errorf("failed to clear %s: %w", sub, err)
+		if err := f.resetDir(sub); err != nil {
+			return err
 		}
-		if err := os.MkdirAll(path, f.config.permissions|0111); err != nil {
-			return fmt.Errorf("failed to recreate %s: %w", sub, err)
-		}
+	}
+	return nil
+}
+
+// resetDir empties the sub directory by removing and recreating it, so later
+// saves into it keep working.
+func (f *FileStore) resetDir(sub string) error {
+	path := filepath.Join(f.dir, sub)
+	if err := os.RemoveAll(path); err != nil {
+		return fmt.Errorf("failed to clear %s: %w", sub, err)
+	}
+	if err := os.MkdirAll(path, f.config.permissions|0111); err != nil {
+		return fmt.Errorf("failed to recreate %s: %w", sub, err)
 	}
 	return nil
 }
