@@ -406,3 +406,74 @@ func TestFileStore_LoadEmpty(t *testing.T) {
 		}
 	})
 }
+
+// TestFileStore_AtomicWrites checks that saves leave no temporary files
+// behind, replace existing files, and that a temporary file left by a crash
+// is not loaded as an entry.
+func TestFileStore_AtomicWrites(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewFileStore(dir, "atomic")
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+
+	if err := store.SavePendingPublish(1, &PersistedPublish{Topic: "old", QoS: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SavePendingPublish(1, &PersistedPublish{Topic: "new", QoS: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSubscription("a/b", &PersistedSubscription{QoS: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveReceivedQoS2(7); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, sub := range []string{"pending", "subscriptions", "qos2"} {
+		tmps, _ := filepath.Glob(filepath.Join(dir, "atomic", sub, ".tmp-*"))
+		if len(tmps) != 0 {
+			t.Errorf("%s: temporary files left behind: %v", sub, tmps)
+		}
+		// Simulate a crash between writing the temporary file and the rename.
+		leftover := filepath.Join(dir, "atomic", sub, ".tmp-123456")
+		if err := os.WriteFile(leftover, []byte(`{"Topic":"ghost","QoS":1}`), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	pending, err := store.LoadPendingPublishes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[1] == nil || pending[1].Topic != "new" {
+		t.Errorf("pending = %v, want only packet 1 with topic \"new\"", pending)
+	}
+
+	subs, err := store.LoadSubscriptions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subs) != 1 || subs["a/b"] == nil {
+		t.Errorf("subscriptions = %v, want only a/b", subs)
+	}
+
+	qos2, err := store.LoadReceivedQoS2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(qos2) != 1 {
+		t.Errorf("qos2 = %v, want only 7", qos2)
+	}
+	if _, ok := qos2[7]; !ok {
+		t.Errorf("qos2 = %v, want 7", qos2)
+	}
+
+	info, err := os.Stat(filepath.Join(dir, "atomic", "pending", "1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0600 {
+		t.Errorf("pending file permissions = %o, want 600", perm)
+	}
+}

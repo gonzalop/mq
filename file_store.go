@@ -30,7 +30,11 @@ var _ SessionStore = (*FileStore)(nil)
 //	      2.json
 //
 // This implementation is synchronous - all operations block until complete.
-// For async/batched writes, users can implement a custom SessionStore.
+// For async/batched writes, wrap it in an AsyncStore.
+//
+// Each file is written to a temporary file and renamed into place, so a crash
+// of the process never leaves a partially written file. The data is not
+// fsynced: after a power loss or OS crash, the most recent writes may be lost.
 type FileStore struct {
 	dir      string
 	clientID string
@@ -123,7 +127,7 @@ func (f *FileStore) SavePendingPublish(packetID uint16, pub *PersistedPublish) e
 	}
 
 	path := filepath.Join(f.dir, "pending", fmt.Sprintf("%d.json", packetID))
-	if err := os.WriteFile(path, data, f.config.permissions); err != nil {
+	if err := writeFileAtomic(path, data, f.config.permissions); err != nil {
 		return fmt.Errorf("failed to write pending publish: %w", err)
 	}
 
@@ -195,7 +199,7 @@ func (f *FileStore) SaveSubscription(topic string, sub *PersistedSubscription) e
 
 	safeTopic := base64.URLEncoding.EncodeToString([]byte(topic))
 	path := filepath.Join(f.dir, "subscriptions", safeTopic+".json")
-	if err := os.WriteFile(path, data, f.config.permissions); err != nil {
+	if err := writeFileAtomic(path, data, f.config.permissions); err != nil {
 		return fmt.Errorf("failed to write subscription: %w", err)
 	}
 
@@ -261,7 +265,7 @@ func (f *FileStore) SaveReceivedQoS2(packetID uint16) error {
 	path := filepath.Join(f.dir, "qos2", fmt.Sprintf("%d.json", packetID))
 	// Just write an empty file to indicate the ID is received.
 	// We don't need any content because the ID is the filename.
-	if err := os.WriteFile(path, []byte{}, f.config.permissions); err != nil {
+	if err := writeFileAtomic(path, nil, f.config.permissions); err != nil {
 		return fmt.Errorf("failed to write QoS2 ID: %w", err)
 	}
 	return nil
@@ -334,4 +338,30 @@ func (f *FileStore) resetDir(sub string) error {
 		return fmt.Errorf("failed to recreate %s: %w", sub, err)
 	}
 	return nil
+}
+
+// writeFileAtomic writes data to path through a temporary file in the same
+// directory and a rename, so readers (and a restart after a crash) see either
+// the old content or the new one, never a partial file. The temporary name
+// starts with ".tmp-", which the Load methods do not accept as an entry.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	_, err = tmp.Write(data)
+	if err == nil {
+		err = tmp.Chmod(perm)
+	}
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = os.Rename(tmpName, path)
+	}
+	if err != nil {
+		_ = os.Remove(tmpName)
+	}
+	return err
 }
