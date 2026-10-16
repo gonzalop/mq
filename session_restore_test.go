@@ -25,7 +25,6 @@ func (m *MockSessionStoreForRestore) LoadPendingPublishes() (map[uint16]*Persist
 	maps.Copy(result, m.pendingPublishes)
 	return result, nil
 }
-func (m *MockSessionStoreForRestore) ClearPendingPublishes() error { return nil }
 func (m *MockSessionStoreForRestore) SaveSubscription(_ string, _ *PersistedSubscription) error {
 	return nil
 }

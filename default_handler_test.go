@@ -27,6 +27,7 @@ func TestDefaultPublishHandler(t *testing.T) {
 		subscriptions: make(map[string]subscriptionEntry),
 		outgoing:      make(chan packets.Packet, 10),
 	}
+	c.defaultHandler = c.wrapHandler(c.opts.DefaultPublishHandler) // as DialContext does
 
 	// Create a publish packet for a topic with NO subscription
 	pkt := &packets.PublishPacket{

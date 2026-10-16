@@ -12,14 +12,7 @@ import (
 	"github.com/gonzalop/mq/internal/packets"
 )
 
-// readLoop continuously reads packets from the network.
-func (c *Client) readLoop() {
-	c.connLock.RLock()
-	conn := c.conn
-	c.connLock.RUnlock()
-	c.runReadLoop(conn)
-}
-
+// runReadLoop continuously reads packets from conn.
 func (c *Client) runReadLoop(conn net.Conn) {
 	defer c.wg.Done()
 	defer c.activeLoops.Add(-1)
@@ -63,18 +56,7 @@ func (c *Client) runReadLoop(conn net.Conn) {
 	}
 }
 
-// writeLoop continuously writes packets to the network and handles keepalive.
-func (c *Client) writeLoop() {
-	c.connLock.RLock()
-	conn := c.conn
-	connDone := c.connDone
-	c.connLock.RUnlock()
-	if connDone == nil {
-		connDone = make(chan struct{})
-	}
-	c.runWriteLoop(conn, connDone, c.opts.KeepAlive)
-}
-
+// runWriteLoop continuously writes packets to conn and handles keepalive.
 func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive time.Duration) {
 	defer c.wg.Done()
 	defer c.activeLoops.Add(-1)

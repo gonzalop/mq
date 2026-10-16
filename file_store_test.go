@@ -152,8 +152,8 @@ func TestFileStore_PendingPublishes(t *testing.T) {
 	})
 
 	t.Run("clear", func(t *testing.T) {
-		if err := store.ClearPendingPublishes(); err != nil {
-			t.Fatalf("ClearPendingPublishes failed: %v", err)
+		if err := store.Clear(); err != nil {
+			t.Fatalf("Clear failed: %v", err)
 		}
 
 		loaded, err := store.LoadPendingPublishes()

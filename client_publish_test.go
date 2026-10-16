@@ -453,7 +453,6 @@ func (d *dummySessionStore) LoadPendingPublishes() (map[uint16]*PersistedPublish
 }
 func (d *dummySessionStore) SavePendingPublish(uint16, *PersistedPublish) error    { return nil }
 func (d *dummySessionStore) DeletePendingPublish(uint16) error                     { return nil }
-func (d *dummySessionStore) ClearPendingPublishes() error                          { return nil }
 func (d *dummySessionStore) SaveSubscription(string, *PersistedSubscription) error { return nil }
 func (d *dummySessionStore) DeleteSubscription(string) error                       { return nil }
 func (d *dummySessionStore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {

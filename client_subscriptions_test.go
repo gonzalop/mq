@@ -31,7 +31,6 @@ func (m *MockSubscriptionSessionStore) DeletePendingPublish(_ uint16) error { re
 func (m *MockSubscriptionSessionStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
 	return nil, nil
 }
-func (m *MockSubscriptionSessionStore) ClearPendingPublishes() error { return nil }
 func (m *MockSubscriptionSessionStore) SaveSubscription(topic string, sub *PersistedSubscription) error {
 	if m.storedSubs == nil {
 		m.storedSubs = make(map[string]*PersistedSubscription)

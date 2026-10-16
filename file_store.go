@@ -185,11 +185,6 @@ func (f *FileStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error)
 	return result, nil
 }
 
-// ClearPendingPublishes removes all pending publishes from disk.
-func (f *FileStore) ClearPendingPublishes() error {
-	return f.resetDir("pending")
-}
-
 // SaveSubscription stores a subscription to disk.
 func (f *FileStore) SaveSubscription(topic string, sub *PersistedSubscription) error {
 	data, err := json.Marshal(sub)

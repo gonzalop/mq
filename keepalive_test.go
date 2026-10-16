@@ -53,7 +53,7 @@ func TestKeepAliveTimeout(t *testing.T) {
 	// Start writeLoop in background
 	client.wg.Add(1)
 	go func() {
-		client.writeLoop()
+		client.runWriteLoop(client.conn, make(chan struct{}), client.opts.KeepAlive)
 		close(done)
 	}()
 
@@ -100,7 +100,7 @@ func TestKeepAliveTimeoutPrevented(t *testing.T) {
 	// Start writeLoop in background
 	client.wg.Add(1)
 	go func() {
-		client.writeLoop()
+		client.runWriteLoop(client.conn, make(chan struct{}), client.opts.KeepAlive)
 		disconnected.Store(true)
 	}()
 
@@ -153,7 +153,7 @@ func TestKeepAlivePINGREQSent(_ *testing.T) {
 
 	// Start writeLoop in background
 	client.wg.Add(1)
-	go client.writeLoop()
+	go client.runWriteLoop(client.conn, make(chan struct{}), client.opts.KeepAlive)
 
 	// Read from server side to capture PINGREQ
 	go func() {
@@ -214,7 +214,7 @@ func TestKeepAliveWriteDoesNotResetTimeout(t *testing.T) {
 	// Start writeLoop in background
 	client.wg.Add(1)
 	go func() {
-		client.writeLoop()
+		client.runWriteLoop(client.conn, make(chan struct{}), client.opts.KeepAlive)
 		disconnected.Store(true)
 	}()
 
@@ -312,7 +312,7 @@ func TestKeepAlivePINGREQWithQoS0Publishing(t *testing.T) {
 
 	// Start writeLoop in background
 	client.wg.Add(1)
-	go client.writeLoop()
+	go client.runWriteLoop(client.conn, make(chan struct{}), client.opts.KeepAlive)
 
 	// Simulate continuous QoS 0 publishing (every 100ms)
 	// This is faster than the PINGREQ threshold (3/4 * 400ms = 300ms)
@@ -392,7 +392,7 @@ func TestKeepAliveZeroDisabled(t *testing.T) {
 	// Start writeLoop in background
 	client.wg.Add(1)
 	go func() {
-		client.writeLoop()
+		client.runWriteLoop(client.conn, make(chan struct{}), client.opts.KeepAlive)
 		disconnected.Store(true)
 	}()
 

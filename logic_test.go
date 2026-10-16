@@ -38,6 +38,7 @@ func newTestClient(opts *clientOptions) *Client {
 	c.connState.Store(&connectionState{
 		caps: extractServerCapabilities(nil),
 	})
+	c.defaultHandler = c.wrapHandler(opts.DefaultPublishHandler)
 	return c
 }
 
@@ -157,7 +158,6 @@ func (m *MockLogicSessionStore) DeletePendingPublish(packetID uint16) error {
 func (m *MockLogicSessionStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
 	return nil, nil
 }
-func (m *MockLogicSessionStore) ClearPendingPublishes() error { return nil }
 func (m *MockLogicSessionStore) SaveSubscription(_ string, _ *PersistedSubscription) error {
 	return nil
 }

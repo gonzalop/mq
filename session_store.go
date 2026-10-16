@@ -60,10 +60,6 @@ type SessionStore interface {
 	// MUST complete synchronously and return actual data.
 	LoadPendingPublishes() (map[uint16]*PersistedPublish, error)
 
-	// ClearPendingPublishes removes all pending publishes.
-	// Called when SessionPresent=false (server lost our session).
-	ClearPendingPublishes() error
-
 	// SaveSubscription stores an active subscription.
 	// Called when SUBACK is received.
 	// MAY return immediately and persist asynchronously.
@@ -220,14 +216,6 @@ func (as *AsyncStore) DeletePendingPublish(packetID uint16) error {
 func (as *AsyncStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
 	as.flush()
 	return as.store.LoadPendingPublishes()
-}
-
-// ClearPendingPublishes implements SessionStore.
-func (as *AsyncStore) ClearPendingPublishes() error {
-	as.enqueue(func() error {
-		return as.store.ClearPendingPublishes()
-	})
-	return nil
 }
 
 // SaveSubscription implements SessionStore.
