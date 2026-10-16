@@ -60,19 +60,13 @@ type Authenticator interface {
 	// Return the response data to send back to the server in an AUTH packet.
 	// Return an error if the challenge cannot be processed or authentication fails.
 	//
-	// IMPORTANT: This method is called synchronously in the packet processing loop.
-	// It should complete quickly (< 100ms) to avoid blocking other packets.
+	// During the initial connection, this method is called synchronously as part of
+	// the handshake, so its running time counts against ConnectTimeout.
 	//
-	// This is especially critical during re-authentication, where a slow HandleChallenge
-	// will block processing of PUBLISH, PUBACK, and other packets, potentially causing
-	// timeouts or degraded performance.
-	//
-	// If you need to perform expensive operations (network calls, heavy crypto), consider:
-	//   - Pre-computing data in InitialData()
-	//   - Caching results
-	//   - Using fast cryptographic libraries
-	//
-	// For most authentication methods (SCRAM, token-based), this is not an issue.
+	// During re-authentication, it is called in its own goroutine and does not block
+	// processing of PUBLISH, PUBACK, and other packets; the response is sent when it
+	// returns. Because it runs on a goroutine owned by the client, any state it shares
+	// with the rest of your code must be safe for concurrent use.
 	HandleChallenge(challengeData []byte, reasonCode uint8) ([]byte, error)
 
 	// Complete is called when authentication succeeds (CONNACK received).
@@ -82,5 +76,7 @@ type Authenticator interface {
 	//
 	// Return an error if post-authentication setup fails. This will be logged
 	// but won't affect the connection (CONNACK was already successful).
+	//
+	// After a successful re-authentication, Complete is called in its own goroutine.
 	Complete() error
 }
