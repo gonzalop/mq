@@ -30,6 +30,7 @@ coverage.txt
 .vscode/
 .antigravitycli/
 GEMINI.md
+CLAUDE.md
 
 # Dependency directories
 vendor/
