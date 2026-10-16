@@ -1,8 +1,11 @@
 package mq
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -475,5 +478,94 @@ func TestFileStore_AtomicWrites(t *testing.T) {
 	}
 	if perm := info.Mode().Perm(); perm != 0600 {
 		t.Errorf("pending file permissions = %o, want 600", perm)
+	}
+}
+
+// TestFileStore_LongTopicFilter checks that a topic filter too long to be
+// base64-encoded into a file name (more than ~190 bytes) is still saved,
+// loaded and deleted.
+func TestFileStore_LongTopicFilter(t *testing.T) {
+	store, err := NewFileStore(t.TempDir(), "long")
+	if err != nil {
+		t.Fatal(err)
+	}
+	topic := strings.Repeat("level/", 50) + "#" // 301 bytes
+
+	if err := store.SaveSubscription(topic, &PersistedSubscription{QoS: 2}); err != nil {
+		t.Fatalf("SaveSubscription: %v", err)
+	}
+	subs, err := store.LoadSubscriptions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub := subs[topic]; sub == nil || sub.QoS != 2 || len(subs) != 1 {
+		t.Fatalf("LoadSubscriptions = %v, want the long topic with QoS 2", subs)
+	}
+
+	if err := store.DeleteSubscription(topic); err != nil {
+		t.Fatalf("DeleteSubscription: %v", err)
+	}
+	if subs, _ := store.LoadSubscriptions(); len(subs) != 0 {
+		t.Errorf("after delete: %v, want none", subs)
+	}
+}
+
+// TestFileStore_LegacySubscriptionFiles checks that subscriptions saved by
+// older versions (base64 file name, bare PersistedSubscription) still load,
+// are migrated when saved again, and are removed by DeleteSubscription.
+func TestFileStore_LegacySubscriptionFiles(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewFileStore(dir, "legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	subsDir := filepath.Join(dir, "legacy", "subscriptions")
+	writeLegacy := func(topic string, qos uint8) {
+		t.Helper()
+		data, _ := json.Marshal(&PersistedSubscription{QoS: qos})
+		name := base64.URLEncoding.EncodeToString([]byte(topic)) + ".json"
+		if err := os.WriteFile(filepath.Join(subsDir, name), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	countFiles := func() int {
+		t.Helper()
+		entries, err := os.ReadDir(subsDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(entries)
+	}
+
+	writeLegacy("old/a", 1)
+	writeLegacy("old/b", 2)
+
+	subs, err := store.LoadSubscriptions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subs) != 2 || subs["old/a"] == nil || subs["old/a"].QoS != 1 || subs["old/b"] == nil || subs["old/b"].QoS != 2 {
+		t.Fatalf("LoadSubscriptions = %v, want old/a (QoS 1) and old/b (QoS 2)", subs)
+	}
+
+	// Saving again migrates to the new file and drops the old one.
+	if err := store.SaveSubscription("old/a", &PersistedSubscription{QoS: 0}); err != nil {
+		t.Fatal(err)
+	}
+	if n := countFiles(); n != 2 {
+		t.Errorf("after migrating old/a: %d files, want 2", n)
+	}
+	subs, _ = store.LoadSubscriptions()
+	if subs["old/a"] == nil || subs["old/a"].QoS != 0 {
+		t.Errorf("old/a after save = %+v, want QoS 0", subs["old/a"])
+	}
+
+	// Deleting removes an old-format file too.
+	if err := store.DeleteSubscription("old/b"); err != nil {
+		t.Fatal(err)
+	}
+	subs, _ = store.LoadSubscriptions()
+	if _, ok := subs["old/b"]; ok || countFiles() != 1 {
+		t.Errorf("old/b still present after delete: %v", subs)
 	}
 }

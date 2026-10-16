@@ -81,7 +81,7 @@ data/
     pending/        # Pending QoS 1/2 publishes
       1.json
       2.json
-    subscriptions/  # Active subscriptions (base64 encoded)
+    subscriptions/  # Active subscriptions (file named by SHA-256 of the topic)
       bXkvdG9waWM=.json
     qos2/           # Received QoS 2 packet IDs
       1.json

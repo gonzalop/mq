@@ -1,12 +1,17 @@
 package mq
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // Compile-time check that FileStore implements SessionStore
@@ -24,7 +29,7 @@ var _ SessionStore = (*FileStore)(nil)
 //	      1.json
 //	      2.json
 //	    subscriptions/
-//	      <base64_topic>.json
+//	      <sha256_of_topic>.json
 //	    qos2/
 //	      1.json
 //	      2.json
@@ -185,32 +190,50 @@ func (f *FileStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error)
 	return result, nil
 }
 
+// subscriptionFile is the on-disk form of a subscription. The topic is stored
+// inside the file because the file name is a hash of it.
+type subscriptionFile struct {
+	Topic        string
+	Subscription *PersistedSubscription
+}
+
+// subscriptionPath returns the file for topic: a SHA-256 of the topic, so the
+// name stays short however long the topic filter is.
+func (f *FileStore) subscriptionPath(topic string) string {
+	sum := sha256.Sum256([]byte(topic))
+	return filepath.Join(f.dir, "subscriptions", hex.EncodeToString(sum[:])+".json")
+}
+
+// legacySubscriptionPath returns the file name used by older versions: the
+// base64 of the topic. It exceeds the file name limit for long topics.
+func (f *FileStore) legacySubscriptionPath(topic string) string {
+	return filepath.Join(f.dir, "subscriptions", base64.URLEncoding.EncodeToString([]byte(topic))+".json")
+}
+
 // SaveSubscription stores a subscription to disk.
 func (f *FileStore) SaveSubscription(topic string, sub *PersistedSubscription) error {
-	data, err := json.Marshal(sub)
+	data, err := json.Marshal(subscriptionFile{Topic: topic, Subscription: sub})
 	if err != nil {
 		return fmt.Errorf("failed to marshal subscription: %w", err)
 	}
 
-	safeTopic := base64.URLEncoding.EncodeToString([]byte(topic))
-	path := filepath.Join(f.dir, "subscriptions", safeTopic+".json")
-	if err := writeFileAtomic(path, data, f.config.permissions); err != nil {
+	if err := writeFileAtomic(f.subscriptionPath(topic), data, f.config.permissions); err != nil {
 		return fmt.Errorf("failed to write subscription: %w", err)
 	}
 
+	// Migrate: drop the copy an older version may have saved.
+	if err := removeIfExists(f.legacySubscriptionPath(topic)); err != nil {
+		return fmt.Errorf("failed to remove old subscription file: %w", err)
+	}
 	return nil
 }
 
 // DeleteSubscription removes a subscription from disk.
 func (f *FileStore) DeleteSubscription(topic string) error {
-	safeTopic := base64.URLEncoding.EncodeToString([]byte(topic))
-	path := filepath.Join(f.dir, "subscriptions", safeTopic+".json")
-	err := os.Remove(path)
-	if os.IsNotExist(err) {
-		return nil // Already deleted
-	}
-	if err != nil {
-		return fmt.Errorf("failed to delete subscription: %w", err)
+	for _, path := range []string{f.subscriptionPath(topic), f.legacySubscriptionPath(topic)} {
+		if err := removeIfExists(path); err != nil {
+			return fmt.Errorf("failed to delete subscription: %w", err)
+		}
 	}
 	return nil
 }
@@ -232,27 +255,44 @@ func (f *FileStore) LoadSubscriptions() (map[string]*PersistedSubscription, erro
 			continue
 		}
 
-		encodedTopic := strings.TrimSuffix(entry.Name(), ".json")
-		topicBytes, err := base64.URLEncoding.DecodeString(encodedTopic)
-		if err != nil {
-			continue // Skip malformed filenames
-		}
-		topic := string(topicBytes)
-
 		data, err := os.ReadFile(filepath.Join(f.dir, "subscriptions", entry.Name()))
 		if err != nil {
 			continue // Skip unreadable files
 		}
 
+		var file subscriptionFile
+		if err := json.Unmarshal(data, &file); err != nil {
+			continue // Skip corrupted files
+		}
+		if file.Topic != "" && file.Subscription != nil {
+			result[file.Topic] = file.Subscription
+			continue
+		}
+
+		// Older format: the file name is the base64 of the topic and the
+		// file holds the PersistedSubscription itself.
+		topic, err := base64.URLEncoding.DecodeString(strings.TrimSuffix(entry.Name(), ".json"))
+		if err != nil {
+			continue // Skip malformed filenames
+		}
 		var sub PersistedSubscription
 		if err := json.Unmarshal(data, &sub); err != nil {
 			continue // Skip corrupted files
 		}
-
-		result[topic] = &sub
+		result[string(topic)] = &sub
 	}
 
 	return result, nil
+}
+
+// removeIfExists removes path. A missing file, or a name too long to exist,
+// is not an error.
+func removeIfExists(path string) error {
+	err := os.Remove(path)
+	if err == nil || errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENAMETOOLONG) {
+		return nil
+	}
+	return err
 }
 
 // SaveReceivedQoS2 marks a QoS 2 packet ID as received.
