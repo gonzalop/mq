@@ -42,12 +42,24 @@ func (c *Client) logicLoop() {
 			for _, req := range c.publishQueue {
 				req.token.complete(ErrClientDisconnected)
 			}
-			c.pending = nil
+			// Clear rather than nil the map: a late Publish racing with the
+			// stop must not write into a nil map.
+			clear(c.pending)
 			c.pendingOrder = nil
 			c.publishQueue = nil
 			c.sessionLock.Unlock()
 			return
 		}
+	}
+}
+
+// stopped reports whether the client has been stopped by Disconnect.
+func (c *Client) stopped() bool {
+	select {
+	case <-c.stop:
+		return true
+	default:
+		return false
 	}
 }
 

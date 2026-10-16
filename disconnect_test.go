@@ -2,6 +2,7 @@ package mq
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -50,5 +51,31 @@ func TestDisconnect_NoFixedSleep(t *testing.T) {
 	_ = c.disconnectWithReason(context.Background(), 0, nil, false)
 	if d := time.Since(start); d >= 100*time.Millisecond {
 		t.Errorf("disconnect took %v; it sleeps a fixed 100ms", d)
+	}
+}
+
+// TestRequestsAfterDisconnect checks that Publish, Subscribe and Unsubscribe
+// after Disconnect fail with ErrClientDisconnected instead of panicking on the
+// session maps the logic loop cleared when it stopped.
+func TestRequestsAfterDisconnect(t *testing.T) {
+	c := newTestClient(nil)
+	c.wg.Add(1)
+	go c.logicLoop()
+	if err := c.Disconnect(context.Background()); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	toks := map[string]Token{
+		"publish":     c.Publish(ctx, "a/b", []byte("x"), WithQoS(1)),
+		"subscribe":   c.Subscribe(ctx, "a/b", 1, func(*Client, Message) {}),
+		"unsubscribe": c.Unsubscribe(ctx, "a/b"),
+	}
+	for name, tok := range toks {
+		if err := tok.Wait(ctx); !errors.Is(err, ErrClientDisconnected) {
+			t.Errorf("%s after Disconnect: got %v, want ErrClientDisconnected", name, err)
+		}
 	}
 }

@@ -10,6 +10,11 @@ import (
 
 // internalPublish processes a publish request synchronously with locking.
 func (c *Client) internalPublish(req *publishRequest) {
+	if c.stopped() {
+		req.token.complete(ErrClientDisconnected)
+		return
+	}
+
 	pkt := req.packet
 
 	c.sessionLock.Lock()
@@ -169,6 +174,11 @@ func (c *Client) preparePublishLocked(req *publishRequest) (*packets.PublishPack
 
 // internalSubscribe processes a subscribe request synchronously with locking.
 func (c *Client) internalSubscribe(req *subscribeRequest) {
+	if c.stopped() {
+		req.token.complete(ErrClientDisconnected)
+		return
+	}
+
 	pkt := req.packet
 
 	c.sessionLock.Lock()
@@ -261,6 +271,11 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 
 // internalUnsubscribe processes an unsubscribe request synchronously with locking.
 func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
+	if c.stopped() {
+		req.token.complete(ErrClientDisconnected)
+		return
+	}
+
 	pkt := req.packet
 
 	c.sessionLock.Lock()
