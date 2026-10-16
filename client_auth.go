@@ -107,7 +107,7 @@ func (c *Client) handleAuth(p *packets.AuthPacket) []packets.Packet {
 	count := c.authExchangeCount.Add(1)
 	if c.opts.MaxAuthExchanges > 0 && count > uint32(c.opts.MaxAuthExchanges) {
 		c.opts.Logger.Error("maximum authentication exchanges exceeded", "limit", c.opts.MaxAuthExchanges)
-		_ = c.disconnectWithReason(context.Background(), uint8(ReasonCodeBadAuthenticationMethod), nil, false)
+		c.dropConnection(ReasonCodeBadAuthenticationMethod)
 		return nil
 	}
 

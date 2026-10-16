@@ -38,10 +38,8 @@ func (c *Client) runReadLoop(conn net.Conn) {
 		if err != nil {
 			if _, ok := errors.AsType[*packets.ProtocolError](err); ok {
 				c.opts.Logger.Error("protocol error, disconnecting", "error", err)
-				if c.opts.ProtocolVersion >= ProtocolV50 {
-					// Section 4.13: receiver SHOULD send a DISCONNECT with Reason Code 0x82 (Protocol Error)
-					_ = c.disconnectWithReason(context.Background(), uint8(ReasonCodeProtocolError), nil, false)
-				}
+				// Section 4.13: receiver SHOULD send a DISCONNECT with Reason Code 0x82 (Protocol Error)
+				c.dropConnection(ReasonCodeProtocolError)
 			} else {
 				c.opts.Logger.Debug("read error, disconnecting", "error", err)
 			}
@@ -114,6 +112,12 @@ func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive
 			if pkt == nil {
 				continue // This can happen in quick disconnect/reconnect
 			}
+			if a, ok := pkt.(*abortPacket); ok {
+				if c.writeAbort(a, conn, bw) {
+					return
+				}
+				continue
+			}
 			hasDisconnect := false
 			if _, ok := pkt.(*packets.DisconnectPacket); ok {
 				hasDisconnect = true
@@ -133,6 +137,12 @@ func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive
 				pkt := <-c.outgoing
 				if pkt == nil {
 					continue // This can happen in quick disconnect/reconnect
+				}
+				if a, ok := pkt.(*abortPacket); ok {
+					if c.writeAbort(a, conn, bw) {
+						return
+					}
+					continue
 				}
 				if _, ok := pkt.(*packets.DisconnectPacket); ok {
 					hasDisconnect = true
@@ -230,6 +240,9 @@ func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive
 					if pkt == nil {
 						continue
 					}
+					if _, ok := pkt.(*abortPacket); ok {
+						continue // the client is stopping: no reason to send
+					}
 					if _, err := pkt.WriteTo(bw); err != nil {
 						return
 					}
@@ -251,6 +264,65 @@ func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive
 			}
 		}
 	}
+}
+
+// abortPacket is a DISCONNECT queued by dropConnection. It carries the
+// connection it was meant for, so a write loop of a later connection skips it
+// instead of closing the new connection.
+type abortPacket struct {
+	*packets.DisconnectPacket
+	conn net.Conn
+}
+
+// writeAbort sends an abortPacket taken from outgoing and closes the
+// connection. It reports whether the write loop must exit; an abort queued for
+// an earlier connection is dropped.
+func (c *Client) writeAbort(a *abortPacket, conn net.Conn, bw *bufio.Writer) bool {
+	if a.conn != conn {
+		return false
+	}
+	if _, err := a.WriteTo(bw); err == nil {
+		_ = bw.Flush()
+	}
+	c.handleDisconnect(conn)
+	return true
+}
+
+// dropConnection closes the current connection after a protocol violation by
+// the server. On MQTT v5.0 it first tries to send a DISCONNECT with reasonCode.
+// Unlike Disconnect it does not stop the client: OnConnectionLost runs and the
+// reconnect loop takes over.
+func (c *Client) dropConnection(reasonCode ReasonCode) {
+	c.connLock.RLock()
+	conn := c.conn
+	connDone := c.connDone
+	c.connLock.RUnlock()
+	if conn == nil {
+		return
+	}
+
+	if c.opts.ProtocolVersion >= ProtocolV50 {
+		pkt := &abortPacket{
+			DisconnectPacket: &packets.DisconnectPacket{
+				Version:    c.opts.ProtocolVersion,
+				ReasonCode: uint8(reasonCode),
+			},
+			conn: conn,
+		}
+		// Best effort: the write loop sends it and closes the connection.
+		// Give it a moment, then close the connection ourselves.
+		timeout := time.After(50 * time.Millisecond)
+		select {
+		case c.outgoing <- pkt:
+			select {
+			case <-connDone:
+			case <-timeout:
+			}
+		case <-connDone:
+		case <-timeout:
+		}
+	}
+	c.handleDisconnect(conn)
 }
 
 // handleDisconnect handles connection loss for the given connection.

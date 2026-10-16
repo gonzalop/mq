@@ -2,6 +2,7 @@ package mq
 
 import (
 	"context"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -99,23 +100,16 @@ func TestReceiveMaximum_LimitExceeded(t *testing.T) {
 		t.Errorf("expected 2 unacked, got %d", len(c.inboundUnacked))
 	}
 
-	// Message 3 (QoS 1) - Should trigger disconnect!
+	// Message 3 (QoS 1) - Should drop the connection!
+	conn, peer := net.Pipe()
+	defer peer.Close()
+	c.conn = conn
 	c.connected.Store(true)
 
-	pkts := c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 3})
+	c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 3})
 
-	// Check if any packet is a DISCONNECT
-	disconnected := false
-	for _, p := range pkts {
-		if dp, ok := p.(*packets.DisconnectPacket); ok && dp.ReasonCode == uint8(ReasonCodeReceiveMaximumExceed) {
-			disconnected = true
-			c.connected.Store(false) // Simulate what logicLoop would do
-			break
-		}
-	}
-
-	if !disconnected || c.IsConnected() {
-		t.Error("client should have disconnected due to receive maximum exceeded")
+	if c.IsConnected() || c.conn != nil {
+		t.Error("client should have dropped the connection due to receive maximum exceeded")
 	}
 }
 
@@ -137,6 +131,9 @@ func TestReceiveMaximum_QoS2_Enforcement(t *testing.T) {
 	c.addSubscriptionLocked("t", subscriptionEntry{handler: func(_ *Client, _ Message) {}})
 	c.sessionLock.Unlock()
 
+	conn, peer := net.Pipe()
+	defer peer.Close()
+	c.conn = conn
 	c.connected.Store(true)
 
 	// Msg 1 (QoS 2)
@@ -145,20 +142,11 @@ func TestReceiveMaximum_QoS2_Enforcement(t *testing.T) {
 		t.Errorf("expected 1 unacked, got %d", len(c.inboundUnacked))
 	}
 
-	// Msg 2 (QoS 2) - Should limit
-	pkts := c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 2, PacketID: 11})
+	// Msg 2 (QoS 2) - Should drop the connection
+	c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 2, PacketID: 11})
 
-	disconnected := false
-	for _, p := range pkts {
-		if dp, ok := p.(*packets.DisconnectPacket); ok && dp.ReasonCode == uint8(ReasonCodeReceiveMaximumExceed) {
-			disconnected = true
-			c.connected.Store(false)
-			break
-		}
-	}
-
-	if !disconnected || c.IsConnected() {
-		t.Error("client should have disconnected due to receive maximum exceeded (QoS 2)")
+	if c.IsConnected() || c.conn != nil {
+		t.Error("client should have dropped the connection due to receive maximum exceeded (QoS 2)")
 	}
 }
 

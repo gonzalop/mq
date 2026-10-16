@@ -162,11 +162,8 @@ func (c *Client) handlePublish(p *packets.PublishPacket) []packets.Packet {
 	if err := c.enforceReceiveMaximum(p); err != nil {
 		c.opts.Logger.Error("failed to enforce receive maximum", "error", err)
 		// Protocol error: server sent too many QoS 1/2 messages
-		return []packets.Packet{
-			&packets.DisconnectPacket{
-				ReasonCode: uint8(ReasonCodeReceiveMaximumExceed),
-			},
-		}
+		c.dropConnection(ReasonCodeReceiveMaximumExceed)
+		return nil
 	}
 
 	// 3. Handle QoS 2 Duplicate Detection
@@ -203,13 +200,15 @@ func (c *Client) processTopicAlias(p *packets.PublishPacket) error {
 	// Validate alias ID
 	if aliasID == 0 {
 		c.opts.Logger.Error("server sent invalid topic alias 0")
-		return c.disconnectWithReason(context.Background(), uint8(ReasonCodeTopicAliasInvalid), nil, false)
+		c.dropConnection(ReasonCodeTopicAliasInvalid)
+		return nil
 	}
 
 	// Check if server violated our declared maximum
 	if c.opts.TopicAliasMaximum > 0 && aliasID > c.opts.TopicAliasMaximum {
 		c.opts.Logger.Error("server exceeded topic alias maximum", "alias", aliasID, "max", c.opts.TopicAliasMaximum)
-		return c.disconnectWithReason(context.Background(), uint8(ReasonCodeTopicAliasInvalid), nil, false)
+		c.dropConnection(ReasonCodeTopicAliasInvalid)
+		return nil
 	}
 
 	if p.Topic == "" {
@@ -220,7 +219,8 @@ func (c *Client) processTopicAlias(p *packets.PublishPacket) error {
 
 		if !exists {
 			c.opts.Logger.Error("server sent unknown topic alias", "alias", aliasID)
-			return c.disconnectWithReason(context.Background(), uint8(ReasonCodeMalformedPacket), nil, false)
+			c.dropConnection(ReasonCodeMalformedPacket)
+			return nil
 		}
 
 		p.Topic = topic

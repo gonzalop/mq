@@ -438,6 +438,9 @@ func TestHandleAuth_LimitEnforcement(t *testing.T) {
 		outgoing: make(chan packets.Packet, 10),
 		stop:     make(chan struct{}),
 	}
+	conn, peer := net.Pipe()
+	defer peer.Close()
+	client.conn = conn
 	client.connected.Store(true)
 
 	// First challenge
@@ -466,9 +469,21 @@ func TestHandleAuth_LimitEnforcement(t *testing.T) {
 	// Third challenge - should exceed limit (2)
 	_ = client.handleAuth(authPkt)
 
-	// Should be disconnected (IsConnected will be false)
+	// The connection is dropped with DISCONNECT 0x8C, but the client is not stopped.
 	if client.IsConnected() {
 		t.Error("expected client to be disconnected after exceeding auth limit")
+	}
+	select {
+	case pkt := <-client.outgoing:
+		a, ok := pkt.(*abortPacket)
+		if !ok || a.ReasonCode != uint8(ReasonCodeBadAuthenticationMethod) {
+			t.Errorf("expected DISCONNECT 0x8C, got %#v", pkt)
+		}
+	default:
+		t.Error("expected a DISCONNECT to be queued")
+	}
+	if client.stopped() {
+		t.Error("exceeding the auth limit must not stop the client")
 	}
 }
 
