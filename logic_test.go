@@ -31,7 +31,6 @@ func newTestClient(opts *clientOptions) *Client {
 		receivedQoS2:      make(map[uint16]struct{}),
 
 		inboundUnacked:  make(map[uint16]struct{}),
-		topicAliases:    make(map[string]uint16),
 		receivedAliases: make(map[uint16]string),
 		disconnected:    make(chan struct{}, 1),
 		publishQueue:    []*publishRequest{},

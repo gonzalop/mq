@@ -15,9 +15,8 @@ type PublishPacket struct {
 	Retain bool
 
 	// Variable header
-	Topic         string
-	OriginalTopic string // Original topic if Topic is emptied for alias
-	PacketID      uint16 // Only present if QoS > 0
+	Topic    string
+	PacketID uint16 // Only present if QoS > 0
 
 	// Payload
 	Payload []byte

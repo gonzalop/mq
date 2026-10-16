@@ -96,6 +96,7 @@ func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive
 
 	cw := &countingWriter{Writer: conn, c: c}
 	bw := bufio.NewWriter(cw)
+	aliases := newTopicAliases(c.outgoingAliasLimit())
 	lastReceived := time.Now()
 	lastSent := lastReceived
 
@@ -123,7 +124,7 @@ func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive
 				hasDisconnect = true
 			}
 			c.opts.Logger.Debug("sending packet", "type", packets.PacketNames[pkt.Type()])
-			if _, err := pkt.WriteTo(bw); err != nil {
+			if _, err := aliases.prepare(pkt).WriteTo(bw); err != nil {
 				c.opts.Logger.Debug("write error, disconnecting", "error", err)
 				c.handleDisconnect(conn)
 				return
@@ -148,7 +149,7 @@ func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive
 					hasDisconnect = true
 				}
 				c.opts.Logger.Debug("sending packet (batch)", "type", packets.PacketNames[pkt.Type()])
-				if _, err := pkt.WriteTo(bw); err != nil {
+				if _, err := aliases.prepare(pkt).WriteTo(bw); err != nil {
 					c.opts.Logger.Debug("write error (batch), disconnecting", "error", err)
 					c.handleDisconnect(conn)
 					return
@@ -243,7 +244,7 @@ func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive
 					if _, ok := pkt.(*abortPacket); ok {
 						continue // the client is stopping: no reason to send
 					}
-					if _, err := pkt.WriteTo(bw); err != nil {
+					if _, err := aliases.prepare(pkt).WriteTo(bw); err != nil {
 						return
 					}
 					c.packetsSent.Add(1)

@@ -257,10 +257,6 @@ func (c *Client) basePublish(ctx context.Context, topic string, payload []byte, 
 		UseAlias:   pubOpts.UseAlias,
 	}
 
-	if pkt.UseAlias && c.opts.ProtocolVersion >= ProtocolV50 {
-		c.applyTopicAlias(pkt)
-	}
-
 	tok := newToken()
 
 	req := &publishRequest{

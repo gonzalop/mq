@@ -44,7 +44,6 @@ func FuzzClientHandleIncoming(f *testing.F) {
 			subscriptions:   make(map[string]subscriptionEntry),
 			receivedQoS2:    make(map[uint16]struct{}),
 			inboundUnacked:  make(map[uint16]struct{}),
-			topicAliases:    make(map[string]uint16),
 			receivedAliases: make(map[uint16]string),
 		}
 

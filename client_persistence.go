@@ -116,13 +116,8 @@ func (c *Client) checkSessionPresent(sessionPresent bool) error {
 // --- Conversion Helpers ---
 
 func (c *Client) convertToPersistedPublish(req *publishRequest) *PersistedPublish {
-	topic := req.packet.OriginalTopic
-	if topic == "" {
-		topic = req.packet.Topic
-	}
-
 	p := &PersistedPublish{
-		Topic:   topic,
+		Topic:   req.packet.Topic,
 		Payload: req.packet.Payload,
 		QoS:     req.packet.QoS,
 		Retain:  req.packet.Retain,

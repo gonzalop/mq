@@ -31,6 +31,10 @@ func (c *Client) internalPublish(req *publishRequest) {
 	if caps.MaximumPacketSize > 0 {
 		n, _ := pkt.WriteTo(io.Discard)
 		packetSize := uint32(n)
+		if pkt.UseAlias {
+			// Room for the Topic Alias property the write loop may add.
+			packetSize += 4
+		}
 
 		if packetSize > caps.MaximumPacketSize {
 			req.token.complete(fmt.Errorf("packet size %d bytes exceeds server maximum %d bytes",

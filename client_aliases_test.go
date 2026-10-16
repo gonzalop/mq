@@ -1,171 +1,169 @@
 package mq
 
 import (
+	"context"
 	"io"
 	"log/slog"
+	"maps"
+	"net"
 	"testing"
 	"time"
 
 	"github.com/gonzalop/mq/internal/packets"
 )
 
-func TestApplyTopicAlias(t *testing.T) {
+func TestTopicAliasesPrepare(t *testing.T) {
 	tests := []struct {
-		name          string
-		maxAliases    uint16
-		existingAlias map[string]uint16
-		nextID        uint16
-		topic         string
-		wantAliasID   *uint16
-		wantTopic     string
-		wantNextID    uint16
-		wantMapSize   int
+		name        string
+		limit       uint16
+		existing    map[string]uint16
+		useAlias    bool
+		topic       string
+		wantAliasID uint16 // 0 = no alias
+		wantTopic   string
+		wantMapSize int
 	}{
 		{
-			name:        "aliases disabled (maxAliases=0)",
-			maxAliases:  0,
+			name:        "aliases disabled (limit 0)",
+			limit:       0,
+			useAlias:    true,
 			topic:       "test/topic",
-			wantAliasID: nil,
 			wantTopic:   "test/topic",
-			wantNextID:  1,
+			wantMapSize: 0,
+		},
+		{
+			name:        "publish without WithAlias",
+			limit:       10,
+			useAlias:    false,
+			topic:       "test/topic",
+			wantTopic:   "test/topic",
 			wantMapSize: 0,
 		},
 		{
 			name:        "first alias allocation",
-			maxAliases:  10,
-			nextID:      1,
+			limit:       10,
+			useAlias:    true,
 			topic:       "sensors/temp",
-			wantAliasID: new(uint16(1)),
+			wantAliasID: 1,
 			wantTopic:   "sensors/temp", // First time sends both
-			wantNextID:  2,
 			wantMapSize: 1,
 		},
 		{
-			name:          "reuse existing alias",
-			maxAliases:    10,
-			existingAlias: map[string]uint16{"sensors/temp": 5},
-			nextID:        6,
-			topic:         "sensors/temp",
-			wantAliasID:   new(uint16(5)),
-			wantTopic:     "", // Subsequent sends empty topic
-			wantNextID:    6,  // Unchanged
-			wantMapSize:   1,
+			name:        "reuse existing alias",
+			limit:       10,
+			existing:    map[string]uint16{"sensors/temp": 1},
+			useAlias:    true,
+			topic:       "sensors/temp",
+			wantAliasID: 1,
+			wantTopic:   "", // Subsequent sends empty topic
+			wantMapSize: 1,
 		},
 		{
-			name:        "hit alias limit",
-			maxAliases:  2,
-			nextID:      3, // Already at limit
+			name:        "allocate second alias",
+			limit:       10,
+			existing:    map[string]uint16{"topic1": 1},
+			useAlias:    true,
+			topic:       "topic2",
+			wantAliasID: 2,
+			wantTopic:   "topic2",
+			wantMapSize: 2,
+		},
+		{
+			name:        "last alias below the limit",
+			limit:       2,
+			existing:    map[string]uint16{"topic1": 1},
+			useAlias:    true,
+			topic:       "topic2",
+			wantAliasID: 2,
+			wantTopic:   "topic2",
+			wantMapSize: 2,
+		},
+		{
+			name:        "limit reached",
+			limit:       2,
+			existing:    map[string]uint16{"topic1": 1, "topic2": 2},
+			useAlias:    true,
 			topic:       "new/topic",
-			wantAliasID: nil,
 			wantTopic:   "new/topic", // Graceful degradation
-			wantNextID:  3,
-			wantMapSize: 0,
-		},
-		{
-			name:          "allocate second alias",
-			maxAliases:    10,
-			existingAlias: map[string]uint16{"topic1": 1},
-			nextID:        2,
-			topic:         "topic2",
-			wantAliasID:   new(uint16(2)),
-			wantTopic:     "topic2",
-			wantNextID:    3,
-			wantMapSize:   2,
-		},
-		{
-			name:        "at exact limit boundary",
-			maxAliases:  200,
-			nextID:      200,
-			topic:       "last/topic",
-			wantAliasID: new(uint16(200)),
-			wantTopic:   "last/topic",
-			wantNextID:  201,
-			wantMapSize: 1,
-		},
-		{
-			name:        "beyond limit boundary",
-			maxAliases:  200,
-			nextID:      201,
-			topic:       "overflow/topic",
-			wantAliasID: nil,
-			wantTopic:   "overflow/topic",
-			wantNextID:  201,
-			wantMapSize: 0,
+			wantMapSize: 2,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &Client{trie: newTopicTrie(),
-				opts: &clientOptions{
-					ProtocolVersion: ProtocolV50,
-					Logger:          testLogger(),
-				},
-				maxAliases:   tt.maxAliases,
-				nextAliasID:  tt.nextID,
-				topicAliases: tt.existingAlias,
-			}
-			if c.topicAliases == nil {
-				c.topicAliases = make(map[string]uint16)
-			}
-			if c.nextAliasID == 0 {
-				c.nextAliasID = 1
-			}
+			aliases := newTopicAliases(tt.limit)
+			maps.Copy(aliases.ids, tt.existing)
 
-			pkt := &packets.PublishPacket{
-				Topic: tt.topic,
+			pkt := &packets.PublishPacket{Topic: tt.topic, UseAlias: tt.useAlias}
+			out := aliases.prepare(pkt).(*packets.PublishPacket)
+
+			var gotAlias uint16
+			if out.Properties != nil && out.Properties.Presence&packets.PresTopicAlias != 0 {
+				gotAlias = out.Properties.TopicAlias
 			}
-
-			c.applyTopicAlias(pkt)
-
-			// Check alias ID
-			if tt.wantAliasID == nil {
-				if pkt.Properties != nil && pkt.Properties.Presence&packets.PresTopicAlias != 0 {
-					t.Errorf("expected no alias, got %d", pkt.Properties.TopicAlias)
-				}
-			} else {
-				if pkt.Properties == nil || pkt.Properties.Presence&packets.PresTopicAlias == 0 {
-					t.Errorf("expected alias %d, got nil", *tt.wantAliasID)
-				} else if pkt.Properties.TopicAlias != *tt.wantAliasID {
-					t.Errorf("expected alias %d, got %d", *tt.wantAliasID, pkt.Properties.TopicAlias)
-				}
+			if gotAlias != tt.wantAliasID {
+				t.Errorf("alias = %d, want %d", gotAlias, tt.wantAliasID)
 			}
-
-			if pkt.Topic != tt.wantTopic {
-				t.Errorf("expected topic %q, got %q", tt.wantTopic, pkt.Topic)
+			if out.Topic != tt.wantTopic {
+				t.Errorf("topic = %q, want %q", out.Topic, tt.wantTopic)
 			}
-
-			if c.nextAliasID != tt.wantNextID {
-				t.Errorf("expected nextID %d, got %d", tt.wantNextID, c.nextAliasID)
+			if len(aliases.ids) != tt.wantMapSize {
+				t.Errorf("map size = %d, want %d", len(aliases.ids), tt.wantMapSize)
 			}
-
-			if len(c.topicAliases) != tt.wantMapSize {
-				t.Errorf("expected map size %d, got %d", tt.wantMapSize, len(c.topicAliases))
+			// The stored packet is never modified.
+			if pkt.Topic != tt.topic || pkt.Properties != nil {
+				t.Errorf("prepare modified the original packet: %+v", pkt)
 			}
 		})
 	}
 }
 
-func TestTopicAliasReconnectionClearing(t *testing.T) {
-	c := &Client{trie: newTopicTrie(),
-		maxAliases:   50,
-		nextAliasID:  10,
-		topicAliases: map[string]uint16{"topic1": 1, "topic2": 2},
+func TestTopicAliasesPrepareKeepsProperties(t *testing.T) {
+	aliases := newTopicAliases(10)
+	pkt := &packets.PublishPacket{
+		Topic:    "a/b",
+		UseAlias: true,
+		Properties: &packets.Properties{
+			ContentType: "text/plain",
+			Presence:    packets.PresContentType,
+		},
 	}
+	out := aliases.prepare(pkt).(*packets.PublishPacket)
+	if out.Properties.ContentType != "text/plain" || out.Properties.Presence&packets.PresContentType == 0 {
+		t.Errorf("content type lost: %+v", out.Properties)
+	}
+	if pkt.Properties.Presence&packets.PresTopicAlias != 0 {
+		t.Error("prepare set the alias on the original properties")
+	}
+}
 
-	// Simulate reconnection clearing
-	c.topicAliases = make(map[string]uint16)
-	c.nextAliasID = 1
-	c.maxAliases = 0
-
-	if len(c.topicAliases) != 0 {
-		t.Errorf("expected empty map after reconnect, got %d entries", len(c.topicAliases))
+func TestOutgoingAliasLimit(t *testing.T) {
+	tests := []struct {
+		name        string
+		version     uint8
+		clientLimit uint16
+		serverLimit uint16
+		want        uint16
+	}{
+		{"v3.1.1", ProtocolV311, 10, 10, 0},
+		{"client did not enable aliases", ProtocolV50, 0, 10, 0},
+		{"server does not accept aliases", ProtocolV50, 10, 0, 0},
+		{"server limit is smaller", ProtocolV50, 10, 3, 3},
+		{"client limit is smaller", ProtocolV50, 3, 10, 3},
 	}
-	if c.nextAliasID != 1 {
-		t.Errorf("expected nextID=1 after reconnect, got %d", c.nextAliasID)
-	}
-	if c.maxAliases != 0 {
-		t.Errorf("expected maxAliases=0 after reconnect, got %d", c.maxAliases)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := defaultOptions("tcp://x:1883")
+			opts.ProtocolVersion = tt.version
+			opts.TopicAliasMaximum = tt.clientLimit
+			c := newTestClient(opts)
+			st := &connectionState{caps: extractServerCapabilities(nil)}
+			st.caps.TopicAliasMaximum = tt.serverLimit
+			c.connState.Store(st)
+			if got := c.outgoingAliasLimit(); got != tt.want {
+				t.Errorf("outgoingAliasLimit() = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -312,138 +310,107 @@ func TestHandleIncomingTopicAlias(t *testing.T) {
 	})
 }
 
-func TestTopicAliasStaleAfterReconnectRepro(t *testing.T) {
-	// This test reproduces the issue where a packet prepared with a topic alias
-	// becomes invalid if the connection is lost and re-established.
-	// Based on a true story.
+// TestTopicAliasDefinedBeforeUse reproduces the ordering bug: a QoS 1 publish
+// held back by flow control, then a QoS 0 publish to the same topic. Aliases
+// used to be assigned at Publish time, so the QoS 0 packet went out first
+// carrying only an alias the server had never seen. They are now assigned
+// when the packet is written, so whichever packet is written first defines
+// the alias.
+func TestTopicAliasDefinedBeforeUse(t *testing.T) {
+	opts := defaultOptions("tcp://x:1883")
+	opts.ProtocolVersion = ProtocolV50
+	opts.Logger = testLogger()
+	c := newTestClient(opts)
+	st := &connectionState{caps: extractServerCapabilities(nil)}
+	st.caps.ReceiveMaximum = 1
+	c.connState.Store(st)
+	c.inFlightCount = 1 // flow control window is full
 
-	c := &Client{trie: newTopicTrie(),
-		opts: &clientOptions{
-			ProtocolVersion: ProtocolV50,
-			Logger:          testLogger(),
-		},
-		outgoing:     make(chan packets.Packet, 10),
-		topicAliases: make(map[string]uint16),
-		nextAliasID:  1,
-		maxAliases:   10,
+	ctx := context.Background()
+	c.Publish(ctx, "a/b", []byte("1"), WithQoS(1), WithAlias())
+	c.Publish(ctx, "a/b", []byte("2"), WithQoS(0), WithAlias())
+	if len(c.publishQueue) != 1 {
+		t.Fatalf("expected the QoS 1 publish to be queued, queue=%d", len(c.publishQueue))
 	}
 
-	topic := "test/topic"
+	aliases := newTopicAliases(10)
 
-	// 1. First publish - assigns alias, sends both topic and alias
-	pkt1 := &packets.PublishPacket{
-		Topic:    topic,
-		UseAlias: true,
-		Version:  5,
-	}
-	c.applyTopicAlias(pkt1)
-
-	if pkt1.Topic != topic {
-		t.Errorf("First publish should have topic, got empty")
-	}
-	if pkt1.Properties.TopicAlias != 1 {
-		t.Errorf("Expected alias 1, got %d", pkt1.Properties.TopicAlias)
+	// The QoS 0 publish is written first: it must define the alias.
+	first := aliases.prepare(<-c.outgoing).(*packets.PublishPacket)
+	if first.Topic != "a/b" || first.Properties.TopicAlias != 1 {
+		t.Errorf("first packet on the wire: topic=%q alias=%d, want topic \"a/b\" with alias 1",
+			first.Topic, first.Properties.TopicAlias)
 	}
 
-	// 2. Second publish - uses alias, sends empty topic
-	pkt2 := &packets.PublishPacket{
-		Topic:    topic,
-		UseAlias: true,
-		Version:  5,
+	// The queued QoS 1 publish is written later and can use the alias.
+	second := aliases.prepare(c.publishQueue[0].packet).(*packets.PublishPacket)
+	if second.Topic != "" || second.Properties.TopicAlias != 1 {
+		t.Errorf("second packet: topic=%q alias=%d, want alias-only 1", second.Topic, second.Properties.TopicAlias)
 	}
-	c.applyTopicAlias(pkt2)
-
-	if pkt2.Topic != "" {
-		t.Errorf("Second publish should have empty topic, got %q", pkt2.Topic)
-	}
-	if pkt2.Properties.TopicAlias != 1 {
-		t.Errorf("Expected alias 1, got %d", pkt2.Properties.TopicAlias)
-	}
-
-	c.outgoing <- pkt2
-
-	// 3. Simulate reconnection - use the new resetAllTopicAliases method
-	c.resetAllTopicAliases()
-
-	// 4. Now check if pkt2 was fixed
-	// We need to get it back from the channel (it was re-queued)
-	fixedPkt := (<-c.outgoing).(*packets.PublishPacket)
-
-	if fixedPkt.Topic != topic {
-		t.Errorf("Packet topic should have been restored to %q, got %q", topic, fixedPkt.Topic)
-	}
-	if pkt2.Properties != nil && pkt2.Properties.Presence&packets.PresTopicAlias != 0 {
-		t.Errorf("Packet should have had its topic alias removed")
-	}
-
-	t.Log("Fix verified: pkt2 is no longer stale and is safe to send on new connection")
 }
 
-func TestTopicAliasStalePendingAfterReconnect(t *testing.T) {
-	c := &Client{trie: newTopicTrie(),
-		opts: &clientOptions{
-			ProtocolVersion: ProtocolV50,
-			Logger:          testLogger(),
-		},
-		pending:      make(map[uint16]*pendingOp),
-		topicAliases: make(map[string]uint16),
-		nextAliasID:  1,
-		maxAliases:   10,
+// TestTopicAliasNewConnection checks that a stored packet (pending or
+// retransmitted) defines its alias again on a new connection: each write loop
+// starts with an empty alias table, and prepare never strips the topic from
+// the stored packet.
+func TestTopicAliasNewConnection(t *testing.T) {
+	pkt := &packets.PublishPacket{Topic: "test/pending", QoS: 1, PacketID: 100, UseAlias: true, Version: 5}
+
+	conn1 := newTopicAliases(10)
+	conn1.prepare(pkt)
+	if out := conn1.prepare(pkt).(*packets.PublishPacket); out.Topic != "" {
+		t.Fatalf("second send on the same connection should be alias-only, got topic %q", out.Topic)
 	}
 
-	topic := "test/pending"
-
-	// 1. Prepare packet with alias
-	pkt := &packets.PublishPacket{
-		Topic:    topic,
-		QoS:      1,
-		PacketID: 100,
-		UseAlias: true,
-		Version:  5,
+	conn2 := newTopicAliases(10)
+	out := conn2.prepare(pkt).(*packets.PublishPacket)
+	if out.Topic != "test/pending" || out.Properties.TopicAlias != 1 {
+		t.Errorf("first send on a new connection: topic=%q alias=%d, want full topic with alias 1",
+			out.Topic, out.Properties.TopicAlias)
 	}
-	c.applyTopicAlias(pkt)
+}
 
-	// Subsequent publish to the same topic would have empty topic
-	pkt2 := &packets.PublishPacket{
-		Topic:    topic,
-		QoS:      1,
-		PacketID: 101,
-		UseAlias: true,
-		Version:  5,
+// TestWriteLoopAppliesTopicAliases checks the wiring: packets queued with
+// WithAlias leave the write loop with the alias, in order.
+func TestWriteLoopAppliesTopicAliases(t *testing.T) {
+	opts := defaultOptions("tcp://x:1883")
+	opts.ProtocolVersion = ProtocolV50
+	opts.TopicAliasMaximum = 10
+	opts.Logger = testLogger()
+	c := newTestClient(opts)
+	st := &connectionState{caps: extractServerCapabilities(nil)}
+	st.caps.TopicAliasMaximum = 5
+	c.connState.Store(st)
+
+	conn, peer := net.Pipe()
+	defer peer.Close()
+	connDone := make(chan struct{})
+	c.wg.Add(1)
+	go c.runWriteLoop(conn, connDone, 0)
+	defer func() {
+		close(connDone)
+		c.wg.Wait()
+	}()
+
+	for range 2 {
+		c.outgoing <- &packets.PublishPacket{Topic: "x/y", UseAlias: true, Version: 5}
 	}
-	c.applyTopicAlias(pkt2)
 
-	if pkt2.Topic != "" {
-		t.Fatalf("pkt2 should have empty topic")
-	}
-
-	// Put in pending
-	c.pending[pkt.PacketID] = &pendingOp{packet: pkt}
-	c.pending[pkt2.PacketID] = &pendingOp{packet: pkt2}
-
-	// 2. Reconnect
-	c.resetAllTopicAliases()
-
-	// 3. Verify
-	if pkt2.Topic != topic {
-		t.Errorf("Pending pkt2 topic should have been restored, got %q", pkt2.Topic)
-	}
-	if pkt2.Properties != nil && pkt2.Properties.Presence&packets.PresTopicAlias != 0 {
-		t.Errorf("Pending pkt2 should have had its topic alias removed")
+	want := []string{"x/y", ""}
+	for i, wantTopic := range want {
+		_ = peer.SetReadDeadline(time.Now().Add(time.Second))
+		raw, err := packets.ReadPacket(peer, 5, 0)
+		if err != nil {
+			t.Fatalf("read packet %d: %v", i, err)
+		}
+		p := raw.(*packets.PublishPacket)
+		if p.Topic != wantTopic || p.Properties == nil || p.Properties.TopicAlias != 1 {
+			t.Errorf("packet %d: topic=%q props=%+v, want topic %q with alias 1", i, p.Topic, p.Properties, wantTopic)
+		}
 	}
 }
 
 func BenchmarkTopicAlias_FirstPublish(b *testing.B) {
-	c := &Client{trie: newTopicTrie(),
-		opts: &clientOptions{
-			ProtocolVersion: ProtocolV50,
-			Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-		},
-		maxAliases:   100,
-		nextAliasID:  1,
-		topicAliases: make(map[string]uint16),
-	}
-
 	pkt := &packets.PublishPacket{
 		Topic:    "sensors/building-a/floor-3/room-42/temperature",
 		Payload:  []byte("25.5"),
@@ -453,27 +420,13 @@ func BenchmarkTopicAlias_FirstPublish(b *testing.B) {
 	}
 
 	for b.Loop() {
-		// Reset for each iteration to simulate first publish
-		c.topicAliases = make(map[string]uint16)
-		c.nextAliasID = 1
-		c.applyTopicAlias(pkt)
-		pkt.Topic = "sensors/building-a/floor-3/room-42/temperature" // Reset topic
+		// A fresh table each iteration simulates the first publish
+		newTopicAliases(100).prepare(pkt)
 	}
 }
 
 func BenchmarkTopicAlias_SubsequentPublish(b *testing.B) {
-	c := &Client{trie: newTopicTrie(),
-		opts: &clientOptions{
-			ProtocolVersion: ProtocolV50,
-			Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-		},
-		maxAliases:  100,
-		nextAliasID: 2,
-		topicAliases: map[string]uint16{
-			"sensors/building-a/floor-3/room-42/temperature": 1,
-		},
-	}
-
+	aliases := newTopicAliases(100)
 	pkt := &packets.PublishPacket{
 		Topic:    "sensors/building-a/floor-3/room-42/temperature",
 		Payload:  []byte("25.5"),
@@ -481,23 +434,15 @@ func BenchmarkTopicAlias_SubsequentPublish(b *testing.B) {
 		PacketID: 10,
 		UseAlias: true,
 	}
+	aliases.prepare(pkt)
 
 	for b.Loop() {
-		c.applyTopicAlias(pkt)
-		pkt.Topic = "sensors/building-a/floor-3/room-42/temperature" // Reset topic
+		aliases.prepare(pkt)
 	}
 }
 
 func BenchmarkTopicAlias_Disabled(b *testing.B) {
-	c := &Client{trie: newTopicTrie(),
-		opts: &clientOptions{
-			ProtocolVersion: ProtocolV50,
-			Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-		},
-		maxAliases:   0, // Disabled - early return
-		topicAliases: make(map[string]uint16),
-	}
-
+	aliases := newTopicAliases(0) // Disabled - early return
 	pkt := &packets.PublishPacket{
 		Topic:    "sensors/building-a/floor-3/room-42/temperature",
 		Payload:  []byte("25.5"),
@@ -507,8 +452,7 @@ func BenchmarkTopicAlias_Disabled(b *testing.B) {
 	}
 
 	for b.Loop() {
-		c.applyTopicAlias(pkt)
-		pkt.Topic = "sensors/building-a/floor-3/room-42/temperature" // Reset topic
+		aliases.prepare(pkt)
 	}
 }
 

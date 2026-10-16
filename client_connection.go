@@ -274,7 +274,6 @@ func (c *Client) prepareConnectionState() {
 		c.requestedSessionExpiry = c.opts.SessionExpiryInterval
 	}
 
-	c.resetAllTopicAliases()
 	c.receivedAliasesLock.Lock()
 	c.receivedAliases = make(map[uint16]string)
 	c.receivedAliasesLock.Unlock()

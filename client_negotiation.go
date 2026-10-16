@@ -214,21 +214,6 @@ func (c *Client) processConnackProperties(connack *packets.ConnackPacket) {
 
 		}
 
-		if c.opts.TopicAliasMaximum > 0 && connack.Properties.Presence&packets.PresTopicAliasMaximum != 0 {
-			serverLimit := connack.Properties.TopicAliasMaximum
-			if serverLimit > 0 {
-				c.topicAliasesLock.Lock()
-				c.maxAliases = min(serverLimit, c.opts.TopicAliasMaximum)
-				c.topicAliases = make(map[string]uint16)
-				c.nextAliasID = 1
-				c.topicAliasesLock.Unlock()
-				c.opts.Logger.Debug("topic aliases enabled",
-					"client_accepts", c.opts.TopicAliasMaximum,
-					"server_accepts", serverLimit,
-					"using", c.maxAliases)
-			}
-		}
-
 		if connack.Properties.Presence&packets.PresServerKeepAlive != 0 {
 			newState.serverKeepAlive = connack.Properties.ServerKeepAlive
 			c.opts.KeepAlive = time.Duration(newState.serverKeepAlive) * time.Second

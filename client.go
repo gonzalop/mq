@@ -77,12 +77,6 @@ type Client struct {
 	// overrode it in a previous connection.
 	requestedKeepAlive time.Duration
 
-	// Topic alias management (MQTT v5.0, client → server only)
-	topicAliases     map[string]uint16 // topic → alias ID
-	nextAliasID      uint16            // next ID to assign (1-based)
-	maxAliases       uint16            // server's limit from CONNACK
-	topicAliasesLock sync.Mutex        // protect concurrent access
-
 	// Flow control (MQTT v5.0, server → client)
 	inboundUnacked           map[uint16]struct{} // Packet IDs of received QoS 1/2 messages not yet acked
 	receiveMaxExceededLogged bool                // Warn once per connection

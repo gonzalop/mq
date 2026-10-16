@@ -360,11 +360,11 @@ func TestWithWillDelayInterval(t *testing.T) {
 }
 
 // Regression test for Finding 6: CONNACK processing races with ConnectionUserProperties and
-// applyTopicAlias under -race.
+// the topic alias limit under -race.
 func TestConnackProperties_ConcurrentAccessRace(_ *testing.T) {
 	opts := defaultOptions("tcp://x")
 	opts.TopicAliasMaximum = 10
-	c := &Client{trie: newTopicTrie(), opts: opts, topicAliases: map[string]uint16{}, nextAliasID: 1, maxAliases: 10}
+	c := &Client{trie: newTopicTrie(), opts: opts}
 	connack := &packets.ConnackPacket{Properties: &packets.Properties{
 		UserProperties:    []packets.UserProperty{{Key: "k", Value: "v"}, {Key: "k2", Value: "v2"}},
 		TopicAliasMaximum: 10,
@@ -380,9 +380,9 @@ func TestConnackProperties_ConcurrentAccessRace(_ *testing.T) {
 	}()
 	go func() {
 		defer wg.Done()
-		for i := range 200 {
+		for range 200 {
 			_ = c.ConnectionUserProperties()
-			c.applyTopicAlias(&packets.PublishPacket{Topic: "t/" + string(rune('a'+i%5))})
+			_ = c.outgoingAliasLimit()
 		}
 	}()
 	wg.Wait()

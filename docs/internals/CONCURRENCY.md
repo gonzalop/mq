@@ -14,7 +14,8 @@ The `Client` struct uses several mechanisms to protect its state:
 2.  **`connLock` (`sync.RWMutex`)**: This protects the network connection and connection status.
 3.  **`connState` (`atomic.Pointer[connectionState]`)**: This provides a thread-safe, immutable snapshot of connection-time properties and server capabilities (MQTT v5.0).
 4.  **`receivedAliasesLock` (`sync.RWMutex`)**: This protects the mapping of inbound Topic Aliases (ID -> Topic Name) for MQTT v5.0.
-5.  **`topicAliasesLock` (`sync.Mutex`)**: This protects the mapping of outbound Topic Aliases (Topic Name -> ID) for MQTT v5.0.
+
+Outbound Topic Aliases (Topic Name -> ID, MQTT v5.0) need no lock: each `writeLoop` owns its own table, assigns aliases as packets are written (so the packet that defines an alias always reaches the wire before the ones that use it) and starts empty on every connection.
 
 ### `sessionLock` Protected State
 
