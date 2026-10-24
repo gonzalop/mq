@@ -101,13 +101,14 @@ func NewFileStore(baseDir, clientID string, opts ...FileStoreOption) (*FileStore
 	}
 
 	dir := filepath.Join(baseDir, clientID)
-	if err := os.MkdirAll(dir, cfg.permissions|0111); err != nil {
+	dirPerm := dirPermissions(cfg.permissions)
+	if err := os.MkdirAll(dir, dirPerm); err != nil {
 		return nil, fmt.Errorf("failed to create store directory: %w", err)
 	}
 
 	// Create subdirectories for incremental storage
 	for _, sub := range []string{"pending", "subscriptions", "qos2"} {
-		if err := os.MkdirAll(filepath.Join(dir, sub), cfg.permissions|0111); err != nil {
+		if err := os.MkdirAll(filepath.Join(dir, sub), dirPerm); err != nil {
 			return nil, fmt.Errorf("failed to create %s directory: %w", sub, err)
 		}
 	}
@@ -370,10 +371,17 @@ func (f *FileStore) resetDir(sub string) error {
 	if err := os.RemoveAll(path); err != nil {
 		return fmt.Errorf("failed to clear %s: %w", sub, err)
 	}
-	if err := os.MkdirAll(path, f.config.permissions|0111); err != nil {
+	if err := os.MkdirAll(path, dirPermissions(f.config.permissions)); err != nil {
 		return fmt.Errorf("failed to recreate %s: %w", sub, err)
 	}
 	return nil
+}
+
+// dirPermissions derives directory permissions from file permissions.
+// Directory search/execute bits (0100, 0010, 0001) are only added for roles
+// (owner, group, other) where read permission is present in file permissions.
+func dirPermissions(perm os.FileMode) os.FileMode {
+	return perm | ((perm & 0444) >> 2)
 }
 
 // writeFileAtomic writes data to path through a temporary file in the same

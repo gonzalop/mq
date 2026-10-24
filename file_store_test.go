@@ -61,6 +61,33 @@ func TestFileStore_NewFileStore(t *testing.T) {
 		if info.Mode().Perm() != 0600 {
 			t.Errorf("File permissions = %o, want 0600", info.Mode().Perm())
 		}
+
+		// Check directory permissions (0600 file permission must yield 0700 dir, not 0711)
+		dirInfo, err := os.Stat(filepath.Join(tmpDir, "perm-test"))
+		if err != nil {
+			t.Fatalf("Stat dir failed: %v", err)
+		}
+		if dirInfo.Mode().Perm() != 0700 {
+			t.Errorf("Directory permissions = %o, want 0700", dirInfo.Mode().Perm())
+		}
+	})
+
+	t.Run("dirPermissions derivation", func(t *testing.T) {
+		tests := []struct {
+			filePerm os.FileMode
+			wantDir  os.FileMode
+		}{
+			{0600, 0700},
+			{0640, 0750},
+			{0644, 0755},
+			{0660, 0770},
+			{0400, 0500},
+		}
+		for _, tt := range tests {
+			if got := dirPermissions(tt.filePerm); got != tt.wantDir {
+				t.Errorf("dirPermissions(%o) = %o, want %o", tt.filePerm, got, tt.wantDir)
+			}
+		}
 	})
 }
 
