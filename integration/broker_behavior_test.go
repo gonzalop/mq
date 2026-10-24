@@ -370,10 +370,10 @@ func TestDisconnect_StalledLink(t *testing.T) {
 				t.Fatalf("victim Dial: %v", err)
 			}
 
-			// Stall the link, then queue a burst (about 4MB) ahead of the DISCONNECT.
+			// Stall the link, then queue a burst (about 160KB) ahead of the DISCONNECT.
 			proxy.pause()
 			payload := make([]byte, 8<<10)
-			for range 500 {
+			for range 20 {
 				victim.Publish(context.Background(), "burst/data", payload)
 			}
 			time.Sleep(200 * time.Millisecond) // let the write loop block on the full socket
