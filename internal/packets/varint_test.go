@@ -47,6 +47,7 @@ func TestDecodeVarInt(t *testing.T) {
 		{"2097152", []byte{0x80, 0x80, 0x80, 0x01}, 2097152, false},
 		{"268435455", []byte{0xFF, 0xFF, 0xFF, 0x7F}, 268435455, false},
 		{"too long", []byte{0xFF, 0xFF, 0xFF, 0xFF, 0x7F}, 0, true},
+		{"5-byte varint decoding to 0", []byte{0x80, 0x80, 0x80, 0x80, 0x00}, 0, true},
 		{"incomplete", []byte{0x80}, 0, true},
 	}
 

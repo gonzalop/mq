@@ -73,10 +73,11 @@ func WithPermissions(perm os.FileMode) FileStoreOption {
 //
 // Example:
 //
-//	store, err := mq.NewFileStore("/var/lib/mqtt", "sensor-1")
+//	fileStore, err := mq.NewFileStore("/var/lib/mqtt", "sensor-1")
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
+//	store := mq.NewAsyncStore(fileStore, 1000)
 //
 //	client, err := mq.Dial("tcp://localhost:1883",
 //	    mq.WithClientID("sensor-1"),

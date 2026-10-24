@@ -236,11 +236,18 @@ func (c *Client) basePublish(ctx context.Context, topic string, payload []byte, 
 		return tok
 	}
 
+	// Validate property lengths (MQTT string and binary fields <= 65535)
+	if err := validatePropertiesFieldLengths(pubOpts.Properties); err != nil {
+		tok := newToken()
+		tok.complete(fmt.Errorf("invalid property: %w", err))
+		return tok
+	}
+
 	// Enforce server capabilities (MQTT v5.0 only, and only after a CONNACK has
 	// been received — serverCaps defaults are permissive, so this is safe to run
 	// before the first connect as well).
 	if c.opts.ProtocolVersion >= ProtocolV50 {
-		if err := c.validatePublishCaps(topic, payload, pubOpts); err != nil {
+		if err := c.validatePublishCaps(pubOpts); err != nil {
 			tok := newToken()
 			tok.complete(err)
 			return tok

@@ -88,12 +88,12 @@ func DecodeAuth(buf []byte, version uint8) (*AuthPacket, error) {
 		return nil, fmt.Errorf("AUTH packet is only valid for MQTT v5.0")
 	}
 
-	if len(buf) < 1 {
-		return nil, fmt.Errorf("buffer too short for AUTH packet")
-	}
-
 	pkt := &AuthPacket{
 		Version: version,
+	}
+
+	if len(buf) == 0 {
+		return pkt, nil
 	}
 
 	offset := 0

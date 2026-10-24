@@ -61,6 +61,10 @@ func (c *Client) Disconnect(ctx context.Context, opts ...DisconnectOption) error
 func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, props *Properties, block bool) error {
 	c.opts.Logger.Debug("disconnecting from server", "reason_code", reasonCode)
 
+	if err := validatePropertiesFieldLengths(props); err != nil {
+		return fmt.Errorf("invalid disconnect properties: %w", err)
+	}
+
 	c.connLock.RLock()
 	conn := c.conn
 	connDone := c.connDone

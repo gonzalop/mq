@@ -223,6 +223,39 @@ func TestReceiveMaximum_QoS2_Lifecycle(t *testing.T) {
 	}
 }
 
+func TestReceiveMaximum_QoS2_NoHandlers_Lifecycle(t *testing.T) {
+	c := &Client{trie: newTopicTrie(),
+		opts: &clientOptions{
+			ProtocolVersion: ProtocolV50,
+			ReceiveMaximum:  1,
+			Logger:          testLogger(),
+		},
+		outgoing:       make(chan packets.Packet, 10), // Buffered
+		stop:           make(chan struct{}),
+		inboundUnacked: make(map[uint16]struct{}),
+		receivedQoS2:   make(map[uint16]struct{}),
+		subscriptions:  make(map[string]subscriptionEntry),
+	}
+
+	// 1. PUBLISH QoS 2 arrives with NO matching handler
+	// dispatchAndAcknowledge immediately returns PUBREC.
+	// In MQTT 5.0, QoS 2 messages remain unacknowledged until PUBCOMP.
+	// Slot MUST NOT be released upon PUBREC.
+	c.sendPackets(c.handleIncoming(&packets.PublishPacket{Topic: "unmatched", QoS: 2, PacketID: 9}))
+
+	if len(c.inboundUnacked) != 1 {
+		t.Errorf("expected 1 unacked (QoS 2 incomplete with no handlers), got %d", len(c.inboundUnacked))
+	}
+
+	// 2. Client receives PUBREL (step 2)
+	// Sends PUBCOMP. This is where we release the slot.
+	c.handlePubrel(&packets.PubrelPacket{PacketID: 9})
+
+	if len(c.inboundUnacked) != 0 {
+		t.Errorf("expected 0 unacked after PUBCOMP, got %d", len(c.inboundUnacked))
+	}
+}
+
 func TestReceiveMaximum_SoftLimit(t *testing.T) {
 	// Create a client with ReceiveMaximum = 1 and Default Policy (Ignore)
 	c := &Client{trie: newTopicTrie(),

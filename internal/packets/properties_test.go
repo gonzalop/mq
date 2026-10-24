@@ -1,6 +1,7 @@
 package packets
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -230,5 +231,19 @@ func TestWillDelayIntervalEncoding(t *testing.T) {
 	}
 	if decoded.Presence&PresWillDelayInterval == 0 {
 		t.Error("PresWillDelayInterval not set in decoded properties")
+	}
+}
+
+func TestDecodeUnsupportedPropertyIDs(t *testing.T) {
+	unsupportedIDs := []byte{0x00, 0x14, 0x1B, 0x1D, 0x1E, 0x20, 0x04, 0x2B, 0xFF}
+	for _, id := range unsupportedIDs {
+		t.Run(fmt.Sprintf("ID_0x%02x", id), func(t *testing.T) {
+			// Length = 2, ID = id, dummy byte = 0x01
+			buf := []byte{0x02, id, 0x01}
+			_, _, err := decodeProperties(buf)
+			if err == nil {
+				t.Fatalf("expected error for unsupported property ID 0x%02x, got nil", id)
+			}
+		})
 	}
 }

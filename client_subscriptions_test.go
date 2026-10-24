@@ -566,6 +566,38 @@ func TestResubscribeAll_TrackedInPending(t *testing.T) {
 	}
 }
 
+func TestResubscribeAll_CleansUpOnPacketIDExhaustion(t *testing.T) {
+	c := &Client{
+		trie:          newTopicTrie(),
+		pending:       make(map[uint16]*pendingOp),
+		subscriptions: make(map[string]subscriptionEntry),
+		opts:          defaultOptions("tcp://x"),
+		outgoing:      make(chan packets.Packet, 10),
+		stop:          make(chan struct{}),
+	}
+	c.opts.ProtocolVersion = ProtocolV50
+	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
+
+	// Pre-fill pending with 65534 entries so only ID 65535 is free
+	for i := uint16(1); i <= 65534; i++ {
+		c.pending[i] = &pendingOp{qos: 1}
+	}
+
+	// Two subscriptions with different SubscriptionIDs so they form two groups
+	c.subscriptions["topic/1"] = subscriptionEntry{options: SubscribeOptions{QoS: AtLeastOnce, SubscriptionID: 1}}
+	c.subscriptions["topic/2"] = subscriptionEntry{options: SubscribeOptions{QoS: AtLeastOnce, SubscriptionID: 2}}
+
+	c.resubscribeAll()
+
+	// If packet ID exhaustion occurred on the second group, the first group's pending op must be cleaned up
+	if len(c.pending) != 65534 {
+		t.Errorf("expected pending length 65534 after cleanup, got %d", len(c.pending))
+	}
+	if _, exists := c.pending[65535]; exists {
+		t.Errorf("packet ID 65535 leaked in pending map")
+	}
+}
+
 // Regression test for Finding 5: resubscribeAll must not hold sessionLock while blocked on a full
 // outgoing channel.
 func TestResubscribeAll_DoesNotBlockUnderLock(t *testing.T) {

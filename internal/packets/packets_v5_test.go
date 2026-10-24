@@ -332,6 +332,33 @@ func TestAuthPacketV5(t *testing.T) {
 	}
 }
 
+func TestDecodeAuth_EmptyPayload(t *testing.T) {
+	decoded, err := DecodeAuth([]byte{}, 5)
+	if err != nil {
+		t.Fatalf("DecodeAuth empty buffer failed: %v", err)
+	}
+	if decoded.ReasonCode != 0 {
+		t.Errorf("ReasonCode = 0x%02x, want 0x00", decoded.ReasonCode)
+	}
+	if decoded.Properties != nil {
+		t.Errorf("Properties = %v, want nil", decoded.Properties)
+	}
+
+	// Also verify reading via fixed header with remaining length 0
+	buf := []byte{0xF0, 0x00} // AUTH fixed header, remaining length 0
+	pkt, err := ReadPacket(bytes.NewReader(buf), 5, 0)
+	if err != nil {
+		t.Fatalf("ReadPacket empty AUTH failed: %v", err)
+	}
+	authPkt, ok := pkt.(*AuthPacket)
+	if !ok {
+		t.Fatalf("ReadPacket returned %T, want *AuthPacket", pkt)
+	}
+	if authPkt.ReasonCode != 0 {
+		t.Errorf("ReasonCode = 0x%02x, want 0x00", authPkt.ReasonCode)
+	}
+}
+
 func TestPubcompPacketV5(t *testing.T) {
 	props := &Properties{
 		ReasonString: "all done",

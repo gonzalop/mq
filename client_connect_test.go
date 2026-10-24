@@ -400,3 +400,42 @@ func TestConnackProperties_ConcurrentAccessRace(_ *testing.T) {
 	}()
 	wg.Wait()
 }
+
+func TestKeepAliveZeroPreservedAcrossServerOverride(t *testing.T) {
+	options := defaultOptions("tcp://localhost:1883")
+	options.KeepAlive = 0 // User explicitly disabled keepalive
+
+	c := &Client{
+		trie:               newTopicTrie(),
+		opts:               options,
+		requestedKeepAlive: 0,
+	}
+
+	// 1. Initial connect packet requests 0s keepalive
+	pkt := c.buildConnectPacket()
+	if pkt.KeepAlive != 0 {
+		t.Fatalf("initial Connect packet KeepAlive = %d, want 0", pkt.KeepAlive)
+	}
+
+	// 2. Server CONNACK arrives overriding keepalive to 30s
+	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
+	connack := &packets.ConnackPacket{
+		Properties: &packets.Properties{
+			ServerKeepAlive: 30,
+			Presence:        packets.PresServerKeepAlive,
+		},
+	}
+	c.processConnackProperties(connack)
+	if c.opts.KeepAlive != 30*time.Second {
+		t.Fatalf("c.opts.KeepAlive = %v, want 30s", c.opts.KeepAlive)
+	}
+
+	// 3. Client disconnects and prepares to reconnect
+	c.prepareConnectionState()
+
+	// 4. On reconnect, the CONNECT packet must still request 0s, not 30s!
+	pkt2 := c.buildConnectPacket()
+	if pkt2.KeepAlive != 0 {
+		t.Errorf("reconnect Connect packet KeepAlive = %d, want 0 (user setting was overwritten)", pkt2.KeepAlive)
+	}
+}

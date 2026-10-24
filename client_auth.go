@@ -122,6 +122,7 @@ func (c *Client) handleAuth(p *packets.AuthPacket) []packets.Packet {
 			c.opts.Logger.Error("authentication method mismatch",
 				"expected", c.opts.Authenticator.Method(),
 				"received", p.Properties.AuthenticationMethod)
+			c.dropConnection(ReasonCodeBadAuthenticationMethod)
 			return nil
 		}
 	}
@@ -130,6 +131,7 @@ func (c *Client) handleAuth(p *packets.AuthPacket) []packets.Packet {
 		responseData, err := c.opts.Authenticator.HandleChallenge(challengeData, p.ReasonCode)
 		if err != nil {
 			c.opts.Logger.Error("authentication challenge failed", "error", err)
+			c.dropConnection(ReasonCodeBadAuthenticationMethod)
 			return
 		}
 

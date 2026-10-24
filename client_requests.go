@@ -36,8 +36,8 @@ func (c *Client) internalPublish(req *publishRequest) {
 		}
 
 		if packetSize > caps.MaximumPacketSize {
-			req.token.complete(fmt.Errorf("packet size %d bytes exceeds server maximum %d bytes",
-				packetSize, caps.MaximumPacketSize))
+			req.token.complete(fmt.Errorf("%w: packet size %d bytes exceeds server maximum %d bytes",
+				ErrPacketExceedsServerMax, packetSize, caps.MaximumPacketSize))
 			c.sessionLock.Unlock()
 			return
 		}
@@ -136,7 +136,16 @@ func (c *Client) internalPublish(req *publishRequest) {
 		c.sessionLock.Unlock()
 		req.token.complete(req.ctx.Err())
 	case <-c.stop:
-		req.token.complete(fmt.Errorf("client stopped"))
+		c.sessionLock.Lock()
+		c.removePending(pkt.PacketID)
+		if pkt.QoS > 0 {
+			c.inFlightCount--
+		}
+		if c.opts.SessionStore != nil && pkt.QoS > 0 {
+			_ = c.opts.SessionStore.DeletePendingPublish(pkt.PacketID)
+		}
+		c.sessionLock.Unlock()
+		req.token.complete(ErrClientDisconnected)
 	}
 }
 
@@ -263,7 +272,13 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 		c.sessionLock.Unlock()
 		req.token.complete(req.ctx.Err())
 	case <-c.stop:
-		req.token.complete(fmt.Errorf("client stopped"))
+		c.sessionLock.Lock()
+		c.removePending(pkt.PacketID)
+		for _, topic := range pkt.Topics {
+			c.removeSubscriptionLocked(topic)
+		}
+		c.sessionLock.Unlock()
+		req.token.complete(ErrClientDisconnected)
 	}
 }
 
@@ -322,6 +337,6 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 		c.sessionLock.Lock()
 		c.removePending(pkt.PacketID)
 		c.sessionLock.Unlock()
-		req.token.complete(fmt.Errorf("client stopped"))
+		req.token.complete(ErrClientDisconnected)
 	}
 }

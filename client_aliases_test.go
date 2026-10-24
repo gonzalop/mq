@@ -171,8 +171,9 @@ func TestHandleIncomingTopicAlias(t *testing.T) {
 	t.Run("register and resolve alias", func(t *testing.T) {
 		c := &Client{trie: newTopicTrie(),
 			opts: &clientOptions{
-				ProtocolVersion: ProtocolV50,
-				Logger:          testLogger(),
+				ProtocolVersion:   ProtocolV50,
+				TopicAliasMaximum: 10,
+				Logger:            testLogger(),
 			},
 			receivedAliases: make(map[uint16]string),
 		}
@@ -256,11 +257,36 @@ func TestHandleIncomingTopicAlias(t *testing.T) {
 		}
 	})
 
+	t.Run("server sends alias when TopicAliasMaximum is zero", func(t *testing.T) {
+		c := &Client{trie: newTopicTrie(),
+			opts: &clientOptions{
+				ProtocolVersion:   ProtocolV50,
+				TopicAliasMaximum: 0,
+				Logger:            testLogger(),
+			},
+			receivedAliases: make(map[uint16]string),
+		}
+
+		p := &packets.PublishPacket{
+			Topic: "test",
+			Properties: &packets.Properties{
+				TopicAlias: 1, // Any alias should be rejected when max is 0
+				Presence:   packets.PresTopicAlias,
+			},
+		}
+		c.handlePublish(p)
+
+		if len(c.receivedAliases) != 0 {
+			t.Errorf("expected no aliases to be registered when TopicAliasMaximum is 0")
+		}
+	})
+
 	t.Run("unknown alias", func(t *testing.T) {
 		c := &Client{trie: newTopicTrie(),
 			opts: &clientOptions{
-				ProtocolVersion: ProtocolV50,
-				Logger:          testLogger(),
+				ProtocolVersion:   ProtocolV50,
+				TopicAliasMaximum: 100,
+				Logger:            testLogger(),
 			},
 			receivedAliases: make(map[uint16]string),
 		}
@@ -286,6 +312,7 @@ func TestHandleIncomingTopicAlias(t *testing.T) {
 	t.Run("unknown alias is not delivered", func(t *testing.T) {
 		opts := defaultOptions("tcp://x:1883")
 		opts.ProtocolVersion = ProtocolV50
+		opts.TopicAliasMaximum = 100
 		opts.Logger = testLogger()
 		delivered := make(chan string, 1)
 		opts.DefaultPublishHandler = func(_ *Client, m Message) { delivered <- m.Topic }

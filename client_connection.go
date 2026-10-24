@@ -75,9 +75,6 @@ func (c *Client) dialServer(ctx context.Context) (net.Conn, error) {
 func (c *Client) buildConnectPacket() *packets.ConnectPacket {
 	// Use the original requested keepalive, not the potentially server-overridden value
 	keepalive := c.requestedKeepAlive
-	if keepalive == 0 {
-		keepalive = c.opts.KeepAlive
-	}
 
 	pkt := &packets.ConnectPacket{
 		ProtocolName:  "MQTT",
@@ -297,9 +294,6 @@ resendLoop:
 
 // prepareConnectionState resets internal state before a connection attempt.
 func (c *Client) prepareConnectionState() {
-	if c.requestedKeepAlive == 0 {
-		c.requestedKeepAlive = c.opts.KeepAlive
-	}
 	if c.requestedSessionExpiry == 0 && c.opts.SessionExpirySet {
 		c.requestedSessionExpiry = c.opts.SessionExpiryInterval
 	}

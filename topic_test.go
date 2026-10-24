@@ -377,26 +377,12 @@ func TestValidatePublishCaps(t *testing.T) {
 			retain:  true,
 			wantErr: ErrServerNoRetain,
 		},
-		{
-			name:    "packet too large",
-			topic:   "test",
-			qos:     AtLeastOnce,
-			payload: make([]byte, 110),
-			wantErr: ErrPacketExceedsServerMax,
-		},
-		{
-			name:    "packet just right",
-			topic:   "test",
-			qos:     AtLeastOnce,
-			payload: make([]byte, 80), // 2 (topic len) + 4 (topic) + 2 (packet id) + 80 (payload) = 88 < 100
-			wantErr: nil,
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			opts := &PublishOptions{QoS: uint8(tt.qos), Retain: tt.retain}
-			err := c.validatePublishCaps(tt.topic, tt.payload, opts)
+			err := c.validatePublishCaps(opts)
 			if tt.wantErr == nil {
 				if err != nil {
 					t.Errorf("validatePublishCaps() error = %v, want nil", err)

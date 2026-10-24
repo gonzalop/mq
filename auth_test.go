@@ -571,3 +571,93 @@ func TestAuth_ChallengeDoesNotBlockLogicLoop(t *testing.T) {
 		t.Error("handleIncoming blocked on a slow Authenticator.HandleChallenge")
 	}
 }
+
+type failingAuth struct {
+	method string
+	err    error
+}
+
+func (f *failingAuth) Method() string               { return f.method }
+func (f *failingAuth) InitialData() ([]byte, error) { return nil, nil }
+func (f *failingAuth) Complete() error              { return nil }
+func (f *failingAuth) HandleChallenge(_ []byte, _ uint8) ([]byte, error) {
+	return nil, f.err
+}
+
+func TestAuth_MethodMismatchDropsConnection(t *testing.T) {
+	opts := defaultOptions("tcp://x")
+	opts.ProtocolVersion = ProtocolV50
+	opts.Authenticator = &failingAuth{method: "EXPECTED"}
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	c := &Client{
+		opts:     opts,
+		outgoing: make(chan packets.Packet, 10),
+		stop:     make(chan struct{}),
+		conn:     clientConn,
+		connDone: make(chan struct{}),
+	}
+
+	c.handleIncoming(&packets.AuthPacket{
+		ReasonCode: packets.AuthReasonContinue,
+		Properties: &packets.Properties{
+			AuthenticationMethod: "DIFFERENT",
+			Presence:             packets.PresAuthenticationMethod,
+		},
+		Version: 5,
+	})
+
+	select {
+	case pkt := <-c.outgoing:
+		abort, ok := pkt.(*abortPacket)
+		if !ok {
+			t.Fatalf("expected *abortPacket, got %T", pkt)
+		}
+		if abort.DisconnectPacket.ReasonCode != uint8(ReasonCodeBadAuthenticationMethod) {
+			t.Errorf("expected ReasonCode %d, got %d", ReasonCodeBadAuthenticationMethod, abort.DisconnectPacket.ReasonCode)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for dropConnection on method mismatch")
+	}
+}
+
+func TestAuth_ChallengeErrorDropsConnection(t *testing.T) {
+	opts := defaultOptions("tcp://x")
+	opts.ProtocolVersion = ProtocolV50
+	opts.Authenticator = &failingAuth{method: "TEST", err: fmt.Errorf("challenge failed")}
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	c := &Client{
+		opts:     opts,
+		outgoing: make(chan packets.Packet, 10),
+		stop:     make(chan struct{}),
+		conn:     clientConn,
+		connDone: make(chan struct{}),
+	}
+
+	c.handleIncoming(&packets.AuthPacket{
+		ReasonCode: packets.AuthReasonContinue,
+		Properties: &packets.Properties{
+			AuthenticationMethod: "TEST",
+			Presence:             packets.PresAuthenticationMethod,
+		},
+		Version: 5,
+	})
+
+	select {
+	case pkt := <-c.outgoing:
+		abort, ok := pkt.(*abortPacket)
+		if !ok {
+			t.Fatalf("expected *abortPacket, got %T", pkt)
+		}
+		if abort.DisconnectPacket.ReasonCode != uint8(ReasonCodeBadAuthenticationMethod) {
+			t.Errorf("expected ReasonCode %d, got %d", ReasonCodeBadAuthenticationMethod, abort.DisconnectPacket.ReasonCode)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for dropConnection on challenge error")
+	}
+}

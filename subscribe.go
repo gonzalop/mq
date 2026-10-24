@@ -267,9 +267,28 @@ func (c *Client) Subscribe(ctx context.Context, topic string, qos QoS, handler M
 func (c *Client) Unsubscribe(ctx context.Context, topic string, opts ...UnsubscribeOption) Token {
 	c.opts.Logger.Debug("unsubscribing from topic", "topic", topic)
 
+	if err := validateSubscribeTopic(topic, c.opts); err != nil {
+		tok := newToken()
+		tok.complete(fmt.Errorf("invalid topic filter: %w", err))
+		return tok
+	}
+
 	unsubOpts := &UnsubscribeOptions{}
 	for _, opt := range opts {
 		opt(unsubOpts)
+	}
+
+	for k, v := range unsubOpts.UserProperties {
+		if len(k) > maxFieldLength {
+			tok := newToken()
+			tok.complete(fmt.Errorf("user property key length %d exceeds maximum %d", len(k), maxFieldLength))
+			return tok
+		}
+		if len(v) > maxFieldLength {
+			tok := newToken()
+			tok.complete(fmt.Errorf("user property value length %d exceeds maximum %d", len(v), maxFieldLength))
+			return tok
+		}
 	}
 
 	pkt := &packets.UnsubscribePacket{
@@ -388,6 +407,9 @@ func (c *Client) resubscribeAll() {
 			packetID := c.nextID()
 			if packetID == 0 {
 				c.opts.Logger.Error("failed to resubscribe: no packet IDs available")
+				for _, p := range packetsToSend {
+					c.removePending(p.PacketID)
+				}
 				c.sessionLock.Unlock()
 				return
 			}
@@ -473,6 +495,15 @@ func subGroupKey(id int, props map[string]string) string {
 func validateSubscribeOptions(topic string, subOpts *SubscribeOptions, opts *clientOptions) error {
 	if err := validateSubscribeTopic(topic, opts); err != nil {
 		return fmt.Errorf("invalid topic filter: %w", err)
+	}
+
+	for k, v := range subOpts.UserProperties {
+		if len(k) > maxFieldLength {
+			return fmt.Errorf("user property key length %d exceeds maximum %d", len(k), maxFieldLength)
+		}
+		if len(v) > maxFieldLength {
+			return fmt.Errorf("user property value length %d exceeds maximum %d", len(v), maxFieldLength)
+		}
 	}
 
 	// Validate subscription ID (MQTT v5.0)

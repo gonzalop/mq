@@ -179,6 +179,10 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 		opt(options)
 	}
 
+	if err := validateClientOptions(options); err != nil {
+		return nil, fmt.Errorf("invalid options: %w", err)
+	}
+
 	if options.Logger != nil {
 		options.Logger = options.Logger.With("lib", "mq")
 	}
@@ -189,16 +193,17 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 		outgoing: make(chan packets.Packet, options.OutgoingQueueSize),
 		incoming: make(chan packets.Packet, options.IncomingQueueSize),
 
-		packetReceived:    make(chan struct{}, 1),
-		pingPendingCh:     make(chan struct{}, 1),
-		stop:              make(chan struct{}),
-		disconnectFlushed: make(chan struct{}, 1),
-		pending:           make(map[uint16]*pendingOp),
-		subscriptions:     make(map[string]subscriptionEntry),
-		receivedAliases:   make(map[uint16]string),
-		receivedQoS2:      make(map[uint16]struct{}),
-		inboundUnacked:    make(map[uint16]struct{}),
-		disconnected:      make(chan struct{}, 1),
+		packetReceived:     make(chan struct{}, 1),
+		pingPendingCh:      make(chan struct{}, 1),
+		stop:               make(chan struct{}),
+		disconnectFlushed:  make(chan struct{}, 1),
+		pending:            make(map[uint16]*pendingOp),
+		subscriptions:      make(map[string]subscriptionEntry),
+		receivedAliases:    make(map[uint16]string),
+		receivedQoS2:       make(map[uint16]struct{}),
+		inboundUnacked:     make(map[uint16]struct{}),
+		disconnected:       make(chan struct{}, 1),
+		requestedKeepAlive: options.KeepAlive,
 	}
 	c.connState.Store(&connectionState{
 		caps: extractServerCapabilities(nil),
@@ -420,4 +425,36 @@ func (w *countingWriter) Write(p []byte) (int, error) {
 		w.c.bytesSent.Add(uint64(n))
 	}
 	return n, err
+}
+
+func validateClientOptions(opts *clientOptions) error {
+	if len(opts.ClientID) > maxFieldLength {
+		return fmt.Errorf("client ID length %d exceeds maximum %d", len(opts.ClientID), maxFieldLength)
+	}
+	if len(opts.Username) > maxFieldLength {
+		return fmt.Errorf("username length %d exceeds maximum %d", len(opts.Username), maxFieldLength)
+	}
+	if len(opts.Password) > maxFieldLength {
+		return fmt.Errorf("password length %d exceeds maximum %d", len(opts.Password), maxFieldLength)
+	}
+	for k, v := range opts.ConnectUserProperties {
+		if len(k) > maxFieldLength {
+			return fmt.Errorf("connect user property key length %d exceeds maximum %d", len(k), maxFieldLength)
+		}
+		if len(v) > maxFieldLength {
+			return fmt.Errorf("connect user property value length %d exceeds maximum %d", len(v), maxFieldLength)
+		}
+	}
+	if opts.will != nil {
+		if len(opts.will.Topic) > maxFieldLength {
+			return fmt.Errorf("will topic length %d exceeds maximum %d", len(opts.will.Topic), maxFieldLength)
+		}
+		if len(opts.will.Payload) > maxFieldLength {
+			return fmt.Errorf("will payload length %d exceeds maximum %d", len(opts.will.Payload), maxFieldLength)
+		}
+		if err := validatePropertiesFieldLengths(opts.will.Properties); err != nil {
+			return fmt.Errorf("invalid will properties: %w", err)
+		}
+	}
+	return nil
 }

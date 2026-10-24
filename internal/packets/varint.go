@@ -47,17 +47,21 @@ func decodeVarInt(r io.Reader) (int, error) {
 		br = &byteReader{r: r}
 	}
 
-	val, err := binary.ReadUvarint(br)
-	if err != nil {
-		return 0, err
+	var multiplier uint32 = 1
+	var value uint32
+	for range 4 {
+		b, err := br.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		value += uint32(b&0x7F) * multiplier
+		if (b & 0x80) == 0 {
+			return int(value), nil
+		}
+		multiplier *= 128
 	}
 
-	// MQTT v5.0 Spec: Variable Byte Integer MUST NOT exceed 268,435,455
-	if val > 268435455 {
-		return 0, fmt.Errorf("variable byte integer exceeds limit")
-	}
-
-	return int(val), nil
+	return 0, fmt.Errorf("variable byte integer exceeds 4 bytes")
 }
 
 // byteReader wraps an io.Reader to implement io.ByteReader

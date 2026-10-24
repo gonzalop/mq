@@ -1,5 +1,10 @@
 package mq
 
+import (
+	"fmt"
+	"slices"
+)
+
 // Payload format indicators
 const (
 	PayloadFormatBytes uint8 = 0
@@ -131,10 +136,50 @@ func (p *Properties) GetUserProperty(key string) string {
 			return v
 		}
 	}
-	for i := len(p.UserPropertyList) - 1; i >= 0; i-- {
-		if p.UserPropertyList[i].Key == key {
-			return p.UserPropertyList[i].Value
+	for _, v := range slices.Backward(p.UserPropertyList) {
+		if v.Key == key {
+			return v.Value
 		}
 	}
 	return ""
+}
+
+// maxFieldLength is the maximum length of an MQTT 2-byte length-prefixed string or binary data (65,535 bytes).
+const maxFieldLength = 65535
+
+// validatePropertiesFieldLengths verifies that length-prefixed string and binary fields
+// do not exceed the MQTT 16-bit length prefix maximum of 65,535 bytes.
+func validatePropertiesFieldLengths(props *Properties) error {
+	if props == nil {
+		return nil
+	}
+	if len(props.ContentType) > maxFieldLength {
+		return fmt.Errorf("content type length %d exceeds maximum %d", len(props.ContentType), maxFieldLength)
+	}
+	if len(props.ResponseTopic) > maxFieldLength {
+		return fmt.Errorf("response topic length %d exceeds maximum %d", len(props.ResponseTopic), maxFieldLength)
+	}
+	if len(props.ReasonString) > maxFieldLength {
+		return fmt.Errorf("reason string length %d exceeds maximum %d", len(props.ReasonString), maxFieldLength)
+	}
+	if len(props.CorrelationData) > maxFieldLength {
+		return fmt.Errorf("correlation data length %d exceeds maximum %d", len(props.CorrelationData), maxFieldLength)
+	}
+	for _, up := range props.UserPropertyList {
+		if len(up.Key) > maxFieldLength {
+			return fmt.Errorf("user property key length %d exceeds maximum %d", len(up.Key), maxFieldLength)
+		}
+		if len(up.Value) > maxFieldLength {
+			return fmt.Errorf("user property value length %d exceeds maximum %d", len(up.Value), maxFieldLength)
+		}
+	}
+	for k, v := range props.UserProperties {
+		if len(k) > maxFieldLength {
+			return fmt.Errorf("user property key length %d exceeds maximum %d", len(k), maxFieldLength)
+		}
+		if len(v) > maxFieldLength {
+			return fmt.Errorf("user property value length %d exceeds maximum %d", len(v), maxFieldLength)
+		}
+	}
+	return nil
 }

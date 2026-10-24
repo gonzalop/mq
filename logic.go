@@ -206,7 +206,7 @@ func (c *Client) processTopicAlias(p *packets.PublishPacket) error {
 	}
 
 	// Check if server violated our declared maximum
-	if c.opts.TopicAliasMaximum > 0 && aliasID > c.opts.TopicAliasMaximum {
+	if aliasID > c.opts.TopicAliasMaximum {
 		c.dropConnection(ReasonCodeTopicAliasInvalid)
 		return fmt.Errorf("server sent topic alias %d above our maximum %d", aliasID, c.opts.TopicAliasMaximum)
 	}
@@ -310,7 +310,7 @@ func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, h
 	if len(handlers) == 0 {
 		ack := c.buildAckPacket(p)
 		// Clean up state after building ack
-		if p.QoS > 0 {
+		if p.QoS == 1 {
 			c.sessionLock.Lock()
 			delete(c.inboundUnacked, p.PacketID)
 			c.sessionLock.Unlock()

@@ -243,8 +243,9 @@ By default, the client holds session state in memory. If the *application* resta
 The library provides a built-in `FileStore`, but you can implement the `SessionStore` interface to support other backends like Redis, BoltDB, or a relational database.
 
 ```go
-// Save state to disk to survive reboots using built-in FileStore
-store, _ := mq.NewFileStore("/var/lib/myapp/mqtt", "device-id")
+// Save state to disk to survive reboots using built-in FileStore wrapped in AsyncStore
+fileStore, _ := mq.NewFileStore("/var/lib/myapp/mqtt", "device-id")
+store := mq.NewAsyncStore(fileStore, 1000)
 
 client, err := mq.Dial(server,
     mq.WithSessionStore(store),

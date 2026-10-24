@@ -48,6 +48,14 @@ func TestAppendString(t *testing.T) {
 	if !bytes.Equal(got, expected) {
 		t.Errorf("appendString() = %v, want %v", got, expected)
 	}
+
+	// Test string exceeding 65535 bytes panics
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("appendString with > 65535 bytes should panic")
+		}
+	}()
+	appendString(nil, strings.Repeat("a", 65536))
 }
 
 func TestEncodeBinary(t *testing.T) {
@@ -87,6 +95,14 @@ func TestAppendBinary(t *testing.T) {
 	if !bytes.Equal(got, expected) {
 		t.Errorf("appendBinary() = %v, want %v", got, expected)
 	}
+
+	// Test binary exceeding 65535 bytes panics
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("appendBinary with > 65535 bytes should panic")
+		}
+	}()
+	appendBinary(nil, make([]byte, 65536))
 }
 
 func TestDecodeString(t *testing.T) {

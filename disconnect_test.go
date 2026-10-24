@@ -83,6 +83,71 @@ func TestRequestsAfterDisconnect(t *testing.T) {
 	}
 }
 
+func TestRequestsStopDuringSend_ReturnsSentinelError(t *testing.T) {
+	c := &Client{
+		trie:          newTopicTrie(),
+		opts:          defaultOptions("tcp://x"),
+		pending:       make(map[uint16]*pendingOp),
+		subscriptions: make(map[string]subscriptionEntry),
+		outgoing:      make(chan packets.Packet), // unbuffered so send blocks
+		stop:          make(chan struct{}),
+	}
+	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
+
+	// 1. Publish blocked on outgoing
+	pubTok := newToken()
+	pubDone := make(chan struct{})
+	go func() {
+		c.internalPublish(&publishRequest{
+			ctx:    context.Background(),
+			packet: &packets.PublishPacket{Topic: "t", QoS: 1},
+			token:  pubTok,
+		})
+		close(pubDone)
+	}()
+
+	// 2. Subscribe blocked on outgoing
+	subTok := newToken()
+	subDone := make(chan struct{})
+	go func() {
+		c.internalSubscribe(&subscribeRequest{
+			ctx:    context.Background(),
+			packet: &packets.SubscribePacket{Topics: []string{"sub/t"}},
+			token:  subTok,
+		})
+		close(subDone)
+	}()
+
+	// 3. Unsubscribe blocked on outgoing
+	unsubTok := newToken()
+	unsubDone := make(chan struct{})
+	go func() {
+		c.internalUnsubscribe(&unsubscribeRequest{
+			ctx:    context.Background(),
+			packet: &packets.UnsubscribePacket{Topics: []string{"unsub/t"}},
+			token:  unsubTok,
+		})
+		close(unsubDone)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	close(c.stop)
+
+	<-pubDone
+	<-subDone
+	<-unsubDone
+
+	if err := pubTok.Error(); !errors.Is(err, ErrClientDisconnected) {
+		t.Errorf("publish token on stop: got %v, want ErrClientDisconnected", err)
+	}
+	if err := subTok.Error(); !errors.Is(err, ErrClientDisconnected) {
+		t.Errorf("subscribe token on stop: got %v, want ErrClientDisconnected", err)
+	}
+	if err := unsubTok.Error(); !errors.Is(err, ErrClientDisconnected) {
+		t.Errorf("unsubscribe token on stop: got %v, want ErrClientDisconnected", err)
+	}
+}
+
 // TestProtocolErrorReconnects checks that a protocol violation by the server
 // drops only the connection: the client sends DISCONNECT 0x82 (v5.0), reports
 // the loss through OnConnectionLost and reconnects. It used to call the

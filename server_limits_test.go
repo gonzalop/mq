@@ -2,6 +2,7 @@ package mq
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -81,8 +82,8 @@ func TestMaximumPacketSizeEnforcement(t *testing.T) {
 				if !tt.wantError && err != nil {
 					t.Errorf("unexpected error: %v", err)
 				}
-				if tt.wantError && err != nil && !strings.Contains(err.Error(), "exceeds server maximum") {
-					t.Errorf("expected packet size error, got: %v", err)
+				if tt.wantError && err != nil && !errors.Is(err, ErrPacketExceedsServerMax) {
+					t.Errorf("expected ErrPacketExceedsServerMax, got: %v", err)
 				}
 			default:
 				if tt.wantError {
@@ -90,6 +91,51 @@ func TestMaximumPacketSizeEnforcement(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMaximumPacketSize_PropertiesExceedLimit(t *testing.T) {
+	c := &Client{trie: newTopicTrie(),
+		opts: &clientOptions{
+			ProtocolVersion: ProtocolV50,
+			Logger:          testLogger(),
+		},
+		pending:  make(map[uint16]*pendingOp),
+		outgoing: make(chan packets.Packet, 10),
+	}
+	c.connState.Store(&connectionState{
+		caps: serverCapabilities{
+			MaximumPacketSize: 100,
+		},
+	})
+
+	token := &token{done: make(chan struct{})}
+	req := &publishRequest{
+		ctx: context.Background(),
+		packet: &packets.PublishPacket{
+			Topic:   "test/topic",
+			Payload: []byte("short payload"),
+			Version: 5,
+			Properties: &packets.Properties{
+				UserProperties: []packets.UserProperty{
+					{Key: "very-long-key-to-exceed-limit", Value: strings.Repeat("v", 100)},
+				},
+			},
+			QoS: 0,
+		},
+		token: token,
+	}
+
+	c.internalPublish(req)
+
+	select {
+	case <-token.done:
+		err := token.Error()
+		if !errors.Is(err, ErrPacketExceedsServerMax) {
+			t.Errorf("expected ErrPacketExceedsServerMax, got: %v", err)
+		}
+	default:
+		t.Error("expected immediate error, token not completed")
 	}
 }
 

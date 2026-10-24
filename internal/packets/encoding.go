@@ -15,6 +15,9 @@ func encodeString(s string) []byte {
 
 // appendString appends a length-prefixed string to dst.
 func appendString(dst []byte, s string) []byte {
+	if len(s) > 65535 {
+		panic(fmt.Sprintf("packets: string length %d exceeds maximum 65535", len(s)))
+	}
 	length := uint16(len(s))
 	dst = append(dst, byte(length>>8), byte(length))
 	return append(dst, s...)
@@ -27,6 +30,9 @@ func encodeBinary(data []byte) []byte {
 
 // appendBinary appends length-prefixed binary data to dst.
 func appendBinary(dst []byte, data []byte) []byte {
+	if len(data) > 65535 {
+		panic(fmt.Sprintf("packets: binary length %d exceeds maximum 65535", len(data)))
+	}
 	length := uint16(len(data))
 	dst = append(dst, byte(length>>8), byte(length))
 	return append(dst, data...)
@@ -45,7 +51,7 @@ func decodeString(buf []byte) (string, int, error) {
 	}
 	ret := string(buf[2 : 2+length])
 	if strings.Contains(ret, "\x00") {
-		return "", 0, fmt.Errorf("topic contains null byte which is not allowed")
+		return "", 0, fmt.Errorf("string contains null byte which is not allowed")
 	}
 	if !utf8.ValidString(ret) {
 		return "", 0, fmt.Errorf("invalid UTF-8 string")

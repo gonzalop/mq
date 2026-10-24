@@ -113,7 +113,8 @@ type Properties struct {
 type propType uint8
 
 const (
-	typeByte propType = iota
+	typeInvalid propType = iota
+	typeByte
 	typeTwoByte
 	typeFourByte
 	typeString
@@ -223,10 +224,8 @@ func decodeProperties(buf []byte) (*Properties, int, error) {
 		offset++
 
 		info := propertyTable[id]
-		if info.kind == 0 && id != PropPayloadFormatIndicator {
-			if id > 0x2A || (id > 0x03 && id < 0x08) || id == 0x0A || (id > 0x0B && id < 0x11) {
-				return nil, 0, fmt.Errorf("unsupported property ID: 0x%02x", id)
-			}
+		if info.kind == typeInvalid {
+			return nil, 0, fmt.Errorf("unsupported property ID: 0x%02x", id)
 		}
 
 		if info.presence != 0 && p.Presence&info.presence != 0 {
