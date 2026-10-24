@@ -464,3 +464,49 @@ func TestKeepAlive_SubMillisecondDoesNotPanic(t *testing.T) {
 
 	client.runWriteLoop(client.conn, connDone, client.opts.KeepAlive)
 }
+
+// TestWriteLoop_WriteTimeoutDisconnects verifies that when socket writes stall and time out,
+// runWriteLoop detects the timeout, triggers disconnect, and exits.
+func TestWriteLoop_WriteTimeoutDisconnects(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	client := &Client{
+		trie: newTopicTrie(),
+		opts: &clientOptions{
+			KeepAlive:       0,
+			WriteTimeout:    50 * time.Millisecond,
+			Server:          "tcp://test:1883",
+			Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+			ProtocolVersion: ProtocolV311,
+		},
+		conn:           clientConn,
+		outgoing:       make(chan packets.Packet, 10),
+		packetReceived: make(chan struct{}, 1),
+		stop:           make(chan struct{}),
+		disconnected:   make(chan struct{}, 1),
+	}
+	client.connected.Store(true)
+
+	// Do NOT read from serverConn so that writes to the pipe block and trigger WriteTimeout
+	done := make(chan struct{})
+	client.wg.Add(1)
+	go func() {
+		client.runWriteLoop(client.conn, make(chan struct{}), 0)
+		close(done)
+	}()
+
+	// Send a publish packet to trigger a write
+	client.outgoing <- &packets.PublishPacket{Topic: "test", QoS: 0, Payload: []byte("hello")}
+
+	select {
+	case <-done:
+		// Success: writeLoop exited after write timeout
+		if client.connected.Load() {
+			t.Error("client should be disconnected after write timeout")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("runWriteLoop hung and did not respect WriteTimeout")
+	}
+}

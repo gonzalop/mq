@@ -78,7 +78,11 @@ func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive
 		tickerCh = ticker.C
 	}
 
-	cw := &countingWriter{Writer: conn, c: c}
+	var writeTimeout time.Duration
+	if c.opts != nil {
+		writeTimeout = c.opts.WriteTimeout
+	}
+	cw := &countingWriter{Writer: conn, c: c, writeTimeout: writeTimeout}
 	bw := bufio.NewWriter(cw)
 	aliases := newTopicAliases(c.outgoingAliasLimit())
 	lastReceived := time.Now()

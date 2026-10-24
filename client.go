@@ -416,10 +416,17 @@ func (r *countingReader) Read(p []byte) (int, error) {
 
 type countingWriter struct {
 	io.Writer
-	c *Client
+	c            *Client
+	writeTimeout time.Duration
 }
 
 func (w *countingWriter) Write(p []byte) (int, error) {
+	if w.writeTimeout > 0 {
+		if dw, ok := w.Writer.(interface{ SetWriteDeadline(time.Time) error }); ok {
+			_ = dw.SetWriteDeadline(time.Now().Add(w.writeTimeout))
+			defer func() { _ = dw.SetWriteDeadline(time.Time{}) }()
+		}
+	}
 	n, err := w.Writer.Write(p)
 	if n > 0 {
 		w.c.bytesSent.Add(uint64(n))

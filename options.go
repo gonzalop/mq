@@ -42,6 +42,10 @@ type clientOptions struct {
 	// Connection timeout
 	ConnectTimeout time.Duration
 
+	// WriteTimeout is the network write timeout for socket operations.
+	// Default is 30s. Set to 0 to disable write deadlines.
+	WriteTimeout time.Duration
+
 	// TLS configuration (optional)
 	TLSConfig *tls.Config
 
@@ -218,6 +222,14 @@ func WithAutoReconnect(enable bool) Option {
 func WithConnectTimeout(duration time.Duration) Option {
 	return func(o *clientOptions) {
 		o.ConnectTimeout = duration
+	}
+}
+
+// WithWriteTimeout sets the network write timeout for socket operations (default: 30s).
+// Setting it to 0 disables write deadlines.
+func WithWriteTimeout(duration time.Duration) Option {
+	return func(o *clientOptions) {
+		o.WriteTimeout = duration
 	}
 }
 
@@ -767,6 +779,7 @@ func defaultOptions(server string) *clientOptions {
 		AutoProtocolVersion: true,
 		AutoReconnect:       true,
 		ConnectTimeout:      30 * time.Second,
+		WriteTimeout:        30 * time.Second,
 		OutgoingQueueSize:   1000,
 		IncomingQueueSize:   100,
 		QoS0Policy:          QoS0LimitPolicyDrop,
