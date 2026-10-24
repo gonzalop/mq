@@ -139,10 +139,12 @@ func (c *Client) convertToPersistedPublish(req *publishRequest) *PersistedPublis
 			p.Properties.MessageExpiry = nil
 		}
 
-		if len(req.packet.Properties.UserProperties) > 0 {
-			p.Properties.UserProperties = make(map[string]string, len(req.packet.Properties.UserProperties))
-			for _, up := range req.packet.Properties.UserProperties {
+		if n := len(req.packet.Properties.UserProperties); n > 0 {
+			p.Properties.UserProperties = make(map[string]string, n)
+			p.Properties.UserPropertyList = make([]UserProperty, n)
+			for i, up := range req.packet.Properties.UserProperties {
 				p.Properties.UserProperties[up.Key] = up.Value
+				p.Properties.UserPropertyList[i] = UserProperty{Key: up.Key, Value: up.Value}
 			}
 		}
 	}
@@ -188,7 +190,12 @@ func (c *Client) convertFromPersistedPublish(p *PersistedPublish) *pendingOp {
 			pkt.Properties.Presence |= packets.PresContentType
 		}
 
-		if len(p.Properties.UserProperties) > 0 {
+		if len(p.Properties.UserPropertyList) > 0 {
+			pkt.Properties.UserProperties = make([]packets.UserProperty, len(p.Properties.UserPropertyList))
+			for i, up := range p.Properties.UserPropertyList {
+				pkt.Properties.UserProperties[i] = packets.UserProperty{Key: up.Key, Value: up.Value}
+			}
+		} else if len(p.Properties.UserProperties) > 0 {
 			pkt.Properties.UserProperties = make([]packets.UserProperty, 0, len(p.Properties.UserProperties))
 			for k, v := range p.Properties.UserProperties {
 				pkt.Properties.UserProperties = append(pkt.Properties.UserProperties, packets.UserProperty{Key: k, Value: v})

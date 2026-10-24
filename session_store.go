@@ -304,6 +304,7 @@ type PublishProperties struct {
 	ResponseTopic          string
 	CorrelationData        []byte
 	UserProperties         map[string]string
+	UserPropertyList       []UserProperty // Wire order with duplicate keys; preferred over UserProperties when set.
 	SubscriptionIdentifier *uint32
 	ContentType            string
 }

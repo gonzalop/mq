@@ -6,6 +6,12 @@ const (
 	PayloadFormatUTF8  uint8 = 1
 )
 
+// UserProperty represents a single MQTT v5.0 User Property key-value pair.
+type UserProperty struct {
+	Key   string
+	Value string
+}
+
 // Properties represents MQTT v5.0 properties for messages.
 //
 // All fields are optional and only used when the protocol version is 5.0.
@@ -63,7 +69,13 @@ type Properties struct {
 
 	// UserProperties contains application-specific properties as key-value pairs.
 	// These can be used to pass custom metadata with messages.
+	// When duplicate keys are present in a received packet, this map holds the last
+	// value for each key; use UserPropertyList to inspect all pairs in wire order.
 	UserProperties map[string]string
+
+	// UserPropertyList contains application-specific properties in wire order,
+	// preserving duplicate keys as allowed by MQTT v5.0.
+	UserPropertyList []UserProperty
 }
 
 // NewProperties creates a new Properties instance with initialized maps.
@@ -79,13 +91,50 @@ func (p *Properties) SetUserProperty(key, value string) {
 		p.UserProperties = make(map[string]string)
 	}
 	p.UserProperties[key] = value
+
+	// Replace the first entry for key in place and drop any later duplicates,
+	// or append if key is not present yet.
+	updated := false
+	n := 0
+	for _, up := range p.UserPropertyList {
+		if up.Key == key {
+			if updated {
+				continue
+			}
+			up.Value = value
+			updated = true
+		}
+		p.UserPropertyList[n] = up
+		n++
+	}
+	p.UserPropertyList = p.UserPropertyList[:n]
+	if !updated {
+		p.UserPropertyList = append(p.UserPropertyList, UserProperty{Key: key, Value: value})
+	}
+}
+
+// AddUserProperty appends a user property key-value pair, preserving insertion
+// order and allowing duplicate keys as permitted by MQTT v5.0.
+func (p *Properties) AddUserProperty(key, value string) {
+	if p.UserProperties == nil {
+		p.UserProperties = make(map[string]string)
+	}
+	p.UserProperties[key] = value
+	p.UserPropertyList = append(p.UserPropertyList, UserProperty{Key: key, Value: value})
 }
 
 // GetUserProperty retrieves a user property value.
 // Returns empty string if the property doesn't exist.
 func (p *Properties) GetUserProperty(key string) string {
-	if p.UserProperties == nil {
-		return ""
+	if p.UserProperties != nil {
+		if v, ok := p.UserProperties[key]; ok {
+			return v
+		}
 	}
-	return p.UserProperties[key]
+	for i := len(p.UserPropertyList) - 1; i >= 0; i-- {
+		if p.UserPropertyList[i].Key == key {
+			return p.UserPropertyList[i].Value
+		}
+	}
+	return ""
 }

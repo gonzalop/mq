@@ -111,7 +111,7 @@ func WithUserProperty(key, value string) PublishOption {
 		if o.Properties == nil {
 			o.Properties = &Properties{}
 		}
-		o.Properties.SetUserProperty(key, value)
+		o.Properties.AddUserProperty(key, value)
 	}
 }
 

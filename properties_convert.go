@@ -60,8 +60,12 @@ func toPublicProperties(internal *packets.Properties) *Properties {
 	}
 
 	// Convert user properties
-	for _, up := range internal.UserProperties {
-		props.UserProperties[up.Key] = up.Value
+	if len(internal.UserProperties) > 0 {
+		props.UserPropertyList = make([]UserProperty, len(internal.UserProperties))
+		for i, up := range internal.UserProperties {
+			props.UserPropertyList[i] = UserProperty{Key: up.Key, Value: up.Value}
+			props.UserProperties[up.Key] = up.Value
+		}
 	}
 
 	return props
@@ -115,7 +119,25 @@ func toInternalProperties(public *Properties) *packets.Properties {
 	}
 
 	// Convert user properties
-	if len(public.UserProperties) > 0 {
+	if len(public.UserPropertyList) > 0 {
+		props.UserProperties = make([]packets.UserProperty, 0, len(public.UserPropertyList)+len(public.UserProperties))
+		seen := make(map[string]struct{}, len(public.UserPropertyList))
+		for _, up := range public.UserPropertyList {
+			props.UserProperties = append(props.UserProperties, packets.UserProperty{
+				Key:   up.Key,
+				Value: up.Value,
+			})
+			seen[up.Key] = struct{}{}
+		}
+		for key, value := range public.UserProperties {
+			if _, ok := seen[key]; !ok {
+				props.UserProperties = append(props.UserProperties, packets.UserProperty{
+					Key:   key,
+					Value: value,
+				})
+			}
+		}
+	} else if len(public.UserProperties) > 0 {
 		props.UserProperties = make([]packets.UserProperty, 0, len(public.UserProperties))
 		for key, value := range public.UserProperties {
 			props.UserProperties = append(props.UserProperties, packets.UserProperty{

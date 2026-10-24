@@ -510,3 +510,85 @@ func TestSubscriptionIdentifierReceiveOnly(t *testing.T) {
 		t.Error("ContentType should be set")
 	}
 }
+
+func TestUserPropertyListOrderedAndRepeated(t *testing.T) {
+	props := &Properties{}
+	props.AddUserProperty("tag", "first")
+	props.AddUserProperty("env", "prod")
+	props.AddUserProperty("tag", "second")
+
+	internal := toInternalProperties(props)
+	result := toPublicProperties(internal)
+
+	want := []UserProperty{
+		{Key: "tag", Value: "first"},
+		{Key: "env", Value: "prod"},
+		{Key: "tag", Value: "second"},
+	}
+	if len(result.UserPropertyList) != len(want) {
+		t.Fatalf("UserPropertyList len = %d, want %d", len(result.UserPropertyList), len(want))
+	}
+	for i := range want {
+		if result.UserPropertyList[i] != want[i] {
+			t.Errorf("UserPropertyList[%d] = %+v, want %+v", i, result.UserPropertyList[i], want[i])
+		}
+	}
+	if got := result.GetUserProperty("tag"); got != "second" {
+		t.Errorf("GetUserProperty(tag) = %q, want %q", got, "second")
+	}
+
+	// SetUserProperty collapses duplicate keys in UserPropertyList
+	result.SetUserProperty("tag", "updated")
+	if len(result.UserPropertyList) != 2 {
+		t.Fatalf("after SetUserProperty, UserPropertyList len = %d, want 2", len(result.UserPropertyList))
+	}
+	if result.UserPropertyList[0] != (UserProperty{Key: "tag", Value: "updated"}) {
+		t.Errorf("UserPropertyList[0] = %+v, want {tag updated}", result.UserPropertyList[0])
+	}
+}
+
+// TestSetThenAddUserProperty checks that mixing SetUserProperty and
+// AddUserProperty on the same key keeps both values in UserPropertyList.
+func TestSetThenAddUserProperty(t *testing.T) {
+	props := &Properties{}
+	props.SetUserProperty("tag", "a")
+	props.AddUserProperty("tag", "b")
+
+	internal := toInternalProperties(props)
+	want := []packets.UserProperty{{Key: "tag", Value: "a"}, {Key: "tag", Value: "b"}}
+	if len(internal.UserProperties) != len(want) {
+		t.Fatalf("UserProperties = %+v, want %+v", internal.UserProperties, want)
+	}
+	for i := range want {
+		if internal.UserProperties[i] != want[i] {
+			t.Errorf("UserProperties[%d] = %+v, want %+v", i, internal.UserProperties[i], want[i])
+		}
+	}
+}
+
+// TestPersistedPublishKeepsUserPropertyOrder checks that a persisted publish
+// round-trips repeated user properties in wire order.
+func TestPersistedPublishKeepsUserPropertyOrder(t *testing.T) {
+	c := &Client{opts: defaultOptions("tcp://x")}
+	want := []packets.UserProperty{
+		{Key: "tag", Value: "a"},
+		{Key: "env", Value: "prod"},
+		{Key: "tag", Value: "b"},
+	}
+	req := &publishRequest{packet: &packets.PublishPacket{
+		Topic:      "t",
+		QoS:        1,
+		Properties: &packets.Properties{UserProperties: want},
+	}}
+
+	op := c.convertFromPersistedPublish(c.convertToPersistedPublish(req))
+	got := op.packet.(*packets.PublishPacket).Properties.UserProperties
+	if len(got) != len(want) {
+		t.Fatalf("UserProperties = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("UserProperties[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
