@@ -146,6 +146,7 @@ func (as *AsyncStore) run() {
 			return
 		}
 		op := as.queue[0]
+		as.queue[0] = nil // Avoid retaining closure and captured payload in backing array
 		as.queue = as.queue[1:]
 		as.mu.Unlock()
 

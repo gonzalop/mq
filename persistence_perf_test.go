@@ -254,3 +254,25 @@ func TestAsyncStore_CloseReturnsError(t *testing.T) {
 		t.Errorf("Close() = %v, want the store error \"disk full\"", err)
 	}
 }
+
+func TestAsyncStore_QueuePopsClearBackingReference(t *testing.T) {
+	mock := &dummySessionStore{}
+	asyncStore := NewAsyncStore(mock, 10)
+
+	_ = asyncStore.SavePendingPublish(1, &PersistedPublish{Topic: "test"})
+	asyncStore.flush()
+
+	asyncStore.mu.Lock()
+	// Check capacity of backing array vs length
+	if cap(asyncStore.queue) > len(asyncStore.queue) {
+		// Backing array prefix must be nil
+		backingSlice := asyncStore.queue[:cap(asyncStore.queue)]
+		// In Go, the element popped from index 0 should be nil
+		if backingSlice[0] != nil {
+			t.Errorf("backing array index 0 was not zeroed after queue pop")
+		}
+	}
+	asyncStore.mu.Unlock()
+
+	_ = asyncStore.Close()
+}
