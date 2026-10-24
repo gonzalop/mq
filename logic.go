@@ -489,20 +489,32 @@ func (c *Client) handleSuback(p *packets.SubackPacket) []packets.Packet {
 		}
 	}
 
+	subPkt, isSub := op.packet.(*packets.SubscribePacket)
+	if isSub && len(p.ReturnCodes) != len(subPkt.Topics) {
+		c.opts.Logger.Warn("SUBACK return codes count mismatch",
+			"expected", len(subPkt.Topics), "got", len(p.ReturnCodes))
+		if err == nil {
+			err = fmt.Errorf("%w: return codes count mismatch (expected %d, got %d)",
+				ErrSubscriptionFailed, len(subPkt.Topics), len(p.ReturnCodes))
+		}
+	}
+
 	// Set reason code from the first return code (Subscribe operates on a single topic)
 	if len(p.ReturnCodes) > 0 {
 		op.token.reasonCode = ReasonCode(p.ReturnCodes[0])
 	}
 
-	// Drop filters the server rejected, so they are not routed or
+	// Drop filters the server rejected or failed to acknowledge, so they are not routed or
 	// resubscribed on every reconnect. Store writes are collected here and
 	// run after the lock is released.
 	var toDelete []string
 	toSave := map[string]*PersistedSubscription{}
-	if subPkt, ok := op.packet.(*packets.SubscribePacket); ok {
+	if isSub {
 		for i, topic := range subPkt.Topics {
 			if i >= len(p.ReturnCodes) {
-				break
+				c.removeSubscriptionLocked(topic)
+				toDelete = append(toDelete, topic)
+				continue
 			}
 			if p.ReturnCodes[i] >= 0x80 {
 				c.removeSubscriptionLocked(topic)

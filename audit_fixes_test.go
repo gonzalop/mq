@@ -85,6 +85,45 @@ func TestHandleSuback_RejectedTopicRemoved(t *testing.T) {
 	}
 }
 
+func TestHandleSuback_FewerReturnCodesRemovesUnacknowledgedTopics(t *testing.T) {
+	c := newTestClient(nil)
+	store := newMockSubscriptionStore()
+	store.storedSubs["trailing/#"] = &PersistedSubscription{}
+	c.opts.SessionStore = store
+
+	h := func(*Client, Message) {}
+	c.addSubscriptionLocked("first/#", subscriptionEntry{handler: h, options: SubscribeOptions{Persistence: true}})
+	c.addSubscriptionLocked("trailing/#", subscriptionEntry{handler: h, options: SubscribeOptions{Persistence: true}})
+
+	tok := newToken()
+	c.pending[1] = &pendingOp{
+		token:  tok,
+		packet: &packets.SubscribePacket{Topics: []string{"first/#", "trailing/#"}},
+	}
+	// Server responds with only 1 return code for 2 requested topics
+	c.handleSuback(&packets.SubackPacket{PacketID: 1, ReturnCodes: []uint8{0x00}})
+
+	if tok.Error() == nil {
+		t.Error("expected subscription error due to return codes count mismatch")
+	}
+	if !errors.Is(tok.Error(), ErrSubscriptionFailed) {
+		t.Errorf("expected ErrSubscriptionFailed, got: %v", tok.Error())
+	}
+	if _, ok := c.subscriptions["trailing/#"]; ok {
+		t.Error("unacknowledged trailing topic filter still in subscriptions")
+	}
+	if len(c.trie.Match("trailing/item")) != 0 {
+		t.Error("unacknowledged trailing topic filter still routed")
+	}
+	if _, ok := store.storedSubs["trailing/#"]; ok {
+		t.Error("unacknowledged trailing topic filter still persisted")
+	}
+	// Note: because the overall operation errored, nothing from this batch should be newly persisted
+	if _, ok := store.storedSubs["first/#"]; ok {
+		t.Error("topics from partially-acknowledged batch should not be persisted on error")
+	}
+}
+
 func TestHandleUnsuback_FailureKeepsPersistedSubscription(t *testing.T) {
 	opts := defaultOptions("tcp://localhost:1883")
 	opts.ProtocolVersion = ProtocolV50
