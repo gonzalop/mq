@@ -428,3 +428,39 @@ func TestKeepAlivePingPendingResetOnReconnect(t *testing.T) {
 	default:
 	}
 }
+
+// TestKeepAlive_SubMillisecondDoesNotPanic verifies that runWriteLoop does not panic
+// when keepalive is smaller than 4 nanoseconds (preventing NewTicker(0)).
+func TestKeepAlive_SubMillisecondDoesNotPanic(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	client := &Client{
+		trie: newTopicTrie(),
+		opts: &clientOptions{
+			KeepAlive:       1 * time.Nanosecond,
+			Server:          "tcp://test:1883",
+			Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+			ProtocolVersion: ProtocolV311,
+		},
+		conn:           clientConn,
+		outgoing:       make(chan packets.Packet, 10),
+		packetReceived: make(chan struct{}, 1),
+		stop:           make(chan struct{}),
+		disconnected:   make(chan struct{}, 1),
+	}
+	client.connected.Store(true)
+
+	connDone := make(chan struct{})
+	close(connDone) // Stop writeLoop immediately after startup
+
+	client.wg.Add(1)
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("runWriteLoop panicked on sub-millisecond keepalive: %v", r)
+		}
+	}()
+
+	client.runWriteLoop(client.conn, connDone, client.opts.KeepAlive)
+}

@@ -70,8 +70,10 @@ func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive
 	var tickerCh <-chan time.Time
 
 	if keepAlive > 0 {
-		// Ticker runs 4 times per keepalive interval for better resolution
-		ticker = time.NewTicker(keepAlive / 4)
+		// Ticker runs 4 times per keepalive interval for better resolution.
+		// Clamped to at least 1ms to prevent NewTicker(0) panics on sub-millisecond values.
+		interval := max(keepAlive/4, time.Millisecond)
+		ticker = time.NewTicker(interval)
 		defer ticker.Stop()
 		tickerCh = ticker.C
 	}
