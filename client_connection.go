@@ -168,6 +168,11 @@ func (c *Client) buildConnectPacket() *packets.ConnectPacket {
 // sendConnectPacket builds and sends the CONNECT packet.
 func (c *Client) sendConnectPacket(w io.Writer) error {
 	connectPkt := c.buildConnectPacket()
+	if p := connectPkt.Properties; p != nil {
+		if err := checkAuthFieldLengths(p.AuthenticationMethod, p.AuthenticationData); err != nil {
+			return fmt.Errorf("failed to send CONNECT: %w", err)
+		}
+	}
 	if _, err := connectPkt.WriteTo(w); err != nil {
 		return fmt.Errorf("failed to send CONNECT: %w", err)
 	}
@@ -347,6 +352,9 @@ func (c *Client) performHandshake(ctx context.Context, r io.Reader, w io.Writer)
 			}
 
 			respData, err := c.opts.Authenticator.HandleChallenge(p.Properties.AuthenticationData, p.ReasonCode)
+			if err == nil {
+				err = checkAuthFieldLengths(c.opts.Authenticator.Method(), respData)
+			}
 			if err != nil {
 				conn.Close()
 				return nil, fmt.Errorf("authentication failed: %w", err)

@@ -2,6 +2,7 @@ package mq
 
 import (
 	"context"
+	"io"
 	"strings"
 	"testing"
 )
@@ -105,5 +106,20 @@ func TestDial_OversizedOptionsErrors(t *testing.T) {
 				t.Errorf("error %q should mention exceeds maximum 65535", err)
 			}
 		})
+	}
+}
+
+func TestSendConnect_OversizedAuthDataErrors(t *testing.T) {
+	c := &Client{trie: newTopicTrie(),
+		opts: &clientOptions{
+			ProtocolVersion: ProtocolV50,
+			Authenticator:   &tokenAuthenticator{token: strings.Repeat("x", 65536)},
+			Logger:          testLogger(),
+		},
+	}
+
+	err := c.sendConnectPacket(io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "authentication data length 65536 exceeds maximum 65535") {
+		t.Fatalf("sendConnectPacket() error = %v, want authentication data length error", err)
 	}
 }

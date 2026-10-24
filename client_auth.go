@@ -59,6 +59,9 @@ func (c *Client) Reauthenticate(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get re-auth data: %w", err)
 	}
+	if err := checkAuthFieldLengths(c.opts.Authenticator.Method(), initialData); err != nil {
+		return fmt.Errorf("invalid re-auth data: %w", err)
+	}
 
 	// Send AUTH packet with Re-authenticate reason code
 	authPkt := &packets.AuthPacket{
@@ -129,6 +132,9 @@ func (c *Client) handleAuth(p *packets.AuthPacket) []packets.Packet {
 
 	go func() {
 		responseData, err := c.opts.Authenticator.HandleChallenge(challengeData, p.ReasonCode)
+		if err == nil {
+			err = checkAuthFieldLengths(c.opts.Authenticator.Method(), responseData)
+		}
 		if err != nil {
 			c.opts.Logger.Error("authentication challenge failed", "error", err)
 			c.dropConnection(ReasonCodeBadAuthenticationMethod)
@@ -152,5 +158,17 @@ func (c *Client) handleAuth(p *packets.AuthPacket) []packets.Packet {
 		}
 	}()
 
+	return nil
+}
+
+// checkAuthFieldLengths rejects authenticator output that does not fit in an
+// MQTT length-prefixed field (65535 bytes).
+func checkAuthFieldLengths(method string, data []byte) error {
+	if len(method) > maxFieldLength {
+		return fmt.Errorf("authentication method length %d exceeds maximum %d", len(method), maxFieldLength)
+	}
+	if len(data) > maxFieldLength {
+		return fmt.Errorf("authentication data length %d exceeds maximum %d", len(data), maxFieldLength)
+	}
 	return nil
 }
