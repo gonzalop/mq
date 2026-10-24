@@ -78,6 +78,12 @@ func getFreePort() (int, error) {
 // If configContent is empty, default config is used.
 // If fixedPort is set, it tries to use that host port (for restarts).
 func startContainer(configContent string, fixedPort ...string) (string, func(), error) {
+	return startContainerWithFiles(configContent, nil, fixedPort...)
+}
+
+// startContainerWithFiles is startContainer plus extra files (name -> content)
+// copied to /mosquitto/config/ in a Mosquitto container, e.g. a plugin config.
+func startContainerWithFiles(configContent string, extraFiles map[string]string, fixedPort ...string) (string, func(), error) {
 	ctx := context.Background()
 
 	// Determine server image from env var or default to Mosquitto
@@ -163,6 +169,24 @@ func startContainer(configContent string, fixedPort ...string) (string, func(), 
 			ContainerFilePath: "/mosquitto/config/mosquitto.conf",
 			FileMode:          0644,
 		})
+
+		for name, content := range extraFiles {
+			f, err := os.CreateTemp("", "mosquitto-extra-*")
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to create temp file %s: %w", name, err)
+			}
+			_, werr := f.WriteString(content)
+			cerr := f.Close()
+			defer os.Remove(f.Name())
+			if werr != nil || cerr != nil {
+				return "", nil, fmt.Errorf("failed to write temp file %s: %v %v", name, werr, cerr)
+			}
+			req.Files = append(req.Files, testcontainers.ContainerFile{
+				HostFilePath:      f.Name(),
+				ContainerFilePath: "/mosquitto/config/" + name,
+				FileMode:          0644,
+			})
+		}
 	}
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -213,6 +237,24 @@ func startMosquitto(t *testing.T, configContent string, opts ...string) (string,
 
 	// Otherwise start a new one (e.g. custom config, fixed port, or if shared failed)
 	server, cleanup, err := startContainer(configContent, opts...)
+	if err != nil {
+		t.Fatalf("Failed to start container: %v", err)
+	}
+	return server, cleanup
+}
+
+// startMosquittoWithDynsec starts a dedicated Mosquitto container running
+// the dynamic-security plugin with the given dynamic-security.json content.
+// Unlike acl_file, which only filters delivery, dynamic security rejects a
+// denied SUBSCRIBE in the SUBACK. Tests using it are skipped for other
+// servers, which do not read Mosquitto config files.
+func startMosquittoWithDynsec(t *testing.T, dynsecJSON string) (string, func()) {
+	t.Helper()
+	if img := os.Getenv("MQTT_SERVER_IMAGE"); img != "" && !strings.Contains(img, "mosquitto") {
+		t.Skipf("dynamic security test needs Mosquitto, server image is %s", img)
+	}
+	config := "plugin /usr/lib/mosquitto_dynamic_security.so\nplugin_opt_config_file /mosquitto/config/dynsec.json\n"
+	server, cleanup, err := startContainerWithFiles(config, map[string]string{"dynsec.json": dynsecJSON})
 	if err != nil {
 		t.Fatalf("Failed to start container: %v", err)
 	}
