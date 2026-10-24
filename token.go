@@ -82,6 +82,23 @@ func newToken() *token {
 	}
 }
 
+// NewCompletedToken returns a Token that has already completed with err
+// (nil means success). It is intended for test doubles of code that calls
+// Publish, Subscribe or Unsubscribe, so they do not need their own Token
+// implementation.
+//
+// Example:
+//
+//	func (f *fakeClient) Publish(ctx context.Context, topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
+//	    f.published = append(f.published, topic)
+//	    return mq.NewCompletedToken(nil)
+//	}
+func NewCompletedToken(err error) Token {
+	t := newToken()
+	t.complete(err)
+	return t
+}
+
 // Wait blocks until the operation completes or the context is cancelled.
 func (t *token) Wait(ctx context.Context) error {
 	select {
