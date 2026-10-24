@@ -3,6 +3,7 @@ package mq
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"sync"
@@ -322,6 +323,7 @@ func TestEnhancedAuthenticationFlow(t *testing.T) {
 		}
 
 		errCh <- nil
+		go func() { _, _ = io.Copy(io.Discard, serverConn) }() // let the client's DISCONNECT through
 		<-done
 	}()
 

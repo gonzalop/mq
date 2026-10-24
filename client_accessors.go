@@ -25,11 +25,25 @@ func (c *Client) ProtocolVersion() uint8 {
 	return c.opts.ProtocolVersion
 }
 
+// disconnectFlushTimeout caps how long Disconnect waits for the DISCONNECT
+// packet to be written when ctx has no deadline.
+const disconnectFlushTimeout = time.Second
+
 // Disconnect gracefully disconnects from the server.
 //
 // It sends a DISCONNECT packet to the server, stops all background goroutines,
 // and closes the network connection. The function blocks until all goroutines
 // have exited or the context is cancelled.
+//
+// The DISCONNECT is written after any packets already queued for sending.
+// If ctx has a deadline, Disconnect waits until that deadline for the
+// DISCONNECT to be written before closing the connection. If ctx has no
+// deadline (for example context.Background()), it waits at most 1 second, so
+// a stalled connection cannot block it. If the connection is closed before
+// the DISCONNECT is written, the server treats it as an unexpected drop and
+// publishes the Last Will message, if one is set. When you publish a burst
+// right before disconnecting over a slow link, pass a ctx with a longer
+// deadline.
 //
 // If AutoReconnect is enabled, it will be disabled after calling Disconnect.
 // To reconnect, create a new client with Dial.
@@ -81,6 +95,16 @@ func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, pro
 		}
 
 		if conn != nil {
+			// With a deadline on ctx, ctx alone limits how long we wait for
+			// the DISCONNECT to be queued and flushed. Without one, the wait
+			// is capped so Disconnect cannot hang on a stalled connection.
+			var flushTimeout <-chan time.Time
+			if _, ok := ctx.Deadline(); !ok {
+				t := time.NewTimer(disconnectFlushTimeout)
+				defer t.Stop()
+				flushTimeout = t.C
+			}
+
 			if c.disconnectFlushed != nil {
 				select {
 				case <-c.disconnectFlushed:
@@ -96,12 +120,12 @@ func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, pro
 					case <-c.disconnectFlushed:
 					case <-connDone:
 					case <-ctx.Done():
-					case <-time.After(50 * time.Millisecond):
+					case <-flushTimeout:
 					}
 				}
 			case <-connDone:
 			case <-ctx.Done():
-			case <-time.After(50 * time.Millisecond):
+			case <-flushTimeout:
 			}
 		} else if c.outgoing != nil {
 			select {

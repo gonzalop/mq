@@ -236,6 +236,24 @@ token.Wait(context.Background())
 
 ## Disconnecting
 
+`Disconnect` sends a DISCONNECT packet after any packets already queued, then
+closes the connection. How long it waits for that packet to be written depends
+on `ctx`:
+
+- **`ctx` has a deadline:** it waits up to that deadline.
+- **`ctx` has no deadline** (e.g. `context.Background()`): it waits at most
+  1 second, so a stalled connection cannot block shutdown.
+
+If the connection is closed before the DISCONNECT is written, the broker sees
+an unexpected drop and publishes your Last Will. If you publish a burst right
+before disconnecting over a slow link, give `Disconnect` more time:
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+err := client.Disconnect(ctx)
+```
+
 ```go
 // Basic disconnect
 err := client.Disconnect(ctx)
