@@ -165,6 +165,40 @@ func TestProcessPublishQueue_SkipsExpired(t *testing.T) {
 	}
 }
 
+// TestProcessPublishQueue_PrunesExpiredWhenFlowControlSaturated verifies that
+// expired/cancelled publish requests in publishQueue are pruned even when in-flight quota
+// is fully exhausted (c.inFlightCount >= limit).
+func TestProcessPublishQueue_PrunesExpiredWhenFlowControlSaturated(t *testing.T) {
+	c := newTestClient(nil)
+	c.connState.Store(&connectionState{
+		caps: serverCapabilities{
+			ReceiveMaximum: 1, // Only 1 in-flight allowed
+		},
+	})
+	c.inFlightCount = 1 // Already at limit
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // expired request
+	expired := &publishRequest{ctx: ctx, packet: &packets.PublishPacket{Topic: "expired", QoS: 1}, token: newToken()}
+	live := &publishRequest{ctx: context.Background(), packet: &packets.PublishPacket{Topic: "live", QoS: 1}, token: newToken()}
+	c.publishQueue = []*publishRequest{expired, live}
+
+	toSend := c.processPublishQueueLocked()
+
+	// No packets should be sent because flow control is at capacity
+	if len(toSend) != 0 {
+		t.Fatalf("expected 0 packets sent, got %d", len(toSend))
+	}
+	// Expired request should have been pruned and failed with context.Canceled
+	if !errors.Is(expired.token.Error(), context.Canceled) {
+		t.Errorf("expired request error = %v, want context.Canceled", expired.token.Error())
+	}
+	// Live request should remain in queue waiting for flow control
+	if len(c.publishQueue) != 1 || c.publishQueue[0] != live {
+		t.Errorf("publishQueue should contain only the live request, has %d items", len(c.publishQueue))
+	}
+}
+
 func TestToPublishProperties_DropsReasonString(t *testing.T) {
 	props := toPublishProperties(&Properties{ReasonString: "x", ContentType: "text/plain"})
 	if props.Presence&packets.PresReasonString != 0 || props.ReasonString != "" {

@@ -464,6 +464,19 @@ func (c *Client) processPublishQueueLocked() []packets.Packet {
 
 	// Process queue
 	for len(c.publishQueue) > 0 {
+		req := c.publishQueue[0]
+
+		// The caller gave up while the request waited for flow control credit.
+		// Prune cancelled requests immediately without requiring available in-flight quota.
+		if req.ctx != nil {
+			if err := req.ctx.Err(); err != nil {
+				c.publishQueue[0] = nil // release the request for GC
+				c.publishQueue = c.publishQueue[1:]
+				req.token.complete(err)
+				continue
+			}
+		}
+
 		if limit > 0 && c.inFlightCount >= limit {
 			break
 		}
@@ -472,16 +485,9 @@ func (c *Client) processPublishQueueLocked() []packets.Packet {
 			break
 		}
 
-		// Pop from queue
-		req := c.publishQueue[0]
+		// Pop active request from queue
 		c.publishQueue[0] = nil // release the request for GC
 		c.publishQueue = c.publishQueue[1:]
-
-		// The caller gave up while the request waited for flow control credit.
-		if err := req.ctx.Err(); err != nil {
-			req.token.complete(err)
-			continue
-		}
 
 		// Try to prepare
 		pkt, ok := c.preparePublishLocked(req)
