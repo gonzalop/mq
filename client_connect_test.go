@@ -322,10 +322,14 @@ func TestProtocolNegotiation(t *testing.T) {
 		_, _ = connack2.WriteTo(conn2)
 	}()
 
+	onConnectVersion := make(chan uint8, 1)
 	client, err := Dial("tcp://"+addr,
 		WithClientID("negotiator"),
 		WithConnectTimeout(2*time.Second),
 		WithAutoReconnect(false),
+		WithOnConnect(func(c *Client) {
+			onConnectVersion <- c.ProtocolVersion()
+		}),
 	)
 
 	if err != nil {
@@ -333,8 +337,17 @@ func TestProtocolNegotiation(t *testing.T) {
 	}
 	defer func() { _ = client.Disconnect(context.Background()) }()
 
-	if client.opts.ProtocolVersion != ProtocolV311 {
-		t.Errorf("expected protocol version %d, got %d", ProtocolV311, client.opts.ProtocolVersion)
+	if client.ProtocolVersion() != ProtocolV311 {
+		t.Errorf("expected protocol version %d, got %d", ProtocolV311, client.ProtocolVersion())
+	}
+
+	select {
+	case v := <-onConnectVersion:
+		if v != ProtocolV311 {
+			t.Errorf("OnConnect saw protocol version %d, want %d", v, ProtocolV311)
+		}
+	case <-time.After(time.Second):
+		t.Error("timed out waiting for OnConnect")
 	}
 }
 
