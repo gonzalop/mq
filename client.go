@@ -211,12 +211,12 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 	c.publish = applyPublishInterceptors(c.basePublish, options.PublishInterceptors)
 	c.defaultHandler = c.wrapHandler(options.DefaultPublishHandler)
 
-	for topic, handler := range options.InitialSubscriptions {
-		wrapped := c.wrapHandler(handler)
-		c.addSubscriptionLocked(topic, subscriptionEntry{
-			handler: wrapped,
-			qos:     0,
-		})
+	for topic, sub := range options.InitialSubscriptions {
+		if err := validateSubscribeOptions(topic, &sub.options, c.opts); err != nil {
+			return nil, err
+		}
+		sub.handler = c.wrapHandler(sub.handler)
+		c.addSubscriptionLocked(topic, sub)
 	}
 
 	if !c.opts.CleanSession {

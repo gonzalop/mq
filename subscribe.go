@@ -11,6 +11,7 @@ import (
 
 // SubscribeOptions holds configuration for a subscription.
 type SubscribeOptions struct {
+	QoS               QoS
 	NoLocal           bool
 	RetainAsPublished bool
 	RetainHandling    uint8
@@ -21,6 +22,14 @@ type SubscribeOptions struct {
 
 // SubscribeOption is a functional option for configuring a subscription.
 type SubscribeOption func(*SubscribeOptions)
+
+// WithSubscriptionQoS sets the Quality of Service level for a subscription.
+// Primarily used with WithSubscription; defaults to AtMostOnce (QoS 0).
+func WithSubscriptionQoS(qos QoS) SubscribeOption {
+	return func(o *SubscribeOptions) {
+		o.QoS = qos
+	}
+}
 
 // WithSubscribeUserProperty (MQTT v5.0) adds a user property to the subscription.
 // User properties are key-value pairs that can be used to send metadata to the server.
@@ -163,31 +172,18 @@ func WithUnsubscribeUserProperty(key, value string) UnsubscribeOption {
 func (c *Client) Subscribe(ctx context.Context, topic string, qos QoS, handler MessageHandler, opts ...SubscribeOption) Token {
 	c.opts.Logger.Debug("subscribing to topic", "topic", topic, "qos", qos)
 
-	if err := validateSubscribeTopic(topic, c.opts); err != nil {
-		tok := newToken()
-		tok.complete(fmt.Errorf("invalid topic filter: %w", err))
-		return tok
-	}
-
 	subOpts := &SubscribeOptions{
+		QoS:         qos,
 		Persistence: true,
 	}
 	for _, opt := range opts {
 		opt(subOpts)
 	}
+	qos = subOpts.QoS
 
-	// Validate subscription ID (MQTT v5.0)
-	if subOpts.SubscriptionID != 0 && (subOpts.SubscriptionID < 1 || subOpts.SubscriptionID > 268435455) {
+	if err := validateSubscribeOptions(topic, subOpts, c.opts); err != nil {
 		tok := newToken()
-		tok.complete(fmt.Errorf("subscription identifier must be in range 0-268435455, got %d", subOpts.SubscriptionID))
-		return tok
-	}
-
-	// Validate Shared Subscription constraints (MQTT v5.0)
-	// it is a Protocol Error to set the No Local option to 1 on a Shared Subscription
-	if subOpts.NoLocal && strings.HasPrefix(topic, "$share/") {
-		tok := newToken()
-		tok.complete(fmt.Errorf("protocol error: NoLocal cannot be set on a Shared Subscription"))
+		tok.complete(err)
 		return tok
 	}
 
@@ -359,7 +355,7 @@ func (c *Client) resubscribeAll() {
 		for j, entry := range batchEntries {
 			// Skip resubscription if it violates server capabilities
 			if c.opts.ProtocolVersion >= ProtocolV50 {
-				if err := c.validateSubscribeCaps(batchTopics[j], QoS(entry.qos)); err != nil {
+				if err := c.validateSubscribeCaps(batchTopics[j], entry.options.QoS); err != nil {
 					c.opts.Logger.Warn("skipping resubscription: violates server capabilities",
 						"topic", batchTopics[j],
 						"error", err)
@@ -377,7 +373,7 @@ func (c *Client) resubscribeAll() {
 			}
 
 			g.topics = append(g.topics, batchTopics[j])
-			g.qos = append(g.qos, entry.qos)
+			g.qos = append(g.qos, uint8(entry.options.QoS))
 
 			if c.opts.ProtocolVersion >= ProtocolV50 {
 				g.noLocal = append(g.noLocal, entry.options.NoLocal)
@@ -474,10 +470,28 @@ func subGroupKey(id int, props map[string]string) string {
 	return sb.String()
 }
 
+func validateSubscribeOptions(topic string, subOpts *SubscribeOptions, opts *clientOptions) error {
+	if err := validateSubscribeTopic(topic, opts); err != nil {
+		return fmt.Errorf("invalid topic filter: %w", err)
+	}
+
+	// Validate subscription ID (MQTT v5.0)
+	if subOpts.SubscriptionID != 0 && (subOpts.SubscriptionID < 1 || subOpts.SubscriptionID > 268435455) {
+		return fmt.Errorf("subscription identifier must be in range 0-268435455, got %d", subOpts.SubscriptionID)
+	}
+
+	// Validate Shared Subscription constraints (MQTT v5.0)
+	// it is a Protocol Error to set the No Local option to 1 on a Shared Subscription
+	if subOpts.NoLocal && strings.HasPrefix(topic, "$share/") {
+		return fmt.Errorf("protocol error: NoLocal cannot be set on a Shared Subscription")
+	}
+
+	return nil
+}
+
 type subscriptionEntry struct {
 	handler MessageHandler
 	options SubscribeOptions
-	qos     uint8
 }
 
 // trieFilter returns the filter under which a subscription's handler is stored

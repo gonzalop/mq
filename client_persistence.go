@@ -58,8 +58,9 @@ func (c *Client) loadSessionState() error {
 
 	for topic, sub := range subs {
 		entry := c.convertFromPersistedSubscription(sub)
-		if handler, ok := c.opts.InitialSubscriptions[topic]; ok {
-			entry.handler = c.wrapHandler(handler)
+		if initSub, ok := c.opts.InitialSubscriptions[topic]; ok {
+			entry.handler = c.wrapHandler(initSub.handler)
+			entry.options.Persistence = initSub.options.Persistence
 		}
 		c.addSubscriptionLocked(topic, entry)
 	}
@@ -216,13 +217,16 @@ func (c *Client) convertToPersistedSubscription(entry subscriptionEntry) *Persis
 	}
 
 	return &PersistedSubscription{
-		QoS:     entry.qos,
+		QoS:     uint8(entry.options.QoS),
 		Options: opts,
 	}
 }
 
 func (c *Client) convertFromPersistedSubscription(sub *PersistedSubscription) subscriptionEntry {
-	opts := SubscribeOptions{}
+	opts := SubscribeOptions{
+		QoS:         QoS(sub.QoS),
+		Persistence: true,
+	}
 	if sub.Options != nil {
 		opts.NoLocal = sub.Options.NoLocal
 		opts.RetainAsPublished = sub.Options.RetainAsPublished
@@ -235,7 +239,6 @@ func (c *Client) convertFromPersistedSubscription(sub *PersistedSubscription) su
 	}
 
 	return subscriptionEntry{
-		qos:     sub.QoS,
 		options: opts,
 		// handler is set by caller if available in the initial subscriptions
 	}

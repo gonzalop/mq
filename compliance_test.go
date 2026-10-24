@@ -303,6 +303,7 @@ func TestCompliance_Resubscribe_Options_Persistence(t *testing.T) {
 	topic := "sensors/+/data"
 	handler := func(_ *Client, _ Message) {}
 	opts := SubscribeOptions{
+		QoS:               AtLeastOnce,
 		NoLocal:           true,
 		RetainAsPublished: true,
 		RetainHandling:    2,
@@ -310,7 +311,6 @@ func TestCompliance_Resubscribe_Options_Persistence(t *testing.T) {
 	c.subscriptions[topic] = subscriptionEntry{
 		handler: handler,
 		options: opts,
-		qos:     1,
 	}
 
 	// Trigger resubscription

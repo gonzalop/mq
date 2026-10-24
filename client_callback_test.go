@@ -32,7 +32,6 @@ func TestAsyncCallbacks(t *testing.T) {
 
 	c.addSubscriptionLocked("test/topic", subscriptionEntry{
 		handler: handler,
-		qos:     0,
 	})
 
 	// Simulate incoming PUBLISH

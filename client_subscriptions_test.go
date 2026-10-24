@@ -152,7 +152,7 @@ func TestResubscribeAll(t *testing.T) {
 			Logger:          testLogger(),
 		},
 		subscriptions: map[string]subscriptionEntry{
-			"topic1": {handler: nil, qos: 1},
+			"topic1": {handler: nil, options: SubscribeOptions{QoS: AtLeastOnce}},
 		},
 		outgoing:     make(chan packets.Packet, 1),
 		pending:      make(map[uint16]*pendingOp),
@@ -250,7 +250,7 @@ func TestResubscribeBatching(t *testing.T) {
 
 			for i := 0; i < tt.numTopics; i++ {
 				topic := "test/topic/" + string(rune('a'+i%26)) + "/" + string(rune('0'+i/26))
-				c.subscriptions[topic] = subscriptionEntry{handler: func(*Client, Message) {}, qos: 1}
+				c.subscriptions[topic] = subscriptionEntry{handler: func(*Client, Message) {}, options: SubscribeOptions{QoS: AtLeastOnce}}
 			}
 
 			c.resubscribeAll()
@@ -398,18 +398,15 @@ func TestInitialSubscriptionsPersistence(t *testing.T) {
 	opts := defaultOptions("tcp://localhost:1883")
 	opts.CleanSession = false
 	opts.SessionStore = store
-	opts.InitialSubscriptions = map[string]MessageHandler{
-		topic: func(_ *Client, _ Message) {},
+	opts.InitialSubscriptions = map[string]subscriptionEntry{
+		topic: {handler: func(_ *Client, _ Message) {}},
 	}
 
 	c := &Client{trie: newTopicTrie(),
 		opts:          opts,
 		subscriptions: make(map[string]subscriptionEntry),
 	}
-	c.subscriptions[topic] = subscriptionEntry{
-		handler: opts.InitialSubscriptions[topic],
-		qos:     0,
-	}
+	c.subscriptions[topic] = opts.InitialSubscriptions[topic]
 
 	if err := c.loadSessionState(); err != nil {
 		t.Fatalf("loadSessionState failed: %v", err)
@@ -560,7 +557,7 @@ func TestResubscribeAll_TrackedInPending(t *testing.T) {
 	c := &Client{trie: newTopicTrie(), pending: map[uint16]*pendingOp{}, subscriptions: map[string]subscriptionEntry{},
 		opts: defaultOptions("tcp://x"), outgoing: make(chan packets.Packet, 10), stop: make(chan struct{})}
 	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
-	c.subscriptions["a/b"] = subscriptionEntry{qos: 1}
+	c.subscriptions["a/b"] = subscriptionEntry{options: SubscribeOptions{QoS: AtLeastOnce}}
 
 	c.resubscribeAll()
 
@@ -575,7 +572,7 @@ func TestResubscribeAll_DoesNotBlockUnderLock(t *testing.T) {
 	c := &Client{trie: newTopicTrie(), pending: map[uint16]*pendingOp{}, subscriptions: map[string]subscriptionEntry{},
 		opts: defaultOptions("tcp://x"), outgoing: make(chan packets.Packet, 1), stop: make(chan struct{})}
 	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
-	c.subscriptions["a/b"] = subscriptionEntry{qos: 1}
+	c.subscriptions["a/b"] = subscriptionEntry{options: SubscribeOptions{QoS: AtLeastOnce}}
 	c.outgoing <- &packets.PingreqPacket{} // full, nobody drains
 	defer close(c.stop)
 
@@ -600,7 +597,7 @@ func TestResubscribeAll_DoesNotBlockUnderLock(t *testing.T) {
 func TestUnsubscribe_CancelledKeepsHandler(t *testing.T) {
 	c := &Client{trie: newTopicTrie(), pending: map[uint16]*pendingOp{}, subscriptions: map[string]subscriptionEntry{},
 		opts: defaultOptions("tcp://x"), outgoing: make(chan packets.Packet, 1), stop: make(chan struct{})}
-	c.addSubscriptionLocked("a/b", subscriptionEntry{handler: func(*Client, Message) {}, qos: 1})
+	c.addSubscriptionLocked("a/b", subscriptionEntry{handler: func(*Client, Message) {}, options: SubscribeOptions{QoS: AtLeastOnce}})
 	c.outgoing <- &packets.PingreqPacket{} // full, so the send cannot happen
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -677,9 +674,9 @@ func TestResubscribeAll_SkipsForbiddenTopicsKeepsAlignment(t *testing.T) {
 	st.caps.WildcardAvailable = false
 	c.connState.Store(st)
 
-	c.subscriptions["a/b"] = subscriptionEntry{qos: 1, options: SubscribeOptions{NoLocal: true, RetainHandling: 1}}
-	c.subscriptions["c/#"] = subscriptionEntry{qos: 2, options: SubscribeOptions{RetainAsPublished: true}}
-	c.subscriptions["d/e"] = subscriptionEntry{qos: 0, options: SubscribeOptions{RetainHandling: 2}}
+	c.subscriptions["a/b"] = subscriptionEntry{options: SubscribeOptions{QoS: AtLeastOnce, NoLocal: true, RetainHandling: 1}}
+	c.subscriptions["c/#"] = subscriptionEntry{options: SubscribeOptions{QoS: ExactlyOnce, RetainAsPublished: true}}
+	c.subscriptions["d/e"] = subscriptionEntry{options: SubscribeOptions{QoS: AtMostOnce, RetainHandling: 2}}
 
 	c.resubscribeAll()
 

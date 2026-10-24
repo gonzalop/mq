@@ -241,15 +241,13 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 			}
 		}
 
-		qos := uint8(0)
 		if i < len(pkt.QoS) {
-			qos = pkt.QoS[i]
+			subOpts.QoS = QoS(pkt.QoS[i])
 		}
 
 		c.addSubscriptionLocked(topic, subscriptionEntry{
 			handler: c.wrapHandler(req.handler),
 			options: subOpts,
-			qos:     qos,
 		})
 	}
 

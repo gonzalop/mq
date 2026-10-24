@@ -123,12 +123,26 @@ func WithSessionStore(store SessionStore) Option {
 //
 // For clean sessions (CleanSession=true):
 //   - The client will automatically subscribe to this topic on every connection.
-func WithSubscription(topic string, handler MessageHandler) Option {
+//
+// Optional SubscribeOption arguments (such as WithSubscriptionQoS, WithRetainAsPublished,
+// WithNoLocal, WithRetainHandling, WithSubscriptionIdentifier) can be provided to configure
+// the subscription. Default QoS is AtMostOnce (QoS 0).
+func WithSubscription(topic string, handler MessageHandler, opts ...SubscribeOption) Option {
 	return func(o *clientOptions) {
 		if o.InitialSubscriptions == nil {
-			o.InitialSubscriptions = make(map[string]MessageHandler)
+			o.InitialSubscriptions = make(map[string]subscriptionEntry)
 		}
-		o.InitialSubscriptions[topic] = handler
+		subOpts := SubscribeOptions{
+			QoS:         AtMostOnce,
+			Persistence: true,
+		}
+		for _, opt := range opts {
+			opt(&subOpts)
+		}
+		o.InitialSubscriptions[topic] = subscriptionEntry{
+			handler: handler,
+			options: subOpts,
+		}
 	}
 }
 

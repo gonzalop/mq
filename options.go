@@ -75,7 +75,7 @@ type clientOptions struct {
 	OnServerRedirect func(serverURI string) // MQTT v5.0: Called when server provides redirection reference
 
 	// Initial subscriptions (optional)
-	InitialSubscriptions map[string]MessageHandler
+	InitialSubscriptions map[string]subscriptionEntry
 
 	// Protocol Version (4 = v3.1.1, 5 = v5.0)
 	ProtocolVersion uint8
