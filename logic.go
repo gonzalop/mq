@@ -344,8 +344,9 @@ func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, h
 			}
 			defer cancel()
 
-			msg.Context = ctx
-			h(c, msg)
+			m := msg // each handler gets its own copy and context
+			m.Context = ctx
+			h(c, m)
 		}()
 	}
 
@@ -466,60 +467,76 @@ func (c *Client) handlePubrel(p *packets.PubrelPacket) []packets.Packet {
 // handleSuback processes a SUBACK packet.
 func (c *Client) handleSuback(p *packets.SubackPacket) []packets.Packet {
 	c.sessionLock.Lock()
-	defer c.sessionLock.Unlock()
+	op, ok := c.pending[p.PacketID]
+	if !ok {
+		c.sessionLock.Unlock()
+		return nil
+	}
 
-	if op, ok := c.pending[p.PacketID]; ok {
-		// Check for subscription failures
-		var err error
-		for _, code := range p.ReturnCodes {
-			if code >= 0x80 {
-				if c.opts.ProtocolVersion >= ProtocolV50 {
-					err = &MqttError{
-						ReasonCode: ReasonCode(code),
-						Parent:     ErrSubscriptionFailed,
-					}
-				} else {
-					err = ErrSubscriptionFailed
+	// Check for subscription failures
+	var err error
+	for _, code := range p.ReturnCodes {
+		if code >= 0x80 {
+			if c.opts.ProtocolVersion >= ProtocolV50 {
+				err = &MqttError{
+					ReasonCode: ReasonCode(code),
+					Parent:     ErrSubscriptionFailed,
 				}
+			} else {
+				err = ErrSubscriptionFailed
+			}
+			break
+		}
+	}
+
+	// Set reason code from the first return code (Subscribe operates on a single topic)
+	if len(p.ReturnCodes) > 0 {
+		op.token.reasonCode = ReasonCode(p.ReturnCodes[0])
+	}
+
+	// Drop filters the server rejected, so they are not routed or
+	// resubscribed on every reconnect. Store writes are collected here and
+	// run after the lock is released.
+	var toDelete []string
+	toSave := map[string]*PersistedSubscription{}
+	if subPkt, ok := op.packet.(*packets.SubscribePacket); ok {
+		for i, topic := range subPkt.Topics {
+			if i >= len(p.ReturnCodes) {
 				break
 			}
-		}
-
-		// Set reason code from the first return code (Subscribe operates on a single topic)
-		if len(p.ReturnCodes) > 0 {
-			op.token.reasonCode = ReasonCode(p.ReturnCodes[0])
-		}
-
-		// Save subscriptions if successful
-		if c.opts.SessionStore != nil && err == nil { // Global error (e.g. timeout) check
-			if subPkt, ok := op.packet.(*packets.SubscribePacket); ok {
-				for i, topic := range subPkt.Topics {
-					// Check individual result code
-					success := false
-					if i < len(p.ReturnCodes) && p.ReturnCodes[i] < 0x80 {
-						success = true
-					}
-
-					if success {
-						if entry, ok := c.subscriptions[topic]; ok {
-							// Only persist if enabled (default is true)
-							if entry.options.Persistence {
-								sub := c.convertToPersistedSubscription(entry)
-								if err := c.opts.SessionStore.SaveSubscription(topic, sub); err != nil {
-									c.opts.Logger.Warn("failed to persist subscription", "topic", topic, "error", err)
-								}
-							}
-						}
-					}
-				}
+			if p.ReturnCodes[i] >= 0x80 {
+				c.removeSubscriptionLocked(topic)
+				toDelete = append(toDelete, topic)
+				continue
+			}
+			// Only persist if every topic succeeded and persistence is enabled (default is true)
+			if entry, ok := c.subscriptions[topic]; ok && err == nil && entry.options.Persistence {
+				toSave[topic] = c.convertToPersistedSubscription(entry)
 			}
 		}
-
-		op.token.complete(err)
-		c.removePending(p.PacketID)
-		return c.processPublishQueueLocked()
 	}
-	return nil
+
+	c.removePending(p.PacketID)
+	toSend := c.processPublishQueueLocked()
+	c.sessionLock.Unlock()
+
+	if store := c.opts.SessionStore; store != nil {
+		for _, topic := range toDelete {
+			if err := store.DeleteSubscription(topic); err != nil {
+				c.opts.Logger.Warn("failed to delete subscription", "topic", topic, "error", err)
+			}
+		}
+		for topic, sub := range toSave {
+			if err := store.SaveSubscription(topic, sub); err != nil {
+				c.opts.Logger.Warn("failed to persist subscription", "topic", topic, "error", err)
+			}
+		}
+	}
+
+	// Completed after the store writes, so a caller that waits on the token
+	// and then disconnects does not close the store before they run.
+	op.token.complete(err)
+	return toSend
 }
 
 // handleUnsuback processes an UNSUBACK packet.
@@ -546,8 +563,8 @@ func (c *Client) handleUnsuback(p *packets.UnsubackPacket) []packets.Packet {
 		op.token.complete(err)
 		c.removePending(p.PacketID)
 
-		// Delete subscriptions from store
-		if c.opts.SessionStore != nil {
+		// Delete subscriptions from store, unless the server rejected the unsubscribe
+		if c.opts.SessionStore != nil && err == nil {
 			if unsubPkt, ok := op.packet.(*packets.UnsubscribePacket); ok {
 				for _, topic := range unsubPkt.Topics {
 					if err := c.opts.SessionStore.DeleteSubscription(topic); err != nil {

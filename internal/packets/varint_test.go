@@ -94,3 +94,23 @@ func TestVarIntRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+func TestDecodeVarInt_RejectsNonMinimal(t *testing.T) {
+	for _, data := range [][]byte{{0x80, 0x00}, {0xFF, 0x80, 0x00}, {0x80, 0x80, 0x80, 0x00}} {
+		if _, _, err := decodeVarIntBuf(data); err == nil {
+			t.Errorf("decodeVarIntBuf(% x): expected error", data)
+		}
+		if _, err := decodeVarInt(bytes.NewReader(data)); err == nil {
+			t.Errorf("decodeVarInt(% x): expected error", data)
+		}
+	}
+	// Minimal encodings still decode.
+	for _, data := range [][]byte{{0x00}, {0x80, 0x01}, {0xFF, 0x7F}} {
+		if _, _, err := decodeVarIntBuf(data); err != nil {
+			t.Errorf("decodeVarIntBuf(% x): %v", data, err)
+		}
+		if _, err := decodeVarInt(bytes.NewReader(data)); err != nil {
+			t.Errorf("decodeVarInt(% x): %v", data, err)
+		}
+	}
+}

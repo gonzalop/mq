@@ -74,16 +74,18 @@ func (t *TopicTrie[T]) removeRecursive(node *topicNode[T], parts []string, index
 
 // Match finds all handlers that match the given topic name.
 func (t *TopicTrie[T]) Match(topic string) []T {
-	parts := strings.Split(topic, "/")
 	var handlers []T
-	t.matchRecursive(t.root, parts, 0, &handlers)
+	t.matchRecursive(t.root, topic, 0, &handlers)
 	return handlers
 }
 
-func (t *TopicTrie[T]) matchRecursive(node *topicNode[T], parts []string, index int, handlers *[]T) {
+// matchRecursive matches the topic levels starting at byte offset start.
+// start == len(topic)+1 means every level has been consumed. Walking offsets
+// instead of splitting avoids allocating a slice per message.
+func (t *TopicTrie[T]) matchRecursive(node *topicNode[T], topic string, start int, handlers *[]T) {
 	// [MQTT-4.7.2-1]: Wildcard filters starting with '#' or '+' must not match
 	// topic names beginning with '$'.
-	isDollarTopicAtRoot := index == 0 && len(parts) > 0 && len(parts[0]) > 0 && parts[0][0] == '$'
+	isDollarTopicAtRoot := start == 0 && len(topic) > 0 && topic[0] == '$'
 
 	// 1. Check for multi-level wildcard matches at this level
 	if !isDollarTopicAtRoot {
@@ -93,22 +95,25 @@ func (t *TopicTrie[T]) matchRecursive(node *topicNode[T], parts []string, index 
 	}
 
 	// 2. Check if we've reached the end of the topic
-	if index == len(parts) {
+	if start > len(topic) {
 		*handlers = append(*handlers, node.handlers...)
 		return
 	}
 
-	part := parts[index]
+	part, next := topic[start:], len(topic)+1
+	if i := strings.IndexByte(part, '/'); i >= 0 {
+		part, next = part[:i], start+i+1
+	}
 
 	// 3. Check for single-level wildcard match
 	if !isDollarTopicAtRoot {
 		if singleWildcardNode, ok := node.children["+"]; ok {
-			t.matchRecursive(singleWildcardNode, parts, index+1, handlers)
+			t.matchRecursive(singleWildcardNode, topic, next, handlers)
 		}
 	}
 
 	// 4. Check for exact match
 	if exactNode, ok := node.children[part]; ok {
-		t.matchRecursive(exactNode, parts, index+1, handlers)
+		t.matchRecursive(exactNode, topic, next, handlers)
 	}
 }

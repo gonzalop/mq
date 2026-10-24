@@ -314,7 +314,7 @@ func TestCompliance_Resubscribe_Options_Persistence(t *testing.T) {
 	}
 
 	// Trigger resubscription
-	c.resubscribeAll()
+	c.resubscribeAll(nil)
 
 	// Verify the outgoing SUBSCRIBE packet carries the options
 	select {

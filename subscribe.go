@@ -328,8 +328,10 @@ func (c *Client) Unsubscribe(ctx context.Context, topic string, opts ...Unsubscr
 }
 
 // resubscribeAll resubscribes to all active subscriptions after reconnection.
-// This is called automatically by the reconnect loop.
-func (c *Client) resubscribeAll() {
+// This is called automatically by the reconnect loop. It gives up when
+// connDone (the connection it was started for) closes; the packets it did not
+// send stay pending and are resent on the next connection.
+func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 	c.sessionLock.Lock()
 
 	if len(c.subscriptions) == 0 {
@@ -462,6 +464,8 @@ func (c *Client) resubscribeAll() {
 	for _, pkt := range packetsToSend {
 		select {
 		case c.outgoing <- pkt:
+		case <-connDone:
+			return
 		case <-c.stop:
 			return
 		}

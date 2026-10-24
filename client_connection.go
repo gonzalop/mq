@@ -158,7 +158,7 @@ func (c *Client) buildConnectPacket() *packets.ConnectPacket {
 		pkt.WillRetain = c.opts.will.Retained
 
 		if c.opts.will.Properties != nil {
-			pkt.WillProperties = toInternalProperties(c.opts.will.Properties)
+			pkt.WillProperties = toPublishProperties(c.opts.will.Properties)
 		}
 	}
 
@@ -285,12 +285,10 @@ resendLoop:
 		}
 	}
 
-	// A clean session drops any state the broker kept for this client, so the
-	// subscriptions registered through WithSubscription must be sent on every
-	// connection. For persistent sessions checkSessionPresent() already
-	// resubscribes when the broker reports no session.
-	if c.opts.CleanSession {
-		go c.resubscribeAll()
+	// Without a session on the broker (a clean session, or a persistent one
+	// the broker no longer has), every subscription must be sent again.
+	if c.opts.CleanSession || !connack.SessionPresent {
+		go c.resubscribeAll(connDone)
 	}
 
 	c.opts.Logger.Debug("client started", "client_id", c.opts.ClientID)

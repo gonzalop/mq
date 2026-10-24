@@ -106,9 +106,7 @@ func (c *Client) checkSessionPresent(sessionPresent bool) error {
 	// Safely clears c.receivedQoS2.
 	c.internalResetState()
 
-	// 3. Resubscribe to subscriptions added via WithSubscription
-	go c.resubscribeAll()
-
+	// 3. finalizeConnection resubscribes once the connection is running.
 	return nil
 }
 

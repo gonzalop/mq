@@ -71,6 +71,17 @@ func toPublicProperties(internal *packets.Properties) *Properties {
 	return props
 }
 
+// toPublishProperties is toInternalProperties for PUBLISH and will
+// properties, where MQTT v5 does not allow ReasonString, so it is dropped.
+func toPublishProperties(public *Properties) *packets.Properties {
+	props := toInternalProperties(public)
+	if props != nil {
+		props.ReasonString = ""
+		props.Presence &^= packets.PresReasonString
+	}
+	return props
+}
+
 // toInternalProperties converts public API properties to internal packet format.
 // Returns nil if the public properties are nil.
 func toInternalProperties(public *Properties) *packets.Properties {

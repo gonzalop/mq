@@ -33,9 +33,10 @@ func WithMaxIncomingPacket(maxLength int) Option {
 // WithMaxHandlerConcurrency limits the number of message handler goroutines
 // that can run simultaneously.
 //
-// When the limit is reached, incoming messages will block the internal
-// processing loop until a handler finishes. This provides natural backpressure
-// but can affect keepalive if handlers are extremely slow.
+// When the limit is reached, each new message still gets a goroutine, which
+// waits for a free slot before running its handler. The internal processing
+// loop is not blocked, so there is no backpressure: slow handlers lead to
+// many waiting goroutines (and unacknowledged QoS 1/2 messages).
 //
 // Default is 100. Set to 0 for unlimited (not recommended for production).
 func WithMaxHandlerConcurrency(concurrency int) Option {
@@ -54,8 +55,9 @@ func WithMaxAuthExchanges(limit uint16) Option {
 }
 
 // WithHandlerTimeout sets the maximum time a message handler is allowed to run.
-// If the timeout is reached, the handler slot in the concurrency semaphore is
-// released, but the handler goroutine itself cannot be forcibly stopped.
+// When the timeout is reached, the handler's Message.Context is cancelled.
+// The handler cannot be forcibly stopped, and its concurrency slot is only
+// released when the handler returns.
 // 0 = no timeout (default).
 func WithHandlerTimeout(timeout time.Duration) Option {
 	return func(o *clientOptions) {

@@ -7,7 +7,6 @@ import (
 )
 
 // DisconnectPacket represents an MQTT DISCONNECT control packet.
-// DisconnectPacket represents an MQTT DISCONNECT control packet.
 type DisconnectPacket struct {
 	// MQTT v5.0 fields
 	ReasonCode uint8       // v5.0

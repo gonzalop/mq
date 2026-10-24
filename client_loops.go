@@ -472,7 +472,14 @@ func (c *Client) processPublishQueueLocked() []packets.Packet {
 
 		// Pop from queue
 		req := c.publishQueue[0]
+		c.publishQueue[0] = nil // release the request for GC
 		c.publishQueue = c.publishQueue[1:]
+
+		// The caller gave up while the request waited for flow control credit.
+		if err := req.ctx.Err(); err != nil {
+			req.token.complete(err)
+			continue
+		}
 
 		// Try to prepare
 		pkt, ok := c.preparePublishLocked(req)

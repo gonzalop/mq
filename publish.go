@@ -260,7 +260,7 @@ func (c *Client) basePublish(ctx context.Context, topic string, payload []byte, 
 		QoS:        pubOpts.QoS,
 		Retain:     pubOpts.Retain,
 		Version:    c.opts.ProtocolVersion,
-		Properties: toInternalProperties(pubOpts.Properties),
+		Properties: toPublishProperties(pubOpts.Properties),
 		UseAlias:   pubOpts.UseAlias,
 	}
 

@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"net"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -161,7 +162,7 @@ func TestResubscribeAll(t *testing.T) {
 	}
 	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
 
-	c.resubscribeAll()
+	c.resubscribeAll(nil)
 
 	select {
 	case p := <-c.outgoing:
@@ -253,7 +254,7 @@ func TestResubscribeBatching(t *testing.T) {
 				c.subscriptions[topic] = subscriptionEntry{handler: func(*Client, Message) {}, options: SubscribeOptions{QoS: AtLeastOnce}}
 			}
 
-			c.resubscribeAll()
+			c.resubscribeAll(nil)
 
 			actualBatches := len(c.outgoing)
 			if actualBatches != tt.expectedBatches {
@@ -559,7 +560,7 @@ func TestResubscribeAll_TrackedInPending(t *testing.T) {
 	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
 	c.subscriptions["a/b"] = subscriptionEntry{options: SubscribeOptions{QoS: AtLeastOnce}}
 
-	c.resubscribeAll()
+	c.resubscribeAll(nil)
 
 	if len(c.pending) != 1 {
 		t.Errorf("pending=%d, want 1", len(c.pending))
@@ -587,7 +588,7 @@ func TestResubscribeAll_CleansUpOnPacketIDExhaustion(t *testing.T) {
 	c.subscriptions["topic/1"] = subscriptionEntry{options: SubscribeOptions{QoS: AtLeastOnce, SubscriptionID: 1}}
 	c.subscriptions["topic/2"] = subscriptionEntry{options: SubscribeOptions{QoS: AtLeastOnce, SubscriptionID: 2}}
 
-	c.resubscribeAll()
+	c.resubscribeAll(nil)
 
 	// If packet ID exhaustion occurred on the second group, the first group's pending op must be cleaned up
 	if len(c.pending) != 65534 {
@@ -608,7 +609,7 @@ func TestResubscribeAll_DoesNotBlockUnderLock(t *testing.T) {
 	c.outgoing <- &packets.PingreqPacket{} // full, nobody drains
 	defer close(c.stop)
 
-	go c.resubscribeAll()
+	go c.resubscribeAll(nil)
 	time.Sleep(50 * time.Millisecond)
 
 	locked := make(chan struct{})
@@ -710,7 +711,7 @@ func TestResubscribeAll_SkipsForbiddenTopicsKeepsAlignment(t *testing.T) {
 	c.subscriptions["c/#"] = subscriptionEntry{options: SubscribeOptions{QoS: ExactlyOnce, RetainAsPublished: true}}
 	c.subscriptions["d/e"] = subscriptionEntry{options: SubscribeOptions{QoS: AtMostOnce, RetainHandling: 2}}
 
-	c.resubscribeAll()
+	c.resubscribeAll(nil)
 
 	var pkt *packets.SubscribePacket
 	select {
@@ -745,5 +746,104 @@ func TestResubscribeAll_SkipsForbiddenTopicsKeepsAlignment(t *testing.T) {
 		if got != w {
 			t.Errorf("%s: got %+v, want %+v", topic, got, w)
 		}
+	}
+}
+
+// resubscribeAll must give up when its connection drops instead of waiting
+// for a later connection to drain outgoing.
+func TestResubscribeAll_StopsWhenConnectionDrops(t *testing.T) {
+	c := &Client{trie: newTopicTrie(), pending: map[uint16]*pendingOp{}, subscriptions: map[string]subscriptionEntry{},
+		opts: defaultOptions("tcp://x"), outgoing: make(chan packets.Packet, 1), stop: make(chan struct{})}
+	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
+	c.subscriptions["a/b"] = subscriptionEntry{options: SubscribeOptions{QoS: AtLeastOnce}}
+	c.outgoing <- &packets.PingreqPacket{} // full, nobody drains
+	defer close(c.stop)
+
+	connDone := make(chan struct{})
+	returned := make(chan struct{})
+	go func() {
+		c.resubscribeAll(connDone)
+		close(returned)
+	}()
+	close(connDone)
+
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		t.Fatal("resubscribeAll still blocked after its connection dropped")
+	}
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
+	if len(c.pending) != 1 {
+		t.Errorf("pending = %d, want the unsent SUBSCRIBE kept for resend", len(c.pending))
+	}
+}
+
+// A connection resubscribes exactly when the broker has no session for it.
+func TestConnect_ResubscribesWithoutBrokerSession(t *testing.T) {
+	tests := []struct {
+		name           string
+		cleanSession   bool
+		sessionPresent bool
+		wantSubscribe  bool
+	}{
+		{"clean session", true, false, true},
+		{"persistent, session lost", false, false, true},
+		{"persistent, session kept", false, true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotSubscribe := make(chan struct{}, 1)
+			dialer := DialFunc(func(context.Context, string, string) (net.Conn, error) {
+				cli, srv := net.Pipe()
+				go func() {
+					defer srv.Close()
+					if _, err := packets.ReadPacket(srv, 5, 0); err != nil {
+						return
+					}
+					connack := &packets.ConnackPacket{ReturnCode: packets.ConnAccepted, SessionPresent: tt.sessionPresent, Properties: &packets.Properties{}}
+					if _, err := connack.WriteTo(srv); err != nil {
+						return
+					}
+					for {
+						pkt, err := packets.ReadPacket(srv, 5, 0)
+						if err != nil {
+							return
+						}
+						if _, ok := pkt.(*packets.SubscribePacket); ok {
+							select {
+							case gotSubscribe <- struct{}{}:
+							default:
+							}
+						}
+					}
+				}()
+				return cli, nil
+			})
+
+			c, err := Dial("tcp://mock:1883",
+				WithClientID("resub"),
+				WithProtocolVersion(ProtocolV50),
+				WithDialer(dialer),
+				WithAutoReconnect(false),
+				WithCleanSession(tt.cleanSession),
+				WithSubscription("a/b", func(*Client, Message) {}),
+			)
+			if err != nil {
+				t.Fatalf("Dial: %v", err)
+			}
+			defer c.Disconnect(context.Background())
+
+			select {
+			case <-gotSubscribe:
+				if !tt.wantSubscribe {
+					t.Error("resubscribed although the broker kept the session")
+				}
+			case <-time.After(300 * time.Millisecond):
+				if tt.wantSubscribe {
+					t.Error("did not resubscribe")
+				}
+			}
+		})
 	}
 }

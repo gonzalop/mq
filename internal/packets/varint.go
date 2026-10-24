@@ -49,13 +49,17 @@ func decodeVarInt(r io.Reader) (int, error) {
 
 	var multiplier uint32 = 1
 	var value uint32
-	for range 4 {
+	for i := range 4 {
 		b, err := br.ReadByte()
 		if err != nil {
 			return 0, err
 		}
 		value += uint32(b&0x7F) * multiplier
 		if (b & 0x80) == 0 {
+			// [MQTT-1.5.5-1]: a trailing zero byte means a non-minimal encoding.
+			if i > 0 && b == 0 {
+				return 0, fmt.Errorf("variable byte integer is not minimally encoded")
+			}
 			return int(value), nil
 		}
 		multiplier *= 128
@@ -90,6 +94,11 @@ func decodeVarIntBuf(buf []byte) (int, int, error) {
 	// And value must be <= 268,435,455.
 	if n > 4 || val > 268435455 {
 		return 0, 0, fmt.Errorf("variable byte integer exceeds limit")
+	}
+
+	// [MQTT-1.5.5-1]: a trailing zero byte means a non-minimal encoding.
+	if n > 1 && buf[n-1] == 0 {
+		return 0, 0, fmt.Errorf("variable byte integer is not minimally encoded")
 	}
 
 	return int(val), n, nil
