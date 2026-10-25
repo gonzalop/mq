@@ -130,7 +130,22 @@ func TestRequestsStopDuringSend_ReturnsSentinelError(t *testing.T) {
 		close(unsubDone)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	// Each request registers itself in pending just before blocking on the
+	// unbuffered outgoing channel, which has no reader. Once all three are
+	// registered, closing stop can only resolve through the stop branch.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c.sessionLock.Lock()
+		n := len(c.pending)
+		c.sessionLock.Unlock()
+		if n == 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("requests never reached the send: %d pending", n)
+		}
+		time.Sleep(time.Millisecond)
+	}
 	close(c.stop)
 
 	<-pubDone
