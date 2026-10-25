@@ -315,6 +315,9 @@ func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, h
 			delete(c.inboundUnacked, p.PacketID)
 			c.sessionLock.Unlock()
 		}
+		if ack == nil {
+			return nil // QoS 0: nothing to acknowledge
+		}
 		return []packets.Packet{ack}
 	}
 
