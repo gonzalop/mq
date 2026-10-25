@@ -145,15 +145,16 @@ func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, pro
 
 	// Close connection and signal connDone to unblock readLoop and writeLoop
 	c.connLock.Lock()
-	if c.conn != nil {
-		c.conn.Close()
-		c.conn = nil
-	}
+	conn = c.conn
+	c.conn = nil
 	if c.connDone != nil {
 		close(c.connDone)
 		c.connDone = nil
 	}
 	c.connLock.Unlock()
+	if conn != nil {
+		conn.Close()
+	}
 
 	if !block {
 		return nil

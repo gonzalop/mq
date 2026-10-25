@@ -120,8 +120,12 @@ func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive
 			c.packetsSent.Add(1)
 			lastSent = time.Now()
 
-			// Batching: try to drain channel to fill buffer
+			// Batching: try to drain channel to fill buffer. Nothing may be
+			// sent after DISCONNECT [MQTT-3.14.4-1].
 			count := len(c.outgoing)
+			if hasDisconnect {
+				count = 0
+			}
 			for range count {
 				pkt := <-c.outgoing
 				if pkt == nil {
@@ -144,6 +148,9 @@ func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive
 				}
 				c.packetsSent.Add(1)
 				lastSent = time.Now()
+				if hasDisconnect {
+					break
+				}
 			}
 
 			// Flush after batch
@@ -327,7 +334,6 @@ func (c *Client) handleDisconnect(conn net.Conn) {
 		close(c.connDone)
 		c.connDone = nil
 	}
-	conn.Close()
 	c.pingPending.Store(false)
 	select {
 	case <-c.pingPendingCh:
@@ -340,6 +346,8 @@ func (c *Client) handleDisconnect(conn net.Conn) {
 		c.lastDisconnectReason = nil // Clear it after use
 	}
 	c.connLock.Unlock()
+	// Closed outside connLock: a TLS close writes a close_notify alert.
+	conn.Close()
 
 	if !c.connected.Swap(false) {
 		return // Already disconnected

@@ -383,7 +383,7 @@ func (c *Client) connect(ctx context.Context) error {
 	}
 
 	// 2. Handshake (CONNACK / AUTH)
-	connack, err := c.performHandshake(ctx, cr, cw)
+	connack, err := c.performHandshake(ctx, conn, cr, cw)
 	if !stopClose() && err == nil {
 		// ctx was cancelled and conn closed right as the handshake finished.
 		err = fmt.Errorf("connect cancelled: %w", ctx.Err())

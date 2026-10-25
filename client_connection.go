@@ -307,15 +307,14 @@ func (c *Client) prepareConnectionState() {
 	c.receiveMaxExceededLogged = false
 }
 
-func (c *Client) performHandshake(ctx context.Context, r io.Reader, w io.Writer) (connack *packets.ConnackPacket, err error) {
+// conn is the connection being handshaken. It is passed in rather than read
+// from c.conn, which Disconnect may set to nil concurrently.
+func (c *Client) performHandshake(ctx context.Context, conn net.Conn, r io.Reader, w io.Writer) (connack *packets.ConnackPacket, err error) {
 	deadline, ok := ctx.Deadline()
 	if !ok {
 		deadline = time.Now().Add(c.opts.ConnectTimeout)
 	}
 
-	c.connLock.RLock()
-	conn := c.conn
-	c.connLock.RUnlock()
 	_ = conn.SetReadDeadline(deadline)
 	defer func() { _ = conn.SetReadDeadline(time.Time{}) }()
 
@@ -349,7 +348,11 @@ func (c *Client) performHandshake(ctx context.Context, r io.Reader, w io.Writer)
 				return nil, fmt.Errorf("maximum authentication exchanges (%d) exceeded", c.opts.MaxAuthExchanges)
 			}
 
-			respData, err := c.opts.Authenticator.HandleChallenge(p.Properties.AuthenticationData, p.ReasonCode)
+			var challengeData []byte
+			if p.Properties != nil {
+				challengeData = p.Properties.AuthenticationData
+			}
+			respData, err := c.opts.Authenticator.HandleChallenge(challengeData, p.ReasonCode)
 			if err == nil {
 				err = checkAuthFieldLengths(c.opts.Authenticator.Method(), respData)
 			}
