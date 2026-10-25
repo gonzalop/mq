@@ -210,9 +210,14 @@ func TestReconnectBackoff_StableConnectionResetsBackoff(t *testing.T) {
 		t.Fatalf("expected at least 3 connections, got %d", len(times))
 	}
 
-	// Interval from connection 2 closing to connection 3 opening should be ~baseBackoff
-	// because connection 2 was stable (> 60ms).
-	t.Logf("reconnect count: %d", client.GetStats().ReconnectCount)
+	// Connection 2 stays up 120ms (> stableThreshold), so the backoff before
+	// connection 3 resets to baseBackoff (30ms). Without the reset it would be
+	// at least 4*baseBackoff (120ms), so 100ms of slack can't hide a regression.
+	extra := times[2].Sub(times[1]) - 120*time.Millisecond
+	if extra >= 100*time.Millisecond {
+		t.Errorf("reconnect after stable connection took %v beyond its uptime, want ~%v (backoff not reset)", extra, baseBackoff)
+	}
+	t.Logf("reconnect count: %d, gap after stable conn: %v", client.GetStats().ReconnectCount, extra)
 }
 
 // TestReconnectBackoff_DisabledEscalation verifies that passing a negative duration
