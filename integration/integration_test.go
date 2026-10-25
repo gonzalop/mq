@@ -189,8 +189,9 @@ func TestWildcardSubscriptions(t *testing.T) {
 			}
 
 			// Unsubscribe for next test
-			client.Unsubscribe(context.Background(), tt.filter)
-			time.Sleep(100 * time.Millisecond)
+			if err := client.Unsubscribe(context.Background(), tt.filter).Wait(context.Background()); err != nil {
+				t.Fatalf("Failed to unsubscribe: %v", err)
+			}
 		})
 	}
 }

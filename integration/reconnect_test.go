@@ -82,34 +82,40 @@ func TestAutoReconnect(t *testing.T) {
 		t.Fatal("Timeout waiting for auto-reconnect")
 	}
 
-	// Give a moment for resubscribe to complete
-	time.Sleep(1 * time.Second)
-
-	// Publish a message from a different client to test if subscription was restored
+	// Publish from a different client to test if the subscription was
+	// restored. Resubscription completes in the background with no public
+	// signal, so retry until a message gets through.
 	publisher, err := mq.Dial(server, mq.WithClientID("test-publisher"))
 	if err != nil {
 		t.Fatalf("Failed to connect publisher: %v", err)
 	}
 	defer publisher.Disconnect(context.Background())
 
-	pubToken2 := publisher.Publish(context.Background(), "test/reconnect", []byte("after reconnect"), mq.WithQoS(mq.AtLeastOnce))
-	if err := pubToken2.Wait(context.Background()); err != nil {
-		t.Fatalf("Failed to publish after reconnect: %v", err)
-	}
-
-	select {
-	case msg := <-received:
-		if string(msg.Payload) != "after reconnect" {
-			t.Errorf("Expected 'after reconnect', got %s", string(msg.Payload))
+	delivered := false
+	for deadline := time.Now().Add(10 * time.Second); !delivered && time.Now().Before(deadline); {
+		pubToken2 := publisher.Publish(context.Background(), "test/reconnect", []byte("after reconnect"), mq.WithQoS(mq.AtLeastOnce))
+		if err := pubToken2.Wait(context.Background()); err != nil {
+			t.Fatalf("Failed to publish after reconnect: %v", err)
 		}
-		t.Log("✅ Auto-reconnect and resubscribe successful!")
-	case <-time.After(10 * time.Second):
+		select {
+		case msg := <-received:
+			if string(msg.Payload) != "after reconnect" {
+				t.Errorf("Expected 'after reconnect', got %s", string(msg.Payload))
+			}
+			delivered = true
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	if !delivered {
 		t.Fatal("Timeout waiting for message after reconnect - auto-reconnect or resubscribe failed")
 	}
+	t.Log("✅ Auto-reconnect and resubscribe successful!")
 
+	// An earlier attempt delivered after its 500ms window would add an extra
+	// message, so only a lower bound is meaningful here.
 	mu.Lock()
-	if msgCount != 2 {
-		t.Errorf("Expected 2 messages, got %d", msgCount)
+	if msgCount < 2 {
+		t.Errorf("Expected at least 2 messages, got %d", msgCount)
 	}
 	mu.Unlock()
 }
