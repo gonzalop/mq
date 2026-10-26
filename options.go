@@ -226,7 +226,9 @@ func WithConnectTimeout(duration time.Duration) Option {
 }
 
 // WithWriteTimeout sets the network write timeout for socket operations (default: 30s).
-// Setting it to 0 disables write deadlines.
+// Setting it to 0 disables write deadlines. To keep writes cheap the deadline is
+// only refreshed once half of it has elapsed, so a stalled write is detected
+// after between duration/2 and duration.
 func WithWriteTimeout(duration time.Duration) Option {
 	return func(o *clientOptions) {
 		o.WriteTimeout = duration

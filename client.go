@@ -418,13 +418,20 @@ type countingWriter struct {
 	io.Writer
 	c            *Client
 	writeTimeout time.Duration
+	deadline     time.Time // last write deadline set on the conn
 }
 
 func (w *countingWriter) Write(p []byte) (int, error) {
 	if w.writeTimeout > 0 {
 		if dw, ok := w.Writer.(interface{ SetWriteDeadline(time.Time) error }); ok {
-			_ = dw.SetWriteDeadline(time.Now().Add(w.writeTimeout))
-			defer func() { _ = dw.SetWriteDeadline(time.Time{}) }()
+			// Setting a deadline is costly, so only push it forward once
+			// less than half the timeout is left. A stalled write is then
+			// detected after between writeTimeout/2 and writeTimeout.
+			now := time.Now()
+			if w.deadline.Sub(now) < w.writeTimeout/2 {
+				w.deadline = now.Add(w.writeTimeout)
+				_ = dw.SetWriteDeadline(w.deadline)
+			}
 		}
 	}
 	n, err := w.Writer.Write(p)
