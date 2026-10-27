@@ -70,6 +70,10 @@ func (c *Client) loadSessionState() error {
 	if err != nil {
 		return fmt.Errorf("failed to load qos2 IDs: %w", err)
 	}
+	if qos2 == nil {
+		// A custom store may return nil; writing to a nil map panics.
+		qos2 = make(map[uint16]struct{})
+	}
 	c.receivedQoS2 = qos2
 
 	c.opts.Logger.Info("loaded session state",

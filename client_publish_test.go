@@ -555,6 +555,24 @@ func TestPersistencePendingOrder(t *testing.T) {
 	}
 }
 
+// TestLoadSessionStateNilQoS2Map checks that a store returning a nil QoS 2
+// map does not make the first incoming QoS 2 publish panic.
+func TestLoadSessionStateNilQoS2Map(t *testing.T) {
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.SessionStore = &dummySessionStore{} // LoadReceivedQoS2 returns nil, nil
+	c := newTestClient(opts)
+
+	if err := c.loadSessionState(); err != nil {
+		t.Fatalf("loadSessionState failed: %v", err)
+	}
+	if _, dup := c.handleQoS2Duplicate(7); dup {
+		t.Fatal("first QoS 2 publish reported as duplicate")
+	}
+	if _, dup := c.handleQoS2Duplicate(7); !dup {
+		t.Fatal("second QoS 2 publish not reported as duplicate")
+	}
+}
+
 // recSessionStore records which pending publishes are currently persisted.
 type recSessionStore struct {
 	dummySessionStore
