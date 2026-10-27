@@ -30,6 +30,7 @@ type Client struct {
 	// Connection
 	conn     net.Conn
 	connDone chan struct{} // Closed when conn is disconnected
+	readDone chan struct{} // Closed when conn's read loop has exited
 	connLock sync.RWMutex
 
 	// Channels for goroutine communication
@@ -356,6 +357,9 @@ func (c *Client) connect(ctx context.Context) error {
 		return fmt.Errorf("a password requires a username ([MQTT-3.1.2-22])")
 	}
 
+	if err := c.drainPreviousConnection(ctx); err != nil {
+		return err
+	}
 	c.prepareConnectionState()
 
 	conn, err := c.dialServer(ctx)

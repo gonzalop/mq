@@ -517,3 +517,70 @@ func BenchmarkTopicAlias_Encoding_WithoutAlias(b *testing.B) {
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
+
+// TestReconnectDrainsStaleAliasPublish checks that an alias-only PUBLISH still
+// queued from the previous connection is resolved against that connection's
+// alias map, not the empty one a reconnect starts with.
+func TestReconnectDrainsStaleAliasPublish(t *testing.T) {
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.ProtocolVersion = ProtocolV50
+	opts.TopicAliasMaximum = 10
+	opts.Logger = testLogger()
+	c := newTestClient(opts)
+
+	got := make(chan string, 1)
+	c.sessionLock.Lock()
+	c.addSubscriptionLocked("a/b", subscriptionEntry{handler: func(_ *Client, m Message) { got <- m.Topic }})
+	c.sessionLock.Unlock()
+
+	// The old connection registered alias 1 and its read loop has exited,
+	// leaving an alias-only PUBLISH queued.
+	c.receivedAliases[1] = "a/b"
+	c.readDone = make(chan struct{})
+	close(c.readDone)
+	props := &packets.Properties{TopicAlias: 1, Presence: packets.PresTopicAlias}
+	c.incoming <- &packets.PublishPacket{Properties: props, Payload: []byte("x")}
+
+	c.wg.Add(1)
+	go c.logicLoop()
+	defer func() { close(c.stop); c.wg.Wait() }()
+
+	// What connect does before dialing the new connection.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := c.drainPreviousConnection(ctx); err != nil {
+		t.Fatalf("drainPreviousConnection: %v", err)
+	}
+	c.prepareConnectionState()
+
+	select {
+	case topic := <-got:
+		if topic != "a/b" {
+			t.Errorf("topic = %q, want a/b", topic)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("stale alias-only PUBLISH was not delivered")
+	}
+}
+
+func TestDrainPreviousConnection(t *testing.T) {
+	tests := []struct {
+		name     string
+		readDone chan struct{}
+		wantErr  bool
+	}{
+		{"first connection", nil, false},
+		{"old read loop never exits", make(chan struct{}), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newTestClient(nil)
+			c.readDone = tt.readDone
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+			defer cancel()
+			if err := c.drainPreviousConnection(ctx); (err != nil) != tt.wantErr {
+				t.Errorf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

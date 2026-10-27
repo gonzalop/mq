@@ -264,6 +264,8 @@ func (c *Client) finalizeConnection(connack *packets.ConnackPacket) error {
 		return ErrClientDisconnected
 	}
 	c.connDone = connDone
+	readDone := make(chan struct{})
+	c.readDone = readDone
 	conn := c.conn
 	c.connected.Store(true)
 	c.connectedAt.Store(time.Now().UnixNano())
@@ -285,7 +287,7 @@ func (c *Client) finalizeConnection(connack *packets.ConnackPacket) error {
 
 	c.wg.Add(2)
 	c.activeLoops.Add(2)
-	go c.runReadLoop(conn)
+	go c.runReadLoop(conn, readDone)
 	go c.runWriteLoop(conn, connDone, c.opts.KeepAlive)
 
 resendLoop:

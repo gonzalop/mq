@@ -27,6 +27,10 @@ func (c *Client) logicLoop() {
 	for {
 		select {
 		case pkt := <-c.incoming:
+			if b, ok := pkt.(*incomingBarrier); ok {
+				close(b.done)
+				continue
+			}
 			toSend := c.handleIncoming(pkt)
 			c.sendPackets(toSend)
 

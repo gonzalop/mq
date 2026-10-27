@@ -12,10 +12,12 @@ import (
 	"github.com/gonzalop/mq/internal/packets"
 )
 
-// runReadLoop continuously reads packets from conn.
-func (c *Client) runReadLoop(conn net.Conn) {
+// runReadLoop continuously reads packets from conn. It closes readDone when
+// it exits, after its last packet has been queued to incoming.
+func (c *Client) runReadLoop(conn net.Conn, readDone chan struct{}) {
 	defer c.wg.Done()
 	defer c.activeLoops.Add(-1)
+	defer close(readDone)
 	defer c.handleDisconnect(conn)
 
 	if conn == nil {
@@ -53,6 +55,51 @@ func (c *Client) runReadLoop(conn net.Conn) {
 			c.opts.Logger.Debug("readLoop stopped")
 			return
 		}
+	}
+}
+
+// incomingBarrier is queued to incoming to find out when logicLoop has handled
+// every packet queued before it. It is never written to the network.
+type incomingBarrier struct {
+	packets.Packet
+	done chan struct{}
+}
+
+// drainPreviousConnection waits until the previous connection's read loop has
+// exited and logicLoop has handled every packet it read. Only then can
+// per-connection state such as topic aliases be reset: a stale alias-only
+// PUBLISH would otherwise be resolved against the new, empty alias map.
+func (c *Client) drainPreviousConnection(ctx context.Context) error {
+	c.connLock.RLock()
+	readDone := c.readDone
+	c.connLock.RUnlock()
+	if readDone == nil {
+		return nil // first connection
+	}
+
+	select {
+	case <-readDone:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.stop:
+		return ErrClientDisconnected
+	}
+
+	b := &incomingBarrier{done: make(chan struct{})}
+	select {
+	case c.incoming <- b:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.stop:
+		return ErrClientDisconnected
+	}
+	select {
+	case <-b.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.stop:
+		return ErrClientDisconnected
 	}
 }
 
