@@ -78,10 +78,12 @@ func TestGetStats(t *testing.T) {
 	// Send a publish to increment stats
 	client.Publish(context.Background(), "test/stats", []byte("payload"), WithQoS(AtLeastOnce))
 
-	// Give time for IO
-	time.Sleep(100 * time.Millisecond)
-
+	// The mock server never sends PUBACK, so poll until the write shows up.
 	newStats := client.GetStats()
+	for deadline := time.Now().Add(2 * time.Second); newStats.PacketsSent <= stats.PacketsSent && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+		newStats = client.GetStats()
+	}
 	if newStats.PacketsSent <= stats.PacketsSent {
 		t.Errorf("PacketsSent did not increase: %d -> %d", stats.PacketsSent, newStats.PacketsSent)
 	}

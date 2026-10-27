@@ -610,17 +610,31 @@ func TestResubscribeAll_DoesNotBlockUnderLock(t *testing.T) {
 	defer close(c.stop)
 
 	go c.resubscribeAll(nil)
-	time.Sleep(50 * time.Millisecond)
 
-	locked := make(chan struct{})
+	// resubscribeAll adds the SUBSCRIBE to pending under sessionLock right
+	// before the send that blocks on the full outgoing channel. Seeing that
+	// pending op from under sessionLock proves the lock is not held across
+	// the blocked send.
+	seen := make(chan struct{})
 	go func() {
-		c.sessionLock.Lock()
-		c.sessionLock.Unlock()
-		close(locked)
+		for {
+			c.sessionLock.Lock()
+			n := len(c.pending)
+			c.sessionLock.Unlock()
+			if n > 0 {
+				close(seen)
+				return
+			}
+			select {
+			case <-c.stop:
+				return
+			case <-time.After(time.Millisecond):
+			}
+		}
 	}()
 	select {
-	case <-locked:
-	case <-time.After(200 * time.Millisecond):
+	case <-seen:
+	case <-time.After(2 * time.Second):
 		t.Error("sessionLock held while resubscribeAll is blocked sending to outgoing")
 	}
 }
