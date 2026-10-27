@@ -304,7 +304,12 @@ func (c *Client) prepareConnectionState() {
 	c.receivedAliasesLock.Lock()
 	c.receivedAliases = make(map[uint16]string)
 	c.receivedAliasesLock.Unlock()
+
+	// logicLoop outlives the connection and may still be handling packets
+	// from the old one, so this flag needs the same lock it uses.
+	c.sessionLock.Lock()
 	c.receiveMaxExceededLogged = false
+	c.sessionLock.Unlock()
 }
 
 // conn is the connection being handshaken. It is passed in rather than read

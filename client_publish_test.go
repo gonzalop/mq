@@ -309,6 +309,47 @@ func TestReceiveMaximum_SoftLimit(t *testing.T) {
 	}
 }
 
+// TestReceiveMaximum_ResetDuringReconnectNoRace checks that resetting the
+// per-connection flags on reconnect does not race with logicLoop handling
+// publishes that are still queued from the old connection. Needs -race.
+func TestReceiveMaximum_ResetDuringReconnectNoRace(t *testing.T) {
+	tests := []struct {
+		name   string
+		policy LimitPolicy
+	}{
+		{"ignore policy", LimitPolicyIgnore},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := defaultOptions("tcp://localhost:1883")
+			opts.ProtocolVersion = ProtocolV50
+			opts.ReceiveMaximum = 1
+			opts.ReceiveMaximumPolicy = tt.policy
+			opts.Logger = testLogger()
+			c := newTestClient(opts)
+
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				for i := 1; i <= 200; i++ {
+					if err := c.enforceReceiveMaximum(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: uint16(i)}); err != nil {
+						t.Errorf("enforceReceiveMaximum: %v", err)
+						return
+					}
+				}
+			}()
+			go func() {
+				defer wg.Done()
+				for range 200 {
+					c.prepareConnectionState()
+				}
+			}()
+			wg.Wait()
+		})
+	}
+}
+
 // TestDeferredAcknowledgment verifies that acknowledgments are only sent
 // after all handlers have completed.
 func TestDeferredAcknowledgment(t *testing.T) {
