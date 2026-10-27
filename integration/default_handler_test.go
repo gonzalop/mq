@@ -43,12 +43,10 @@ func TestDefaultPublishHandlerIntegration(t *testing.T) {
 		t.Fatalf("Client A failed to subscribe: %v", err)
 	}
 
-	// 2. Disconnect Client A
-	// Allow some time for sync
-	time.Sleep(100 * time.Millisecond)
+	// 2. Disconnect Client A. The SUBACK above means the broker has the
+	// subscription, and Disconnect returns once DISCONNECT is flushed. The
+	// QoS 1 message below is queued in the persistent session either way.
 	clientA.Disconnect(context.Background())
-	// Ensure it's fully closed
-	time.Sleep(100 * time.Millisecond)
 
 	// 3. Publish Offline Message (Client B)
 	clientB, err := mq.Dial(server, mq.WithClientID("client-b"))

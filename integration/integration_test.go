@@ -426,12 +426,9 @@ func TestCleanSession(t *testing.T) {
 		t.Fatalf("Failed to subscribe: %v", err)
 	}
 
-	// Give subscription time to register
-	time.Sleep(500 * time.Millisecond)
-
-	// Disconnect
+	// Disconnect. The SUBACK above means the broker has the subscription,
+	// and Disconnect returns once DISCONNECT is flushed.
 	client1.Disconnect(context.Background())
-	time.Sleep(500 * time.Millisecond)
 
 	// Publish while disconnected
 	publisher, _ := mq.Dial(server, mq.WithClientID("test-publisher-"+t.Name()))
@@ -440,7 +437,6 @@ func TestCleanSession(t *testing.T) {
 		t.Fatalf("Failed to publish: %v", err)
 	}
 	publisher.Disconnect(context.Background())
-	time.Sleep(500 * time.Millisecond)
 
 	received := make(chan mq.Message, 1)
 
@@ -456,9 +452,6 @@ func TestCleanSession(t *testing.T) {
 		t.Fatalf("Failed to reconnect: %v", err)
 	}
 	defer client2.Disconnect(context.Background())
-
-	// Give some time for queued messages to be delivered
-	time.Sleep(500 * time.Millisecond)
 
 	// Should receive the offline message
 	select {
