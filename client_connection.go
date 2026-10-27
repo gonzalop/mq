@@ -248,9 +248,28 @@ func (c *Client) finalizeConnection(connack *packets.ConnackPacket) error {
 		}
 	}
 
-	c.opts.Logger.Debug("connection established", "server", c.opts.Server)
+	// Disconnect may have stopped the client since the check above. It closes
+	// stop before taking connLock and clears connected under it, so checking
+	// here under connLock means either we see the stop, or Disconnect runs
+	// after us and undoes what we set.
+	connDone := make(chan struct{})
+	c.connLock.Lock()
+	if c.stopped() || c.conn == nil {
+		conn := c.conn
+		c.conn = nil
+		c.connLock.Unlock()
+		if conn != nil {
+			conn.Close()
+		}
+		return ErrClientDisconnected
+	}
+	c.connDone = connDone
+	conn := c.conn
 	c.connected.Store(true)
 	c.connectedAt.Store(time.Now().UnixNano())
+	c.connLock.Unlock()
+
+	c.opts.Logger.Debug("connection established", "server", c.opts.Server)
 
 	if c.opts.Authenticator != nil {
 		if err := c.opts.Authenticator.Complete(); err != nil {
@@ -263,11 +282,6 @@ func (c *Client) finalizeConnection(connack *packets.ConnackPacket) error {
 			c.opts.OnConnect(c)
 		}()
 	}
-	connDone := make(chan struct{})
-	c.connLock.Lock()
-	c.connDone = connDone
-	conn := c.conn
-	c.connLock.Unlock()
 
 	c.wg.Add(2)
 	c.activeLoops.Add(2)

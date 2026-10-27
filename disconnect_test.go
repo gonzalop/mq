@@ -415,3 +415,44 @@ func TestDisconnect_DeadlineExtendsFlushWait(t *testing.T) {
 		t.Errorf("Disconnect took %v, should return right after the flush", elapsed)
 	}
 }
+
+// disconnectingStore calls Disconnect from inside finalizeConnection, after
+// its first stopped() check, to hit the window where Disconnect used to leave
+// the client marked as connected.
+type disconnectingStore struct {
+	dummySessionStore
+	c *Client
+}
+
+func (s *disconnectingStore) ClearReceivedQoS2() error {
+	return s.c.disconnectWithReason(context.Background(), 0, nil, false)
+}
+
+// TestDisconnectDuringFinalizeConnection checks that a Disconnect racing with
+// the end of a connect leaves the client disconnected and skips OnConnect.
+func TestDisconnectDuringFinalizeConnection(t *testing.T) {
+	var connects atomic.Int32
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.CleanSession = false
+	opts.Logger = testLogger()
+	opts.OnConnect = func(*Client) { connects.Add(1) }
+	store := &disconnectingStore{}
+	opts.SessionStore = store
+	c := newTestClient(opts)
+	store.c = c
+
+	cli, srv := net.Pipe()
+	defer srv.Close()
+	c.conn = cli
+
+	err := c.finalizeConnection(&packets.ConnackPacket{ReturnCode: packets.ConnAccepted})
+	if !errors.Is(err, ErrClientDisconnected) {
+		t.Fatalf("finalizeConnection error = %v, want ErrClientDisconnected", err)
+	}
+	if c.IsConnected() {
+		t.Error("client reports connected after Disconnect")
+	}
+	if n := connects.Load(); n != 0 {
+		t.Errorf("OnConnect ran %d times, want 0", n)
+	}
+}

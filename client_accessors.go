@@ -147,6 +147,9 @@ func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, pro
 	c.connLock.Lock()
 	conn = c.conn
 	c.conn = nil
+	// A connect that finished after the Swap above may have set connected
+	// again; clearing it under connLock pairs with finalizeConnection.
+	c.connected.Store(false)
 	if c.connDone != nil {
 		close(c.connDone)
 		c.connDone = nil
