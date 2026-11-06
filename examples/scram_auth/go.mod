@@ -1,6 +1,6 @@
 module github.com/gonzalop/mq/examples/scram_auth
 
-go 1.26
+go 1.27
 
 replace github.com/gonzalop/mq => ../../
 
