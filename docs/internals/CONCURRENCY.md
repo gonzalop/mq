@@ -14,6 +14,7 @@ The `Client` struct uses several mechanisms to protect its state:
 2.  **`connLock` (`sync.RWMutex`)**: This protects the network connection and connection status.
 3.  **`connState` (`atomic.Pointer[connectionState]`)**: This provides a thread-safe, immutable snapshot of connection-time properties and server capabilities (MQTT v5.0).
 4.  **`receivedAliasesLock` (`sync.RWMutex`)**: This protects the mapping of inbound Topic Aliases (ID -> Topic Name) for MQTT v5.0.
+5.  **`storeLock` (`sync.Mutex`)**: This is held while `flushStore` runs queued `SessionStore` writes, so they never overlap. It is taken before `sessionLock` (which `flushStore` holds only to take the queue), never after.
 
 Outbound Topic Aliases (Topic Name -> ID, MQTT v5.0) need no lock: each `writeLoop` owns its own table, assigns aliases as packets are written (so the packet that defines an alias always reaches the wire before the ones that use it) and starts empty on every connection.
 
@@ -84,7 +85,7 @@ Subscription matching is performed using a high-performance **Radix Tree** (`top
 
 ## Deadlock Prevention
 
--   **No Blocking Network I/O under Lock**: We never perform network I/O while holding a mutex. Calls to `SessionStore` run under `sessionLock` by design to preserve strict ordering of save/delete operations; `AsyncStore` is provided for slow or remote storage backends.
+-   **No Blocking I/O under Lock**: We never perform network or disk I/O while holding `sessionLock`. `SessionStore` writes are queued in order under `sessionLock` (`queueStoreLocked`) and run by `flushStore` after it is released, one at a time under `storeLock`. A publisher flushes before sending its PUBLISH, so it is stored before it can reach the network; `AsyncStore` is provided for slow or remote storage backends.
 -   **Async Callbacks**: All user callbacks are invoked in separate goroutines.
 -   **Lock Ordering**: The library maintains a strict hierarchy to prevent circular waits.
 

@@ -116,14 +116,11 @@ func (c *Client) internalPublish(req *publishRequest) {
 		c.inFlightCount++
 	}
 
-	if c.opts.SessionStore != nil && pkt.QoS > 0 {
-		pub := c.convertToPersistedPublish(req)
-		if err := c.opts.SessionStore.SavePendingPublish(pkt.PacketID, pub); err != nil {
-			c.opts.Logger.Warn("failed to persist publish", "packet_id", pkt.PacketID, "error", err)
-		}
-	}
+	c.savePendingPublishLocked(req)
 
 	c.sessionLock.Unlock()
+	// The publish is on disk before it can reach the network.
+	c.flushStore()
 	select {
 	case c.outgoing <- pkt:
 		op.sending.Store(false)
@@ -133,10 +130,9 @@ func (c *Client) internalPublish(req *publishRequest) {
 		if pkt.QoS > 0 {
 			c.inFlightCount--
 		}
-		if c.opts.SessionStore != nil && pkt.QoS > 0 {
-			_ = c.opts.SessionStore.DeletePendingPublish(pkt.PacketID)
-		}
+		c.deletePendingPublishLocked(pkt.PacketID)
 		c.sessionLock.Unlock()
+		c.flushStore()
 		req.token.complete(req.ctx.Err())
 	case <-c.stop:
 		c.sessionLock.Lock()
@@ -144,10 +140,9 @@ func (c *Client) internalPublish(req *publishRequest) {
 		if pkt.QoS > 0 {
 			c.inFlightCount--
 		}
-		if c.opts.SessionStore != nil && pkt.QoS > 0 {
-			_ = c.opts.SessionStore.DeletePendingPublish(pkt.PacketID)
-		}
+		c.deletePendingPublishLocked(pkt.PacketID)
 		c.sessionLock.Unlock()
+		c.flushStore()
 		req.token.complete(ErrClientDisconnected)
 	}
 }
@@ -175,12 +170,7 @@ func (c *Client) preparePublishLocked(req *publishRequest) (*packets.PublishPack
 		c.inFlightCount++
 	}
 
-	if c.opts.SessionStore != nil && pkt.QoS > 0 {
-		pub := c.convertToPersistedPublish(req)
-		if err := c.opts.SessionStore.SavePendingPublish(pkt.PacketID, pub); err != nil {
-			c.opts.Logger.Warn("failed to persist publish", "packet_id", pkt.PacketID, "error", err)
-		}
-	}
+	c.savePendingPublishLocked(req)
 
 	return pkt, true
 }
@@ -348,4 +338,23 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 		c.sessionLock.Unlock()
 		req.token.complete(ErrClientDisconnected)
 	}
+}
+
+// savePendingPublishLocked queues storing a QoS 1/2 publish.
+// Assumes sessionLock is HELD.
+func (c *Client) savePendingPublishLocked(req *publishRequest) {
+	pkt := req.packet
+	if c.opts.SessionStore == nil || pkt.QoS == 0 {
+		return
+	}
+	pub := c.convertToPersistedPublish(req)
+	c.queueStoreLocked(func(s SessionStore) error { return s.SavePendingPublish(pkt.PacketID, pub) },
+		"failed to persist publish", "packet_id", pkt.PacketID)
+}
+
+// deletePendingPublishLocked queues removing a stored publish.
+// Assumes sessionLock is HELD.
+func (c *Client) deletePendingPublishLocked(packetID uint16) {
+	c.queueStoreLocked(func(s SessionStore) error { return s.DeletePendingPublish(packetID) },
+		"failed to delete pending publish", "packet_id", packetID)
 }

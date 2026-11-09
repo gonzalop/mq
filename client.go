@@ -56,6 +56,12 @@ type Client struct {
 	// - nextPacketID
 	sessionLock sync.Mutex
 
+	// Session store writes are queued in order under sessionLock and run by
+	// flushStore once it is released, so no disk I/O happens under
+	// sessionLock and the store never sees two calls at once.
+	storeQueue []func()   // Protected by sessionLock
+	storeLock  sync.Mutex // Held while running queued store writes
+
 	// Internal queues
 	publishQueue []*publishRequest
 

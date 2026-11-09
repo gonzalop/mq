@@ -3,6 +3,7 @@ package mq
 import (
 	"context"
 	"maps"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -221,5 +222,147 @@ func TestLoadSessionState_RestoredHandlerIsWrapped(t *testing.T) {
 
 	if handled.Load() != 1 || intercepted.Load() != 1 {
 		t.Errorf("handled=%d intercepted=%d, want 1 and 1", handled.Load(), intercepted.Load())
+	}
+}
+
+// checkingStore records pending publishes and fails the test when a call
+// overlaps another one or runs while sessionLock is held.
+type checkingStore struct {
+	SessionStore // other methods are not used
+	t            *testing.T
+	c            *Client
+	busy         atomic.Bool
+	mu           sync.Mutex
+	pending      map[uint16]bool
+	qos2         map[uint16]bool
+}
+
+func (s *checkingStore) check() func() {
+	if !s.busy.CompareAndSwap(false, true) {
+		s.t.Error("store calls overlap")
+	}
+	locked := make(chan struct{})
+	go func() {
+		s.c.sessionLock.Lock()
+		s.c.sessionLock.Unlock()
+		close(locked)
+	}()
+	select {
+	case <-locked:
+	case <-time.After(time.Second):
+		s.t.Error("store called with sessionLock held")
+	}
+	return func() { s.busy.Store(false) }
+}
+
+func (s *checkingStore) has(id uint16) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pending[id]
+}
+
+func (s *checkingStore) SavePendingPublish(id uint16, _ *PersistedPublish) error {
+	defer s.check()()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pending[id] = true
+	return nil
+}
+
+func (s *checkingStore) DeletePendingPublish(id uint16) error {
+	defer s.check()()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.pending, id)
+	return nil
+}
+
+// TestSessionStoreWritesSerializedOutsideLock publishes from several
+// goroutines while the logic loop handles the PUBACKs, and checks that store
+// calls never overlap, never run under sessionLock, persist each publish
+// before it reaches outgoing, and keep Save and Delete in order.
+func TestSessionStoreWritesSerializedOutsideLock(t *testing.T) {
+	opts := defaultOptions("tcp://x")
+	opts.Logger = testLogger()
+	c := newTestClient(opts)
+	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
+	store := &checkingStore{t: t, c: c, pending: map[uint16]bool{}}
+	c.opts.SessionStore = store
+
+	c.wg.Add(1)
+	go c.logicLoop()
+	defer func() { close(c.stop); c.wg.Wait() }()
+
+	const publishers, each = 4, 25
+	for range publishers {
+		go func() {
+			for range each {
+				c.internalPublish(&publishRequest{ctx: context.Background(), packet: &packets.PublishPacket{Topic: "t", QoS: 1}, token: newToken()})
+			}
+		}()
+	}
+
+	// Act as the write loop and the broker: every publish is acked.
+	for range publishers * each {
+		var pub *packets.PublishPacket
+		select {
+		case p := <-c.outgoing:
+			pub = p.(*packets.PublishPacket)
+		case <-time.After(5 * time.Second):
+			t.Fatal("publish never reached outgoing")
+		}
+		if !store.has(pub.PacketID) {
+			t.Errorf("publish %d reached outgoing before it was stored", pub.PacketID)
+		}
+		c.incoming <- &packets.PubackPacket{PacketID: pub.PacketID}
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c.flushStore()
+		store.mu.Lock()
+		n := len(store.pending)
+		store.mu.Unlock()
+		if n == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d publishes still stored after all were acked", n)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func (s *checkingStore) SaveReceivedQoS2(id uint16) error {
+	defer s.check()()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.qos2[id] = true
+	return nil
+}
+
+// TestQoS2IDStoredBeforeHandlerRuns checks that a received QoS 2 packet ID is
+// on disk before any handler sees the message: after a crash the stored ID is
+// what stops the broker's resend from being delivered a second time.
+func TestQoS2IDStoredBeforeHandlerRuns(t *testing.T) {
+	c := newTestClient(defaultOptions("tcp://x"))
+	store := &checkingStore{t: t, c: c, qos2: map[uint16]bool{}}
+	c.opts.SessionStore = store
+
+	stored := make(chan bool, 1)
+	c.addSubscriptionLocked("t", subscriptionEntry{handler: func(*Client, Message) {
+		store.mu.Lock()
+		stored <- store.qos2[9]
+		store.mu.Unlock()
+	}})
+	c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 2, PacketID: 9})
+
+	select {
+	case ok := <-stored:
+		if !ok {
+			t.Error("handler ran before the QoS 2 packet ID was stored")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("handler never ran")
 	}
 }

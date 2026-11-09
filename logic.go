@@ -32,12 +32,14 @@ func (c *Client) logicLoop() {
 				continue
 			}
 			toSend := c.handleIncoming(pkt)
+			c.flushStore()
 			c.sendPackets(toSend)
 
 		case <-queueTicker.C:
 			c.sessionLock.Lock()
 			toSend := c.processPublishQueueLocked()
 			c.sessionLock.Unlock()
+			c.flushStore()
 			c.sendPackets(toSend)
 
 		case <-c.stop:
@@ -179,6 +181,9 @@ func (c *Client) handlePublish(p *packets.PublishPacket) []packets.Packet {
 		if ack, isDup := c.handleQoS2Duplicate(p.PacketID); isDup {
 			return []packets.Packet{ack}
 		}
+		// The ID must be on disk before a handler runs: after a crash it
+		// is what stops a resent PUBLISH from being delivered again.
+		c.flushStore()
 	}
 
 	// 4. Find matching handlers
@@ -287,12 +292,8 @@ func (c *Client) handleQoS2Duplicate(packetID uint16) (packets.Packet, bool) {
 	}
 	c.receivedQoS2[packetID] = struct{}{}
 
-	// Persist QoS 2 ID
-	if c.opts.SessionStore != nil {
-		if err := c.opts.SessionStore.SaveReceivedQoS2(packetID); err != nil {
-			c.opts.Logger.Warn("failed to persist QoS2 ID", "packet_id", packetID, "error", err)
-		}
-	}
+	c.queueStoreLocked(func(s SessionStore) error { return s.SaveReceivedQoS2(packetID) },
+		"failed to persist QoS2 ID", "packet_id", packetID)
 	return nil, false
 }
 
@@ -434,11 +435,7 @@ func (c *Client) finishPublishLocked(op *pendingOp, packetID uint16, err error) 
 	op.token.complete(err)
 	c.removePending(packetID)
 
-	if c.opts.SessionStore != nil {
-		if storeErr := c.opts.SessionStore.DeletePendingPublish(packetID); storeErr != nil {
-			c.opts.Logger.Warn("failed to delete pending publish", "packet_id", packetID, "error", storeErr)
-		}
-	}
+	c.deletePendingPublishLocked(packetID)
 
 	c.inFlightCount--
 	return c.processPublishQueueLocked()
@@ -495,11 +492,8 @@ func (c *Client) handlePubrel(p *packets.PubrelPacket) []packets.Packet {
 	delete(c.inboundUnacked, p.PacketID)
 	delete(c.receivedQoS2, p.PacketID)
 
-	if c.opts.SessionStore != nil {
-		if err := c.opts.SessionStore.DeleteReceivedQoS2(p.PacketID); err != nil {
-			c.opts.Logger.Warn("failed to delete QoS2 ID", "packet_id", p.PacketID, "error", err)
-		}
-	}
+	c.queueStoreLocked(func(s SessionStore) error { return s.DeleteReceivedQoS2(p.PacketID) },
+		"failed to delete QoS2 ID", "packet_id", p.PacketID)
 
 	return []packets.Packet{&packets.PubcompPacket{PacketID: p.PacketID}}
 }
@@ -568,22 +562,17 @@ func (c *Client) handleSuback(p *packets.SubackPacket) []packets.Packet {
 		}
 	}
 
+	for _, topic := range toDelete {
+		c.deleteSubscriptionLocked(topic)
+	}
+	for topic, sub := range toSave {
+		c.queueStoreLocked(func(s SessionStore) error { return s.SaveSubscription(topic, sub) },
+			"failed to persist subscription", "topic", topic)
+	}
 	c.removePending(p.PacketID)
 	toSend := c.processPublishQueueLocked()
 	c.sessionLock.Unlock()
-
-	if store := c.opts.SessionStore; store != nil {
-		for _, topic := range toDelete {
-			if err := store.DeleteSubscription(topic); err != nil {
-				c.opts.Logger.Warn("failed to delete subscription", "topic", topic, "error", err)
-			}
-		}
-		for topic, sub := range toSave {
-			if err := store.SaveSubscription(topic, sub); err != nil {
-				c.opts.Logger.Warn("failed to persist subscription", "topic", topic, "error", err)
-			}
-		}
-	}
+	c.flushStore()
 
 	// Completed after the store writes, so a caller that waits on the token
 	// and then disconnects does not close the store before they run.
@@ -616,13 +605,9 @@ func (c *Client) handleUnsuback(p *packets.UnsubackPacket) []packets.Packet {
 		c.removePending(p.PacketID)
 
 		// Delete subscriptions from store, unless the server rejected the unsubscribe
-		if c.opts.SessionStore != nil && err == nil {
-			if unsubPkt, ok := op.packet.(*packets.UnsubscribePacket); ok {
-				for _, topic := range unsubPkt.Topics {
-					if err := c.opts.SessionStore.DeleteSubscription(topic); err != nil {
-						c.opts.Logger.Warn("failed to delete subscription", "topic", topic, "error", err)
-					}
-				}
+		if unsubPkt, ok := op.packet.(*packets.UnsubscribePacket); ok && err == nil {
+			for _, topic := range unsubPkt.Topics {
+				c.deleteSubscriptionLocked(topic)
 			}
 		}
 		return c.processPublishQueueLocked()
@@ -786,4 +771,11 @@ var disconnectReasonCodeNames = map[ReasonCode]string{
 	ReasonCodeMaximumConnectTime:      "Maximum connect time",
 	ReasonCodeSubscriptionIDNotSupp:   "Subscription Identifiers not supported",
 	ReasonCodeWildcardSubNotSupp:      "Wildcard Subscriptions not supported",
+}
+
+// deleteSubscriptionLocked queues removing a stored subscription.
+// Assumes sessionLock is HELD.
+func (c *Client) deleteSubscriptionLocked(topic string) {
+	c.queueStoreLocked(func(s SessionStore) error { return s.DeleteSubscription(topic) },
+		"failed to delete subscription", "topic", topic)
 }

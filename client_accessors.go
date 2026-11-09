@@ -190,7 +190,10 @@ func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, pro
 	// Disconnect ignore ctx.
 	if c.opts != nil && c.opts.SessionStore != nil {
 		closed := make(chan error, 1)
-		go func() { closed <- closeSessionStore(c.opts.SessionStore) }()
+		go func() {
+			c.flushStore() // writes queued by loops that just stopped
+			closed <- closeSessionStore(c.opts.SessionStore)
+		}()
 		select {
 		case closeErr := <-closed:
 			if closeErr != nil {

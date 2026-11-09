@@ -100,11 +100,10 @@ func (c *Client) checkSessionPresent(sessionPresent bool) error {
 	// 1. Clear Stale Persistence State (Server doesn't know about it)
 	// Only clear ephemeral state like QoS 2 received IDs.
 	// Pending publishes and subscriptions are preserved for re-delivery/re-subscription.
-	if c.opts.SessionStore != nil {
-		if err := c.opts.SessionStore.ClearReceivedQoS2(); err != nil {
-			c.opts.Logger.Warn("failed to clear stale QoS2 IDs", "error", err)
-		}
-	}
+	c.sessionLock.Lock()
+	c.queueStoreLocked(SessionStore.ClearReceivedQoS2, "failed to clear stale QoS2 IDs")
+	c.sessionLock.Unlock()
+	c.flushStore()
 
 	// 2. Trigger Logic Loop Reset
 	// Safely clears c.receivedQoS2.
@@ -250,5 +249,43 @@ func (c *Client) convertFromPersistedSubscription(sub *PersistedSubscription) su
 	return subscriptionEntry{
 		options: opts,
 		// handler is set by caller if available in the initial subscriptions
+	}
+}
+
+// queueStoreLocked queues a session store write; flushStore runs it. Errors
+// are logged with msg and args: the in-memory state stays authoritative.
+// Assumes sessionLock is HELD.
+func (c *Client) queueStoreLocked(write func(SessionStore) error, msg string, args ...any) {
+	store := c.opts.SessionStore
+	if store == nil {
+		return
+	}
+	c.storeQueue = append(c.storeQueue, func() {
+		if err := write(store); err != nil {
+			c.opts.Logger.Warn(msg, append(args, "error", err)...)
+		}
+	})
+}
+
+// flushStore runs every queued store write, in order. When it returns, every
+// write queued before the call has finished. Must be called without
+// sessionLock held.
+func (c *Client) flushStore() {
+	if c.opts.SessionStore == nil {
+		return
+	}
+	c.storeLock.Lock()
+	defer c.storeLock.Unlock()
+	for {
+		c.sessionLock.Lock()
+		writes := c.storeQueue
+		c.storeQueue = nil
+		c.sessionLock.Unlock()
+		if len(writes) == 0 {
+			return
+		}
+		for _, write := range writes {
+			write()
+		}
 	}
 }

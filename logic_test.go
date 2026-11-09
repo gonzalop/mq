@@ -206,6 +206,7 @@ func TestHandlePubcomp_WithSessionStore(t *testing.T) {
 
 	// Call handleAck
 	c.handleAck(pubcomp.PacketID, pubcomp.ReasonCode)
+	c.flushStore() // logicLoop runs the queued store writes after each packet
 
 	// Verify operation is removed from pending
 	if _, ok := c.pending[packetID]; ok {
@@ -253,6 +254,7 @@ func TestHandlePubcomp_WithSessionStore_Error(t *testing.T) {
 
 	// Call handleAck
 	c.handleAck(pubcomp.PacketID, pubcomp.ReasonCode)
+	c.flushStore()
 
 	// Verify operation is removed from pending (error in store shouldn't stop processing)
 	if _, ok := c.pending[packetID]; ok {
@@ -310,6 +312,7 @@ func TestHandleQoS2Duplicate(t *testing.T) {
 	if _, isDup := c.handleQoS2Duplicate(packetID2); isDup {
 		t.Error("expected first call for new packet to return false")
 	}
+	c.flushStore()
 
 	if !store.saveReceivedQoS2Called {
 		t.Error("expected SaveReceivedQoS2 to be called on session store")

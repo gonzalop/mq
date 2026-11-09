@@ -25,8 +25,9 @@ import (
 //
 // Threading Model:
 //
-// All methods are called from a single goroutine (the client's logic loop).
-// Implementations do NOT need to be thread-safe for concurrent calls from mq.
+// Calls may come from different goroutines, but never at the same time, and
+// never while the client holds its session lock. Implementations do NOT need
+// to be thread-safe for concurrent calls from mq.
 //
 // Async Implementations:
 //
