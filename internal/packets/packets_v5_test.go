@@ -454,3 +454,14 @@ func TestPubrelPacketV5(t *testing.T) {
 		t.Errorf("properties mismatch")
 	}
 }
+
+func TestDecodeUnsubackV5RequiresReasonCodes(t *testing.T) {
+	// Packet ID 1, empty properties, no reason codes.
+	if _, err := DecodeUnsuback([]byte{0x00, 0x01, 0x00}, 5); err == nil {
+		t.Error("v5.0 UNSUBACK without reason codes decoded without error")
+	}
+	// v3.1.1 UNSUBACK has no payload at all.
+	if _, err := DecodeUnsuback([]byte{0x00, 0x01}, 4); err != nil {
+		t.Errorf("v3.1.1 UNSUBACK: %v", err)
+	}
+}

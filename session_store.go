@@ -136,6 +136,9 @@ func NewAsyncStore(store SessionStore, bufferSize int) *AsyncStore {
 }
 
 func (as *AsyncStore) run() {
+	// Run the queue in batches and swap two buffers, so steady traffic reuses
+	// the same backing arrays instead of allocating on every enqueue.
+	var spare []func() error
 	for {
 		as.mu.Lock()
 		for len(as.queue) == 0 && !as.stop {
@@ -146,14 +149,17 @@ func (as *AsyncStore) run() {
 			close(as.done)
 			return
 		}
-		op := as.queue[0]
-		as.queue[0] = nil // Avoid retaining closure and captured payload in backing array
-		as.queue = as.queue[1:]
+		batch := as.queue
+		as.queue = spare
 		as.mu.Unlock()
 
-		if err := op(); err != nil && as.err == nil {
-			as.err = err
+		for _, op := range batch {
+			if err := op(); err != nil && as.err == nil {
+				as.err = err
+			}
 		}
+		clear(batch) // Avoid retaining closures and captured payloads in the backing array
+		spare = batch[:0]
 	}
 }
 

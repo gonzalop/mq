@@ -487,16 +487,16 @@ func TestInitialSubscriptionsSentOnFirstConnect_CleanSession(t *testing.T) {
 				mq.WithClientID(fmt.Sprintf("sub-clean-%s-%d", versionName, time.Now().UnixNano())),
 				mq.WithCleanSession(true),
 				mq.WithSubscription(topic, func(_ *mq.Client, msg mq.Message) {
-					received <- msg
+					select {
+					case received <- msg:
+					default: // a retried publish delivered another copy
+					}
 				}),
 			)
 			if err != nil {
 				t.Fatalf("Failed to connect subscriber: %v", err)
 			}
 			defer subClient.Disconnect(context.Background())
-
-			// Brief pause to allow the background SUBSCRIBE exchange to complete with the broker
-			time.Sleep(200 * time.Millisecond)
 
 			pubClient, err := mq.Dial(server,
 				mq.WithProtocolVersion(version),
@@ -511,21 +511,30 @@ func TestInitialSubscriptionsSentOnFirstConnect_CleanSession(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			pubToken := pubClient.Publish(ctx, topic, []byte(payload), mq.WithQoS(1))
-			if err := pubToken.Wait(ctx); err != nil {
-				t.Fatalf("Failed to publish: %v", err)
-			}
+			// The initial SUBSCRIBE is sent in the background, so a message
+			// published right away may arrive before the broker has the
+			// subscription. Publish again until one gets through.
+			ticker := time.NewTicker(200 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				pubToken := pubClient.Publish(ctx, topic, []byte(payload), mq.WithQoS(1))
+				if err := pubToken.Wait(ctx); err != nil {
+					t.Fatalf("Failed to publish: %v", err)
+				}
 
-			select {
-			case msg := <-received:
-				if string(msg.Payload) != payload {
-					t.Errorf("Payload = %s, want %s", string(msg.Payload), payload)
+				select {
+				case msg := <-received:
+					if string(msg.Payload) != payload {
+						t.Errorf("Payload = %s, want %s", string(msg.Payload), payload)
+					}
+					if msg.Topic != topic {
+						t.Errorf("Topic = %s, want %s", msg.Topic, topic)
+					}
+					return
+				case <-ticker.C:
+				case <-ctx.Done():
+					t.Fatalf("Timeout waiting for message on initial clean session subscription (%s)", versionName)
 				}
-				if msg.Topic != topic {
-					t.Errorf("Topic = %s, want %s", msg.Topic, topic)
-				}
-			case <-time.After(5 * time.Second):
-				t.Fatalf("Timeout waiting for message on initial clean session subscription (%s)", versionName)
 			}
 		})
 	}

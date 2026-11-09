@@ -124,6 +124,10 @@ func DecodeUnsuback(buf []byte, version uint8) (*UnsubackPacket, error) {
 	// Reason Codes (Payload)
 	if offset < len(buf) {
 		pkt.ReasonCodes = bytes.Clone(buf[offset:])
+	} else if version >= 5 {
+		// v5.0 needs one reason code per topic filter, and an UNSUBSCRIBE has at
+		// least one filter [MQTT-3.11.3-1].
+		return nil, fmt.Errorf("UNSUBACK has no reason codes")
 	}
 
 	return pkt, nil

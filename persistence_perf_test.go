@@ -258,21 +258,23 @@ func TestAsyncStore_CloseReturnsError(t *testing.T) {
 func TestAsyncStore_QueuePopsClearBackingReference(t *testing.T) {
 	mock := &dummySessionStore{}
 	asyncStore := NewAsyncStore(mock, 10)
+	defer asyncStore.Close()
 
+	// The first flush runs {save, flush} as one batch. The second flush makes
+	// run hand that batch's buffer back as the queue, after clearing it.
 	_ = asyncStore.SavePendingPublish(1, &PersistedPublish{Topic: "test"})
+	asyncStore.flush()
 	asyncStore.flush()
 
 	asyncStore.mu.Lock()
-	// Check capacity of backing array vs length
-	if cap(asyncStore.queue) > len(asyncStore.queue) {
-		// Backing array prefix must be nil
-		backingSlice := asyncStore.queue[:cap(asyncStore.queue)]
-		// In Go, the element popped from index 0 should be nil
-		if backingSlice[0] != nil {
-			t.Errorf("backing array index 0 was not zeroed after queue pop")
+	defer asyncStore.mu.Unlock()
+	backing := asyncStore.queue[:cap(asyncStore.queue)]
+	if len(backing) < 2 {
+		t.Fatalf("queue capacity = %d, want the previous batch's buffer (>= 2) to be reused", len(backing))
+	}
+	for i, op := range backing {
+		if op != nil {
+			t.Errorf("backing array index %d still holds a run operation", i)
 		}
 	}
-	asyncStore.mu.Unlock()
-
-	_ = asyncStore.Close()
 }

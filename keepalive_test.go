@@ -129,7 +129,7 @@ func TestKeepAliveTimeoutPrevented(t *testing.T) {
 }
 
 // TestKeepAlivePINGREQSent verifies that PINGREQ is sent when no activity.
-func TestKeepAlivePINGREQSent(_ *testing.T) {
+func TestKeepAlivePINGREQSent(t *testing.T) {
 	// Create a mock connection
 	serverConn, clientConn := net.Pipe()
 	defer serverConn.Close()
@@ -156,6 +156,7 @@ func TestKeepAlivePINGREQSent(_ *testing.T) {
 	go client.runWriteLoop(client.conn, make(chan struct{}), client.opts.KeepAlive)
 
 	// Read from server side to capture PINGREQ
+	pingSeen := make(chan struct{})
 	go func() {
 		buf := make([]byte, 2)
 		for {
@@ -164,20 +165,18 @@ func TestKeepAlivePINGREQSent(_ *testing.T) {
 				return
 			}
 			if n == 2 && buf[0] == 0xc0 && buf[1] == 0x00 {
-				// PINGREQ received! Signal back as PINGRESP
-				select {
-				case client.packetReceived <- struct{}{}:
-				default:
-				}
+				close(pingSeen)
+				return
 			}
 		}
 	}()
 
-	// Wait for PINGREQ to be sent (keepalive/2 = 100ms, plus margin)
-	time.Sleep(150 * time.Millisecond)
-
-	// Verify PINGREQ was sent by checking if we got the signal back
-	// (In real scenario, readLoop would signal this)
+	// PINGREQ is due after keepalive/2 = 100ms of no outgoing traffic.
+	select {
+	case <-pingSeen:
+	case <-time.After(2 * time.Second):
+		t.Fatal("PINGREQ was not sent")
+	}
 
 	// Clean up
 	close(client.stop)

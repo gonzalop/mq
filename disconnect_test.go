@@ -345,7 +345,11 @@ func TestDisconnectDuringReconnect(t *testing.T) {
 	disconnected := make(chan error, 1)
 	go func() { disconnected <- c.Disconnect(ctx) }()
 
-	time.Sleep(50 * time.Millisecond) // let Disconnect stop the client
+	select {
+	case <-c.stop: // Disconnect stopped the client; now let the dial finish
+	case <-time.After(2 * time.Second):
+		t.Fatal("Disconnect did not stop the client")
+	}
 	close(release)
 
 	select {

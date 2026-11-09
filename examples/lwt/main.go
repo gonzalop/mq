@@ -70,14 +70,14 @@ func main() {
 	})
 
 	time.Sleep(500 * time.Millisecond)
-	fmt.Println("   ✓ Monitor client ready\n")
+	fmt.Print("   ✓ Monitor client ready\n\n")
 
 	// Now create a client with a Last Will configured
 	fmt.Println("2️⃣  Starting client with Last Will configured...")
 	fmt.Println("   Will Topic: devices/sensor-1/will")
 	fmt.Println("   Will Message: {\"status\":\"offline\",\"reason\":\"unexpected_disconnect\"}")
 	fmt.Println("   Will QoS: 1")
-	fmt.Println("   Will Retained: true\n")
+	fmt.Print("   Will Retained: true\n\n")
 
 	clientOpts := []mq.Option{
 		mq.WithClientID("sensor-1"),
@@ -99,7 +99,7 @@ func main() {
 		log.Fatalf("Failed to connect client: %v", err)
 	}
 
-	fmt.Println("   ✓ Client connected with LWT configured\n")
+	fmt.Print("   ✓ Client connected with LWT configured\n\n")
 
 	// Publish online status
 	fmt.Println("3️⃣  Publishing 'online' status...")

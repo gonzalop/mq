@@ -116,7 +116,7 @@ func TestLastWillWithDelay(t *testing.T) {
 	willDelay := uint32(3) // See 'delay' below
 	sessionExpiry := uint32(10)
 
-	_, err := mq.Dial(proxyAddr,
+	victim, err := mq.Dial(proxyAddr,
 		mq.WithClientID("victim-client-"+t.Name()),
 		mq.WithProtocolVersion(mq.ProtocolV50),
 		mq.WithCleanSession(false), // Session persistence required for Will Delay? No, but good practice
@@ -134,7 +134,9 @@ func TestLastWillWithDelay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect victim: %v", err)
 	}
-	// Note: We don't defer victim.Disconnect() because we simulate crash.
+	// The crash is simulated by killing the proxy below. Disconnect only stops
+	// the victim's reconnect loop once the test is done.
+	defer victim.Disconnect(context.Background())
 
 	// Client B: The Witness (Connects directly to Server)
 	witness, err := mq.Dial(server,

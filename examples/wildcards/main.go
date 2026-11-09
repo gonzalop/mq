@@ -53,7 +53,7 @@ func main() {
 	}
 	defer client.Disconnect(context.Background())
 
-	fmt.Println("✓ Connected successfully!\n")
+	fmt.Print("✓ Connected successfully!\n\n")
 
 	var mu sync.Mutex
 	messagesByFilter := make(map[string][]string)
@@ -86,7 +86,7 @@ func main() {
 		}
 	}
 
-	fmt.Println("\n✓ All subscriptions active!\n")
+	fmt.Print("\n✓ All subscriptions active!\n\n")
 
 	// Publish test messages to various topics
 	testMessages := []struct {
@@ -102,7 +102,7 @@ func main() {
 		{"system/status", "ok"},
 	}
 
-	fmt.Println("📤 Publishing test messages...\n")
+	fmt.Print("📤 Publishing test messages...\n\n")
 	for _, msg := range testMessages {
 		fmt.Printf("Publishing to: %s\n", msg.topic)
 		token := client.Publish(context.Background(), msg.topic, []byte(msg.payload), mq.WithQoS(mq.AtLeastOnce))

@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -36,8 +37,8 @@ func main() {
 	fmt.Printf("This example demonstrates automatic reconnection when the connection is lost.\n")
 	fmt.Printf("Try stopping/restarting your MQTT server while this is running!\n\n")
 
-	connectionCount := 0
-	disconnectionCount := 0
+	// Updated from callbacks, which run in their own goroutines.
+	var connectionCount, disconnectionCount atomic.Int64
 
 	opts := []mq.Option{
 		mq.WithClientID("auto-reconnect-example"),
@@ -45,8 +46,8 @@ func main() {
 		mq.WithKeepAlive(10 * time.Second),
 		mq.WithMinStableConnectionDuration(5 * time.Second), // Anti-flapping: escalate backoff if connection drops before 5s
 		mq.WithOnConnect(func(c *mq.Client) {
-			connectionCount++
-			fmt.Printf("\n✅ Connected (connection #%d) at %s\n", connectionCount, c.ConnectedAt().Format("15:04:05"))
+			n := connectionCount.Add(1)
+			fmt.Printf("\n✅ Connected (connection #%d) at %s\n", n, c.ConnectedAt().Format("15:04:05"))
 
 			// Resubscribe on each connection
 			fmt.Println("   Subscribing to 'test/reconnect'...")
@@ -60,8 +61,8 @@ func main() {
 			}
 		}),
 		mq.WithOnConnectionLost(func(c *mq.Client, err error) {
-			disconnectionCount++
-			fmt.Printf("\n❌ Connection lost (disconnection #%d) at %s: %v\n", disconnectionCount, time.Now().Format("15:04:05"), err)
+			n := disconnectionCount.Add(1)
+			fmt.Printf("\n❌ Connection lost (disconnection #%d) at %s: %v\n", n, time.Now().Format("15:04:05"), err)
 			fmt.Println("   Will attempt to reconnect automatically...")
 		}),
 	}
@@ -87,7 +88,7 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	fmt.Println("\nPublishing messages every 5 seconds...")
-	fmt.Println("Press Ctrl+C to exit\n")
+	fmt.Print("Press Ctrl+C to exit\n\n")
 
 	for {
 		select {
@@ -104,8 +105,8 @@ func main() {
 
 		case <-sigChan:
 			fmt.Println("\n\n📊 Statistics:")
-			fmt.Printf("   Total connections: %d\n", connectionCount)
-			fmt.Printf("   Total disconnections: %d\n", disconnectionCount)
+			fmt.Printf("   Total connections: %d\n", connectionCount.Load())
+			fmt.Printf("   Total disconnections: %d\n", disconnectionCount.Load())
 			if client.IsConnected() {
 				fmt.Printf("   Current uptime: %s\n", client.Uptime().Round(time.Second))
 			}

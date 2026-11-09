@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/gonzalop/mq"
@@ -49,15 +50,15 @@ func main() {
 
 	// Set up response handler
 	responseTopic := "responses/temperature"
-	responses := make(map[string]chan string)
+	var responses sync.Map // correlation ID -> chan string; the handler runs in its own goroutine
 
 	token := client.Subscribe(context.Background(), responseTopic, 1, func(c *mq.Client, msg mq.Message) {
 		if msg.Properties != nil && len(msg.Properties.CorrelationData) > 0 {
 			correlationID := string(msg.Properties.CorrelationData)
 			fmt.Printf("📨 Received response for request %s\n", correlationID)
 
-			if ch, ok := responses[correlationID]; ok {
-				ch <- string(msg.Payload)
+			if ch, ok := responses.Load(correlationID); ok {
+				ch.(chan string) <- string(msg.Payload)
 			}
 		}
 	})
@@ -115,7 +116,7 @@ func main() {
 	fmt.Println("📤 Sending request-response pattern example")
 	correlationID := fmt.Sprintf("req-%d", time.Now().Unix())
 	responseChan := make(chan string, 1)
-	responses[correlationID] = responseChan
+	responses.Store(correlationID, responseChan)
 
 	err = client.Publish(context.Background(), requestTopic,
 		[]byte("get-temperature"),
@@ -143,7 +144,7 @@ func main() {
 	for i := 1; i <= 3; i++ {
 		correlationID := fmt.Sprintf("req-batch-%d", i)
 		responseChan := make(chan string, 1)
-		responses[correlationID] = responseChan
+		responses.Store(correlationID, responseChan)
 
 		err = client.Publish(context.Background(), requestTopic,
 			[]byte(fmt.Sprintf("get-temperature-sensor-%d", i)),
