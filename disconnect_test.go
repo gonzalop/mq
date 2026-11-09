@@ -377,6 +377,10 @@ func TestDisconnectDuringReconnect(t *testing.T) {
 // runs, so the DISCONNECT is queued but never flushed unless the test signals it.
 func newStalledDisconnectClient(t *testing.T) *Client {
 	t.Helper()
+	old := disconnectFlushTimeout
+	disconnectFlushTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { disconnectFlushTimeout = old })
+
 	c := newTestClient(nil)
 	cli, srv := net.Pipe()
 	t.Cleanup(func() { cli.Close(); srv.Close() })
@@ -393,7 +397,7 @@ func TestDisconnect_NoDeadlineCapsFlushWait(t *testing.T) {
 	_ = c.disconnectWithReason(context.Background(), 0, nil, false)
 	elapsed := time.Since(start)
 
-	if elapsed < disconnectFlushTimeout-100*time.Millisecond || elapsed > disconnectFlushTimeout+time.Second {
+	if elapsed < disconnectFlushTimeout-20*time.Millisecond || elapsed > disconnectFlushTimeout+500*time.Millisecond {
 		t.Errorf("Disconnect took %v, want about %v", elapsed, disconnectFlushTimeout)
 	}
 }
@@ -401,22 +405,22 @@ func TestDisconnect_NoDeadlineCapsFlushWait(t *testing.T) {
 func TestDisconnect_DeadlineExtendsFlushWait(t *testing.T) {
 	c := newStalledDisconnectClient(t)
 
-	flushAfter := disconnectFlushTimeout + 300*time.Millisecond
+	flushAfter := disconnectFlushTimeout + 50*time.Millisecond
 	go func() {
 		time.Sleep(flushAfter)
 		c.disconnectFlushed <- struct{}{}
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	start := time.Now()
 	_ = c.disconnectWithReason(ctx, 0, nil, false)
 	elapsed := time.Since(start)
 
-	if elapsed < flushAfter {
+	if elapsed < flushAfter-10*time.Millisecond {
 		t.Errorf("Disconnect gave up after %v, before the flush at %v", elapsed, flushAfter)
 	}
-	if elapsed > 4*time.Second {
+	if elapsed > time.Second {
 		t.Errorf("Disconnect took %v, should return right after the flush", elapsed)
 	}
 }

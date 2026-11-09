@@ -26,8 +26,9 @@ func (c *Client) ProtocolVersion() uint8 {
 }
 
 // disconnectFlushTimeout caps how long Disconnect waits for the DISCONNECT
-// packet to be written when ctx has no deadline.
-const disconnectFlushTimeout = time.Second
+// packet to be written when ctx has no deadline. It is a var so tests can
+// shorten the cap without waiting a full second.
+var disconnectFlushTimeout = time.Second
 
 // Disconnect gracefully disconnects from the server.
 //

@@ -849,12 +849,16 @@ func TestConnect_ResubscribesWithoutBrokerSession(t *testing.T) {
 			}
 			defer c.Disconnect(context.Background())
 
+			wait := 300 * time.Millisecond
+			if !tt.wantSubscribe {
+				wait = 50 * time.Millisecond
+			}
 			select {
 			case <-gotSubscribe:
 				if !tt.wantSubscribe {
 					t.Error("resubscribed although the broker kept the session")
 				}
-			case <-time.After(300 * time.Millisecond):
+			case <-time.After(wait):
 				if tt.wantSubscribe {
 					t.Error("did not resubscribe")
 				}

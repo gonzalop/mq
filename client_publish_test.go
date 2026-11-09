@@ -721,7 +721,7 @@ func TestResendOnReconnect(t *testing.T) {
 	select {
 	case pub := <-resent:
 		t.Errorf("PUBLISH resent more than once (id=%d dup=%v)", pub.PacketID, pub.Dup)
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 

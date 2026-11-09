@@ -20,7 +20,7 @@ func TestKeepAliveTimeout(t *testing.T) {
 	defer clientConn.Close()
 
 	// Create client with very short keepalive for fast test
-	keepalive := 200 * time.Millisecond
+	keepalive := 60 * time.Millisecond
 	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			KeepAlive:       keepalive,
@@ -57,7 +57,7 @@ func TestKeepAliveTimeout(t *testing.T) {
 		close(done)
 	}()
 
-	// Wait for timeout (1.5x keepalive = 300ms, plus some margin)
+	// Wait for timeout (1.5x keepalive = 90ms, plus margin)
 	select {
 	case <-done:
 		// writeLoop exited due to timeout - this is expected
@@ -79,7 +79,7 @@ func TestKeepAliveTimeoutPrevented(t *testing.T) {
 	defer clientConn.Close()
 
 	// Create client with short keepalive
-	keepalive := 200 * time.Millisecond
+	keepalive := 60 * time.Millisecond
 	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			KeepAlive:       keepalive,
@@ -97,6 +97,16 @@ func TestKeepAliveTimeoutPrevented(t *testing.T) {
 	// Track if disconnect was called
 	var disconnected atomic.Bool
 
+	// Consume writes on server side so PINGREQ doesn't block on net.Pipe
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			if _, err := serverConn.Read(buf); err != nil {
+				return
+			}
+		}
+	}()
+
 	// Start writeLoop in background
 	client.wg.Add(1)
 	go func() {
@@ -104,9 +114,9 @@ func TestKeepAliveTimeoutPrevented(t *testing.T) {
 		disconnected.Store(true)
 	}()
 
-	// Simulate receiving packets periodically (every 100ms)
-	// This should prevent timeout
-	ticker := time.NewTicker(100 * time.Millisecond)
+	// Simulate receiving packets periodically (every 30ms)
+	// This should prevent timeout (1.5x keepalive = 90ms)
+	ticker := time.NewTicker(30 * time.Millisecond)
 	defer ticker.Stop()
 
 	for range 5 {
@@ -118,14 +128,15 @@ func TestKeepAliveTimeoutPrevented(t *testing.T) {
 		}
 	}
 
-	// After 500ms of periodic packets, client should still be connected
+	// After 150ms of periodic packets, client should still be connected
 	if disconnected.Load() {
 		t.Error("Client should not disconnect when receiving packets regularly")
 	}
 
 	// Clean up
 	close(client.stop)
-	time.Sleep(50 * time.Millisecond)
+	_ = clientConn.Close()
+	client.wg.Wait()
 }
 
 // TestKeepAlivePINGREQSent verifies that PINGREQ is sent when no activity.
@@ -136,7 +147,7 @@ func TestKeepAlivePINGREQSent(t *testing.T) {
 	defer clientConn.Close()
 
 	// Create client with short keepalive
-	keepalive := 200 * time.Millisecond
+	keepalive := 60 * time.Millisecond
 	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			KeepAlive:       keepalive,
@@ -171,7 +182,7 @@ func TestKeepAlivePINGREQSent(t *testing.T) {
 		}
 	}()
 
-	// PINGREQ is due after keepalive/2 = 100ms of no outgoing traffic.
+	// PINGREQ is due after keepalive/2 = 30ms of no outgoing traffic.
 	select {
 	case <-pingSeen:
 	case <-time.After(2 * time.Second):
@@ -180,7 +191,8 @@ func TestKeepAlivePINGREQSent(t *testing.T) {
 
 	// Clean up
 	close(client.stop)
-	time.Sleep(50 * time.Millisecond)
+	_ = clientConn.Close()
+	client.wg.Wait()
 }
 
 // TestKeepAliveWriteDoesNotResetTimeout verifies that writing packets
@@ -192,7 +204,7 @@ func TestKeepAliveWriteDoesNotResetTimeout(t *testing.T) {
 	defer clientConn.Close()
 
 	// Create client with short keepalive
-	keepalive := 200 * time.Millisecond
+	keepalive := 60 * time.Millisecond
 	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			KeepAlive:       keepalive,
@@ -208,13 +220,13 @@ func TestKeepAliveWriteDoesNotResetTimeout(t *testing.T) {
 	client.connected.Store(true)
 
 	// Track if disconnect was called
-	var disconnected atomic.Bool
+	done := make(chan struct{})
 
 	// Start writeLoop in background
 	client.wg.Add(1)
 	go func() {
 		client.runWriteLoop(client.conn, make(chan struct{}), client.opts.KeepAlive)
-		disconnected.Store(true)
+		close(done)
 	}()
 
 	// Consume writes on server side so they don't block
@@ -230,7 +242,7 @@ func TestKeepAliveWriteDoesNotResetTimeout(t *testing.T) {
 
 	// Keep sending packets (simulating application activity)
 	// This should NOT prevent timeout since we're not receiving
-	ticker := time.NewTicker(50 * time.Millisecond)
+	ticker := time.NewTicker(15 * time.Millisecond)
 	defer ticker.Stop()
 
 	for range 8 {
@@ -245,11 +257,10 @@ func TestKeepAliveWriteDoesNotResetTimeout(t *testing.T) {
 		}
 	}
 
-	// After 400ms of only sending (no receiving), should timeout
-	// Timeout is 1.5x keepalive = 300ms
-	time.Sleep(50 * time.Millisecond)
-
-	if !disconnected.Load() {
+	// Timeout is 1.5x keepalive = 90ms
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
 		t.Error("Client should disconnect even when sending packets, if not receiving")
 	}
 }
@@ -264,7 +275,7 @@ func TestKeepAlivePINGREQWithQoS0Publishing(t *testing.T) {
 	defer clientConn.Close()
 
 	// Create client with short keepalive
-	keepalive := 400 * time.Millisecond
+	keepalive := 120 * time.Millisecond
 	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			KeepAlive:       keepalive,
@@ -297,9 +308,7 @@ func TestKeepAlivePINGREQWithQoS0Publishing(t *testing.T) {
 					case pingreqReceived <- struct{}{}:
 					default:
 					}
-					// Send PINGRESP back (0xd0 0x00)
-					_, _ = serverConn.Write([]byte{0xd0, 0x00})
-					// Signal packet received to client
+					// Signal packet received to client (in real usage readLoop does this on PINGRESP)
 					select {
 					case client.packetReceived <- struct{}{}:
 					default:
@@ -313,9 +322,9 @@ func TestKeepAlivePINGREQWithQoS0Publishing(t *testing.T) {
 	client.wg.Add(1)
 	go client.runWriteLoop(client.conn, make(chan struct{}), client.opts.KeepAlive)
 
-	// Simulate continuous QoS 0 publishing (every 100ms)
-	// This is faster than the PINGREQ threshold (3/4 * 400ms = 300ms)
-	publishTicker := time.NewTicker(100 * time.Millisecond)
+	// Simulate continuous QoS 0 publishing (every 30ms)
+	// This is faster than the PINGREQ threshold (3/4 * 120ms = 90ms)
+	publishTicker := time.NewTicker(30 * time.Millisecond)
 	defer publishTicker.Stop()
 
 	var publishCount atomic.Int32
@@ -342,8 +351,8 @@ func TestKeepAlivePINGREQWithQoS0Publishing(t *testing.T) {
 	}()
 
 	// Wait for at least one PINGREQ to be sent
-	// With keepalive=400ms, threshold=300ms, we should see PINGREQ
-	// even though we're publishing every 100ms
+	// With keepalive=120ms, threshold=90ms, we should see PINGREQ
+	// even though we're publishing every 30ms
 	select {
 	case <-pingreqReceived:
 		// Success! PINGREQ was sent despite continuous publishing
@@ -360,7 +369,8 @@ func TestKeepAlivePINGREQWithQoS0Publishing(t *testing.T) {
 	// Clean up
 	close(done)
 	close(client.stop)
-	time.Sleep(50 * time.Millisecond)
+	_ = clientConn.Close()
+	client.wg.Wait()
 }
 
 // TestKeepAliveZeroDisabled verifies that keepalive=0 disables the mechanism.
@@ -396,7 +406,7 @@ func TestKeepAliveZeroDisabled(t *testing.T) {
 	}()
 
 	// Wait a while - should NOT timeout
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	if disconnected.Load() {
 		t.Error("Client should not timeout when keepalive is disabled (0)")
@@ -404,7 +414,7 @@ func TestKeepAliveZeroDisabled(t *testing.T) {
 
 	// Clean up
 	close(client.stop)
-	time.Sleep(50 * time.Millisecond)
+	client.wg.Wait()
 }
 
 // TestKeepAlivePingPendingResetOnReconnect verifies that pingPending is cleared

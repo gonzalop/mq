@@ -68,9 +68,9 @@ func TestReconnectBackoff_ShortLivedConnectionEscalates(t *testing.T) {
 		}
 	}()
 
-	baseBackoff := 30 * time.Millisecond
-	maxBackoff := 500 * time.Millisecond
-	stableThreshold := 150 * time.Millisecond
+	baseBackoff := 15 * time.Millisecond
+	maxBackoff := 250 * time.Millisecond
+	stableThreshold := 80 * time.Millisecond
 
 	client, err := Dial("tcp://"+ln.Addr().String(),
 		WithClientID("test-flapping"),
@@ -164,7 +164,7 @@ func TestReconnectBackoff_StableConnectionResetsBackoff(t *testing.T) {
 					return
 				case 2:
 					// Second attempt stays alive for > stableThreshold, then closes
-					time.Sleep(120 * time.Millisecond)
+					time.Sleep(60 * time.Millisecond)
 					return
 				case 3:
 					// Third connection arrived after reset; signal done
@@ -179,9 +179,9 @@ func TestReconnectBackoff_StableConnectionResetsBackoff(t *testing.T) {
 		}
 	}()
 
-	baseBackoff := 30 * time.Millisecond
-	maxBackoff := 500 * time.Millisecond
-	stableThreshold := 60 * time.Millisecond
+	baseBackoff := 15 * time.Millisecond
+	maxBackoff := 250 * time.Millisecond
+	stableThreshold := 30 * time.Millisecond
 
 	client, err := Dial("tcp://"+ln.Addr().String(),
 		WithClientID("test-stable-reset"),
@@ -210,11 +210,11 @@ func TestReconnectBackoff_StableConnectionResetsBackoff(t *testing.T) {
 		t.Fatalf("expected at least 3 connections, got %d", len(times))
 	}
 
-	// Connection 2 stays up 120ms (> stableThreshold), so the backoff before
-	// connection 3 resets to baseBackoff (30ms). Without the reset it would be
-	// at least 4*baseBackoff (120ms), so 100ms of slack can't hide a regression.
-	extra := times[2].Sub(times[1]) - 120*time.Millisecond
-	if extra >= 100*time.Millisecond {
+	// Connection 2 stays up 60ms (> stableThreshold), so the backoff before
+	// connection 3 resets to baseBackoff (15ms). Without the reset it would be
+	// at least 4*baseBackoff (60ms), so 50ms of slack can't hide a regression.
+	extra := times[2].Sub(times[1]) - 60*time.Millisecond
+	if extra >= 50*time.Millisecond {
 		t.Errorf("reconnect after stable connection took %v beyond its uptime, want ~%v (backoff not reset)", extra, baseBackoff)
 	}
 	t.Logf("reconnect count: %d, gap after stable conn: %v", client.GetStats().ReconnectCount, extra)
@@ -398,7 +398,6 @@ func TestReconnect_NoStaleWriteLoop(t *testing.T) {
 				}
 				_, _ = (&packets.ConnackPacket{}).WriteTo(c)
 				if n == 1 {
-					time.Sleep(50 * time.Millisecond)
 					return // drop the first connection
 				}
 				for {
@@ -432,7 +431,6 @@ func TestReconnect_NoStaleWriteLoop(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	time.Sleep(50 * time.Millisecond)
 
 	for range 20 {
 		c.Publish(context.Background(), "a/b", []byte("x"))
@@ -440,7 +438,7 @@ func TestReconnect_NoStaleWriteLoop(t *testing.T) {
 	select {
 	case <-conn2Closed:
 		t.Errorf("new connection was closed by the client after publishing; server got %d/20 publishes", conn2Pubs.Load())
-	case <-time.After(300 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond):
 	}
 	if n := c.activeLoops.Load(); n != 4 {
 		t.Errorf("activeLoops = %d after reconnect, want 4 (logic, reconnect, read, write)", n)
