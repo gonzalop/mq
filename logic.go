@@ -92,6 +92,7 @@ func (c *Client) internalResetState() {
 	defer c.sessionLock.Unlock()
 	c.receivedQoS2 = make(map[uint16]struct{})
 	c.inboundUnacked = make(map[uint16]struct{})
+	c.sessionEpoch.Add(1)
 	c.pingPending.Store(false)
 	select {
 	case <-c.pingPendingCh:
@@ -105,9 +106,10 @@ func (c *Client) internalResetState() {
 // flow control queue would stall that flow until then. A full channel means the
 // network is slow, and blocking here pushes back on the read loop.
 func (c *Client) sendPackets(packets []packets.Packet) {
+	epoch := c.sessionEpoch.Load()
 	for _, pkt := range packets {
 		select {
-		case c.outgoing <- pkt:
+		case c.outgoing <- tagInboundAck(pkt, epoch):
 		case <-c.stop:
 			return
 		}
@@ -357,10 +359,12 @@ func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, h
 		}()
 	}
 
-	// Wait for all handlers and then acknowledge
+	// Wait for all handlers and then acknowledge. The session may be gone by
+	// then, so the ack keeps the epoch the message arrived in.
+	epoch := c.sessionEpoch.Load()
 	go func() {
 		wg.Wait()
-		c.sendAck(p)
+		c.sendAck(p, epoch)
 	}()
 
 	return nil
@@ -377,21 +381,50 @@ func (c *Client) buildAckPacket(p *packets.PublishPacket) packets.Packet {
 	}
 }
 
-func (c *Client) sendAck(p *packets.PublishPacket) {
+func (c *Client) sendAck(p *packets.PublishPacket, epoch uint64) {
 	ack := c.buildAckPacket(p)
 	if ack == nil {
 		return
 	}
 
 	select {
-	case c.outgoing <- ack:
+	case c.outgoing <- tagInboundAck(ack, epoch):
 		if p.QoS == 1 {
 			c.sessionLock.Lock()
-			delete(c.inboundUnacked, p.PacketID)
+			// In a new session the packet ID may belong to another message.
+			if c.sessionEpoch.Load() == epoch {
+				delete(c.inboundUnacked, p.PacketID)
+			}
 			c.sessionLock.Unlock()
 		}
 	case <-c.stop:
 	}
+}
+
+// inboundAck is a PUBACK, PUBREC or PUBCOMP for a message the broker sent,
+// tagged with the session epoch the message arrived in. Once the broker has
+// dropped that session, its packet ID may already name a different message,
+// so the write loop drops the ack instead of acknowledging the wrong one.
+type inboundAck struct {
+	packets.Packet
+	epoch uint64
+}
+
+// tagInboundAck wraps acks for inbound messages in an inboundAck. Other
+// packets are returned unchanged.
+func tagInboundAck(pkt packets.Packet, epoch uint64) packets.Packet {
+	switch pkt.(type) {
+	case *packets.PubackPacket, *packets.PubrecPacket, *packets.PubcompPacket:
+		return &inboundAck{Packet: pkt, epoch: epoch}
+	}
+	return pkt
+}
+
+// staleAck reports whether pkt is an ack from a session the broker no longer
+// has. The epoch only changes between connections, while no write loop runs.
+func (c *Client) staleAck(pkt packets.Packet) bool {
+	a, ok := pkt.(*inboundAck)
+	return ok && a.epoch != c.sessionEpoch.Load()
 }
 
 // finishPublishLocked completes a pending publish, cleans up tracking and store,

@@ -414,6 +414,9 @@ func TestDeferredAcknowledgment(t *testing.T) {
 
 	select {
 	case pkt := <-c.outgoing:
+		if a, ok := pkt.(*inboundAck); ok {
+			pkt = a.Packet
+		}
 		if p, ok := pkt.(*packets.PubackPacket); ok {
 			if p.PacketID != 1234 {
 				t.Errorf("Expected PUBACK for 1234, got %d", p.PacketID)
@@ -719,5 +722,39 @@ func TestResendOnReconnect(t *testing.T) {
 	case pub := <-resent:
 		t.Errorf("PUBLISH resent more than once (id=%d dup=%v)", pub.PacketID, pub.Dup)
 	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// TestDeferredAckAfterSessionLost checks that an ack for a message whose
+// handler outlives the broker session is never sent: in the new session the
+// packet ID may already name a different message.
+func TestDeferredAckAfterSessionLost(t *testing.T) {
+	c := newTestClient(defaultOptions("tcp://localhost:1883"))
+
+	release := make(chan struct{})
+	c.addSubscriptionLocked("t", subscriptionEntry{handler: func(*Client, Message) { <-release }})
+	c.sendPackets(c.handleIncoming(&packets.PublishPacket{Topic: "t", QoS: 1, PacketID: 7}))
+
+	// Reconnect without a session; the broker reuses ID 7 for a new message.
+	c.internalResetState()
+	c.sessionLock.Lock()
+	c.inboundUnacked[7] = struct{}{}
+	c.sessionLock.Unlock()
+
+	close(release)
+	select {
+	case pkt := <-c.outgoing:
+		if !c.staleAck(pkt) {
+			t.Errorf("ack %T for the old session is not stale", pkt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no ack queued")
+	}
+
+	c.sessionLock.Lock()
+	_, ok := c.inboundUnacked[7]
+	c.sessionLock.Unlock()
+	if !ok {
+		t.Error("old ack removed the new message's inboundUnacked entry")
 	}
 }

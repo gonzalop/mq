@@ -152,7 +152,7 @@ func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive
 	for {
 		select {
 		case pkt := <-c.outgoing:
-			if pkt == nil {
+			if pkt == nil || c.staleAck(pkt) {
 				continue // This can happen in quick disconnect/reconnect
 			}
 			if a, ok := pkt.(*abortPacket); ok {
@@ -182,7 +182,7 @@ func (c *Client) runWriteLoop(conn net.Conn, connDone <-chan struct{}, keepAlive
 			}
 			for range count {
 				pkt := <-c.outgoing
-				if pkt == nil {
+				if pkt == nil || c.staleAck(pkt) {
 					continue // This can happen in quick disconnect/reconnect
 				}
 				if a, ok := pkt.(*abortPacket); ok {

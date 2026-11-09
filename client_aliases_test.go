@@ -437,6 +437,38 @@ func TestWriteLoopAppliesTopicAliases(t *testing.T) {
 	}
 }
 
+// TestWriteLoopDropsStaleAcks checks that acks queued before the broker
+// session was lost are not written, while acks from the current one are.
+func TestWriteLoopDropsStaleAcks(t *testing.T) {
+	opts := defaultOptions("tcp://x:1883")
+	opts.Logger = testLogger()
+	c := newTestClient(opts)
+
+	c.sendPackets([]packets.Packet{&packets.PubackPacket{PacketID: 1}})
+	c.internalResetState()
+	c.sendPackets([]packets.Packet{&packets.PubackPacket{PacketID: 2}})
+
+	conn, peer := net.Pipe()
+	defer peer.Close()
+	connDone := make(chan struct{})
+	c.wg.Add(1)
+	go c.runWriteLoop(conn, connDone, 0)
+	defer func() {
+		close(connDone)
+		conn.Close() // unblocks a write nobody reads if the test fails
+		c.wg.Wait()
+	}()
+
+	_ = peer.SetReadDeadline(time.Now().Add(time.Second))
+	raw, err := packets.ReadPacket(peer, 4, 0)
+	if err != nil {
+		t.Fatalf("read packet: %v", err)
+	}
+	if p, ok := raw.(*packets.PubackPacket); !ok || p.PacketID != 2 {
+		t.Errorf("got %#v, want PUBACK for packet 2", raw)
+	}
+}
+
 func BenchmarkTopicAlias_FirstPublish(b *testing.B) {
 	pkt := &packets.PublishPacket{
 		Topic:    "sensors/building-a/floor-3/room-42/temperature",

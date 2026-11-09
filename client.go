@@ -32,7 +32,11 @@ type Client struct {
 	connDone  chan struct{} // Closed when conn is disconnected
 	readDone  chan struct{} // Closed when conn's read loop has exited
 	writeDone chan struct{} // Closed when conn's write loop has exited
-	connLock  sync.RWMutex
+
+	// sessionEpoch is bumped whenever the broker has no session for us. Acks
+	// for messages from an earlier epoch are not sent (see inboundAck).
+	sessionEpoch atomic.Uint64
+	connLock     sync.RWMutex
 
 	// Channels for goroutine communication
 	outgoing          chan packets.Packet // Packets to send
