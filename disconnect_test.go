@@ -3,6 +3,7 @@ package mq
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"sync/atomic"
@@ -454,5 +455,86 @@ func TestDisconnectDuringFinalizeConnection(t *testing.T) {
 	}
 	if n := connects.Load(); n != 0 {
 		t.Errorf("OnConnect ran %d times, want 0", n)
+	}
+}
+
+// TestResendSkipsRequestsStillSending checks that a reconnect does not resend
+// a request whose caller is still blocked handing it to outgoing. The caller
+// keeps ownership: it either sends the packet itself (once) or, when its
+// context ends, removes the op without touching anything a resend created.
+func TestResendSkipsRequestsStillSending(t *testing.T) {
+	requests := map[string]func(*Client, context.Context){
+		"publish": func(c *Client, ctx context.Context) {
+			c.internalPublish(&publishRequest{ctx: ctx, packet: &packets.PublishPacket{Topic: "t", QoS: 1}, token: newToken()})
+		},
+		"subscribe": func(c *Client, ctx context.Context) {
+			c.internalSubscribe(&subscribeRequest{ctx: ctx, packet: &packets.SubscribePacket{Topics: []string{"t"}}, token: newToken()})
+		},
+		"unsubscribe": func(c *Client, ctx context.Context) {
+			c.internalUnsubscribe(&unsubscribeRequest{ctx: ctx, packet: &packets.UnsubscribePacket{Topics: []string{"t"}}, token: newToken()})
+		},
+	}
+	for name, send := range requests {
+		for _, cancelIt := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/cancel=%v", name, cancelIt), func(t *testing.T) {
+				c := newTestClient(defaultOptions("tcp://x"))
+				c.outgoing = make(chan packets.Packet) // unbuffered: the send blocks
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				done := make(chan struct{})
+				go func() {
+					send(c, ctx)
+					close(done)
+				}()
+
+				deadline := time.Now().Add(5 * time.Second)
+				for {
+					c.sessionLock.Lock()
+					n := len(c.pending)
+					c.sessionLock.Unlock()
+					if n == 1 {
+						break
+					}
+					if time.Now().After(deadline) {
+						t.Fatal("request never reached the send")
+					}
+					time.Sleep(time.Millisecond)
+				}
+
+				c.sessionLock.Lock()
+				resend := c.takeResendLocked()
+				c.sessionLock.Unlock()
+				if len(resend) != 0 {
+					t.Fatalf("resend = %v, want nothing while the caller is still sending", resend)
+				}
+
+				if cancelIt {
+					cancel()
+				} else {
+					<-c.outgoing
+				}
+				<-done
+
+				c.sessionLock.Lock()
+				defer c.sessionLock.Unlock()
+				wantPending := 1
+				if cancelIt {
+					wantPending = 0
+				}
+				if len(c.pending) != wantPending {
+					t.Errorf("pending = %d, want %d", len(c.pending), wantPending)
+				}
+				wantInFlight := 0
+				if name == "publish" && !cancelIt {
+					wantInFlight = 1
+				}
+				if c.inFlightCount != wantInFlight {
+					t.Errorf("inFlightCount = %d, want %d", c.inFlightCount, wantInFlight)
+				}
+				if !cancelIt && len(c.takeResendLocked()) != 1 {
+					t.Error("op is not resent on a later reconnect once its caller sent it")
+				}
+			})
+		}
 	}
 }

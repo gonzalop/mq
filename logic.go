@@ -635,7 +635,8 @@ func (c *Client) handleUnsuback(p *packets.UnsubackPacket) []packets.Packet {
 // MQTT allows a resend, [MQTT-4.4.0-1]), followed by the untracked packets
 // (QoS 0, acks) still queued in outgoing. Queued copies of in-flight packets
 // are dropped, since the resend replaces them. PUBLISH packets are resent as
-// copies with DUP set, so a stored packet is never modified.
+// copies with DUP set, so a stored packet is never modified. Ops whose caller
+// is still sending them (pendingOp.sending) are left to that caller.
 // Assumes sessionLock is HELD and no write loop is running.
 func (c *Client) takeResendLocked() []packets.Packet {
 	ops := slices.SortedFunc(maps.Values(c.pending), func(a, b *pendingOp) int {
@@ -645,6 +646,9 @@ func (c *Client) takeResendLocked() []packets.Packet {
 	toSend := make([]packets.Packet, 0, len(ops))
 	tracked := make(map[packets.Packet]struct{}, len(ops))
 	for _, op := range ops {
+		if op.sending.Load() {
+			continue
+		}
 		tracked[op.packet] = struct{}{}
 		if pub, ok := op.packet.(*packets.PublishPacket); ok {
 			dup := *pub

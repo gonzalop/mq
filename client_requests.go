@@ -104,11 +104,13 @@ func (c *Client) internalPublish(req *publishRequest) {
 		return
 	}
 
-	c.addPendingLocked(pkt.PacketID, &pendingOp{
+	op := &pendingOp{
 		packet: pkt,
 		token:  req.token,
 		qos:    pkt.QoS,
-	})
+	}
+	op.sending.Store(true)
+	c.addPendingLocked(pkt.PacketID, op)
 
 	if pkt.QoS > 0 {
 		c.inFlightCount++
@@ -124,6 +126,7 @@ func (c *Client) internalPublish(req *publishRequest) {
 	c.sessionLock.Unlock()
 	select {
 	case c.outgoing <- pkt:
+		op.sending.Store(false)
 	case <-req.ctx.Done():
 		c.sessionLock.Lock()
 		c.removePending(pkt.PacketID)
@@ -214,10 +217,12 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 		return
 	}
 
-	c.addPendingLocked(pkt.PacketID, &pendingOp{
+	op := &pendingOp{
 		packet: pkt,
 		token:  req.token,
-	})
+	}
+	op.sending.Store(true)
+	c.addPendingLocked(pkt.PacketID, op)
 
 	// Register before receiving SUBACK to avoid racing
 	// with the server since it might sent messages right away
@@ -263,6 +268,7 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 	c.sessionLock.Unlock()
 	select {
 	case c.outgoing <- pkt:
+		op.sending.Store(false)
 	case <-req.ctx.Done():
 		c.sessionLock.Lock()
 		c.removePending(pkt.PacketID)
@@ -313,16 +319,19 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 		return
 	}
 
-	c.addPendingLocked(pkt.PacketID, &pendingOp{
+	op := &pendingOp{
 		packet: pkt,
 		token:  req.token,
-	})
+	}
+	op.sending.Store(true)
+	c.addPendingLocked(pkt.PacketID, op)
 
 	c.opts.Logger.Debug("unsubscribing", "packet_id", pkt.PacketID, "topics", req.topics)
 	c.sessionLock.Unlock()
 
 	select {
 	case c.outgoing <- pkt:
+		op.sending.Store(false)
 		c.sessionLock.Lock()
 		for _, topic := range req.topics {
 			c.removeSubscriptionLocked(topic)

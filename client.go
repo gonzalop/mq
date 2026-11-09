@@ -153,7 +153,13 @@ type pendingOp struct {
 	packet packets.Packet
 	token  *token
 	qos    uint8
-	seq    uint64 // Creation order, to resend in the original order
+	// sending is true while the caller that created the op is still handing
+	// packet to outgoing. takeResendLocked skips such ops: the caller sends
+	// the packet itself or, if its context ends first, removes the op. The
+	// flag is cleared just after the send, so a reconnect that completes in
+	// between leaves the packet for the following reconnect; it stays pending.
+	sending atomic.Bool
+	seq     uint64 // Creation order, to resend in the original order
 }
 
 // MessageHandler is called when a message is received on a subscribed topic.
