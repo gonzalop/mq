@@ -41,6 +41,9 @@ type Client struct {
 	// Channels for goroutine communication
 	outgoing          chan packets.Packet // Packets to send
 	incoming          chan packets.Packet // Packets received
+	drainRequest      chan struct{}       // Sent by drainPreviousConnection; see sendPackets
+	drainGen          atomic.Uint64       // Bumped by each drainPreviousConnection
+	barrierGen        atomic.Uint64       // gen of the last barrier logicLoop handled
 	packetReceived    chan struct{}       // Signal when packet received (for keepalive)
 	pingPendingCh     chan struct{}       // Signal when PINGRESP received
 	stop              chan struct{}       // Shutdown signal
@@ -212,6 +215,8 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 		opts:     options,
 		outgoing: make(chan packets.Packet, options.OutgoingQueueSize),
 		incoming: make(chan packets.Packet, options.IncomingQueueSize),
+		// Asks a sendPackets blocked on a dead connection to give up.
+		drainRequest: make(chan struct{}, 1),
 
 		packetReceived:     make(chan struct{}, 1),
 		pingPendingCh:      make(chan struct{}, 1),

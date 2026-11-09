@@ -63,6 +63,7 @@ func (c *Client) runReadLoop(conn net.Conn, readDone chan struct{}) {
 type incomingBarrier struct {
 	packets.Packet
 	done chan struct{}
+	gen  uint64 // drainGen of the drain that queued it
 }
 
 // drainPreviousConnection waits until the previous connection's read and write
@@ -92,7 +93,13 @@ func (c *Client) drainPreviousConnection(ctx context.Context) error {
 		}
 	}
 
-	b := &incomingBarrier{done: make(chan struct{})}
+	// Nobody drains outgoing any more: until logicLoop reaches the barrier,
+	// sendPackets must not block on it (and one already blocked is woken).
+	b := &incomingBarrier{done: make(chan struct{}), gen: c.drainGen.Add(1)}
+	select {
+	case c.drainRequest <- struct{}{}:
+	default:
+	}
 	select {
 	case c.incoming <- b:
 	case <-ctx.Done():

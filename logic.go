@@ -28,6 +28,11 @@ func (c *Client) logicLoop() {
 		select {
 		case pkt := <-c.incoming:
 			if b, ok := pkt.(*incomingBarrier); ok {
+				c.barrierGen.Store(b.gen)
+				select {
+				case <-c.drainRequest: // unused: sendPackets never blocked
+				default:
+				}
 				close(b.done)
 				continue
 			}
@@ -107,11 +112,26 @@ func (c *Client) internalResetState() {
 // a reconnect, so dropping a PUBREL, a PUBCOMP or a publish released from the
 // flow control queue would stall that flow until then. A full channel means the
 // network is slow, and blocking here pushes back on the read loop.
+//
+// After a disconnect nothing drains the channel, and the reconnect waits for
+// logicLoop to reach its barrier (drainPreviousConnection). Until then
+// sendPackets never blocks: packets that do not fit are dropped. The reconnect
+// has not taken its resend yet, so publishes and PUBRELs in pending are resent,
+// and the broker's own resends trigger the acks again.
 func (c *Client) sendPackets(packets []packets.Packet) {
 	epoch := c.sessionEpoch.Load()
 	for _, pkt := range packets {
+		pkt = tagInboundAck(pkt, epoch)
+		if c.drainGen.Load() != c.barrierGen.Load() {
+			select {
+			case c.outgoing <- pkt:
+			default:
+			}
+			continue
+		}
 		select {
-		case c.outgoing <- tagInboundAck(pkt, epoch):
+		case c.outgoing <- pkt:
+		case <-c.drainRequest: // a reconnect started draining: drop pkt
 		case <-c.stop:
 			return
 		}

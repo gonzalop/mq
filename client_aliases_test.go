@@ -621,3 +621,63 @@ func TestDrainPreviousConnection(t *testing.T) {
 		})
 	}
 }
+
+// TestReconnectNotStalledByFullOutgoing checks that a full outgoing channel
+// while disconnected does not block the logic loop, which a reconnect must
+// wait for: it used to stall every reconnect attempt for good.
+func TestReconnectNotStalledByFullOutgoing(t *testing.T) {
+	c := newTestClient(nil)
+	c.outgoing = make(chan packets.Packet, 1)
+	c.outgoing <- &packets.PingreqPacket{} // full, and no write loop
+	closed := make(chan struct{})
+	close(closed)
+	c.readDone, c.writeDone = closed, closed
+
+	c.wg.Add(1)
+	go c.logicLoop()
+	defer func() { close(c.stop); c.wg.Wait() }()
+
+	// Read just before the connection dropped; their PUBCOMPs do not fit.
+	for id := range uint16(3) {
+		c.incoming <- &packets.PubrelPacket{PacketID: id + 1}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := c.drainPreviousConnection(ctx); err != nil {
+		t.Fatalf("drainPreviousConnection: %v", err)
+	}
+}
+
+// TestSendPacketsWaitsForRoom checks that sendPackets waits for room in a
+// full outgoing channel instead of dropping, and gives up only when a
+// reconnect asks it to.
+func TestSendPacketsWaitsForRoom(t *testing.T) {
+	c := newTestClient(nil)
+	c.outgoing = make(chan packets.Packet, 1)
+	c.outgoing <- &packets.PingreqPacket{}
+
+	go c.sendPackets([]packets.Packet{&packets.PubcompPacket{PacketID: 1}})
+	<-c.outgoing // make room: the PUBCOMP must arrive, not be dropped
+	select {
+	case pkt := <-c.outgoing:
+		if p, ok := pkt.(*inboundAck).Packet.(*packets.PubcompPacket); !ok || p.PacketID != 1 {
+			t.Fatalf("got %#v, want PUBCOMP 1", pkt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("PUBCOMP dropped instead of waiting for room")
+	}
+
+	c.outgoing <- &packets.PingreqPacket{} // full again
+	done := make(chan struct{})
+	go func() {
+		c.sendPackets([]packets.Packet{&packets.PubcompPacket{PacketID: 2}})
+		close(done)
+	}()
+	c.drainRequest <- struct{}{}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sendPackets still blocked after a drain request")
+	}
+}

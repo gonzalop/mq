@@ -17,10 +17,11 @@ func newTestClient(opts *clientOptions) *Client {
 		opts = defaultOptions("tcp://localhost:1883")
 	}
 	c := &Client{
-		trie:     newTopicTrie(),
-		opts:     opts,
-		outgoing: make(chan packets.Packet, opts.OutgoingQueueSize),
-		incoming: make(chan packets.Packet, opts.IncomingQueueSize),
+		trie:         newTopicTrie(),
+		opts:         opts,
+		outgoing:     make(chan packets.Packet, opts.OutgoingQueueSize),
+		incoming:     make(chan packets.Packet, opts.IncomingQueueSize),
+		drainRequest: make(chan struct{}, 1),
 
 		packetReceived:    make(chan struct{}, 1),
 		pingPendingCh:     make(chan struct{}, 1),

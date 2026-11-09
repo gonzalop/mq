@@ -48,7 +48,9 @@ The `logicLoop` is the single-threaded state machine that manages the client's i
 
 ### `sendPackets` Strategy
 
-The `sendPackets` helper is called without holding `sessionLock` and blocks while the `outgoing` channel is full (it gives up when the client stops). In-flight packets are only resent after a reconnect ([MQTT-4.4.0-1]), so dropping a response such as PUBREL or PUBCOMP would stall that flow until then. A full channel means the network is slow; blocking the `logicLoop` pushes back on the `readLoop` the same way TCP does.
+The `sendPackets` helper is called without holding `sessionLock`. While connected it blocks while the `outgoing` channel is full (it gives up when the client stops). In-flight packets are only resent after a reconnect ([MQTT-4.4.0-1]), so dropping a response such as PUBREL or PUBCOMP would stall that flow until then. A full channel means the network is slow; blocking the `logicLoop` pushes back on the `readLoop` the same way TCP does.
+
+After a disconnect nothing drains `outgoing`, and a reconnect waits for the `logicLoop` to handle every packet of the old connection (`drainPreviousConnection`). So until the `logicLoop` reaches the reconnect's barrier (`drainGen` differs from `barrierGen`), `sendPackets` never blocks and drops packets that do not fit; one already blocked is woken through `drainRequest`. This happens before the reconnect takes its resend list: publishes and PUBRELs stay in `pending` and are resent, and the broker's own resends trigger the acks again.
 
 On every new connection, `finalizeConnection` takes the in-flight packets (in their original order, PUBLISH as DUP copies) and queues them before anything else, dropping copies of them still left in `outgoing` from the lost connection.
 
