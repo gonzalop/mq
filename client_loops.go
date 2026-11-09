@@ -65,24 +65,31 @@ type incomingBarrier struct {
 	done chan struct{}
 }
 
-// drainPreviousConnection waits until the previous connection's read loop has
-// exited and logicLoop has handled every packet it read. Only then can
-// per-connection state such as topic aliases be reset: a stale alias-only
-// PUBLISH would otherwise be resolved against the new, empty alias map.
+// drainPreviousConnection waits until the previous connection's read and write
+// loops have exited and logicLoop has handled every packet it read. Only then
+// can per-connection state such as topic aliases be reset: a stale alias-only
+// PUBLISH would otherwise be resolved against the new, empty alias map. And
+// only then can takeResendLocked drain outgoing without an old write loop
+// taking packets from it.
 func (c *Client) drainPreviousConnection(ctx context.Context) error {
 	c.connLock.RLock()
-	readDone := c.readDone
+	readDone, writeDone := c.readDone, c.writeDone
 	c.connLock.RUnlock()
 	if readDone == nil {
 		return nil // first connection
 	}
 
-	select {
-	case <-readDone:
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-c.stop:
-		return ErrClientDisconnected
+	for _, done := range []chan struct{}{readDone, writeDone} {
+		if done == nil {
+			continue
+		}
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-c.stop:
+			return ErrClientDisconnected
+		}
 	}
 
 	b := &incomingBarrier{done: make(chan struct{})}

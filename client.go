@@ -28,10 +28,11 @@ type Client struct {
 	opts *clientOptions
 
 	// Connection
-	conn     net.Conn
-	connDone chan struct{} // Closed when conn is disconnected
-	readDone chan struct{} // Closed when conn's read loop has exited
-	connLock sync.RWMutex
+	conn      net.Conn
+	connDone  chan struct{} // Closed when conn is disconnected
+	readDone  chan struct{} // Closed when conn's read loop has exited
+	writeDone chan struct{} // Closed when conn's write loop has exited
+	connLock  sync.RWMutex
 
 	// Channels for goroutine communication
 	outgoing          chan packets.Packet // Packets to send

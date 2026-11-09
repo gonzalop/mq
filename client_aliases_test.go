@@ -564,18 +564,23 @@ func TestReconnectDrainsStaleAliasPublish(t *testing.T) {
 }
 
 func TestDrainPreviousConnection(t *testing.T) {
+	closed := make(chan struct{})
+	close(closed)
 	tests := []struct {
-		name     string
-		readDone chan struct{}
-		wantErr  bool
+		name      string
+		readDone  chan struct{}
+		writeDone chan struct{}
+		wantErr   bool
 	}{
-		{"first connection", nil, false},
-		{"old read loop never exits", make(chan struct{}), true},
+		{"first connection", nil, nil, false},
+		{"old read loop never exits", make(chan struct{}), closed, true},
+		{"old write loop never exits", closed, make(chan struct{}), true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := newTestClient(nil)
 			c.readDone = tt.readDone
+			c.writeDone = tt.writeDone
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 			defer cancel()
 			if err := c.drainPreviousConnection(ctx); (err != nil) != tt.wantErr {
