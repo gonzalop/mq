@@ -502,7 +502,7 @@ func TestResendSkipsRequestsStillSending(t *testing.T) {
 				}
 
 				c.sessionLock.Lock()
-				resend := c.takeResendLocked()
+				resend := c.takeResendLocked(false)
 				c.sessionLock.Unlock()
 				if len(resend) != 0 {
 					t.Fatalf("resend = %v, want nothing while the caller is still sending", resend)
@@ -531,7 +531,7 @@ func TestResendSkipsRequestsStillSending(t *testing.T) {
 				if c.inFlightCount != wantInFlight {
 					t.Errorf("inFlightCount = %d, want %d", c.inFlightCount, wantInFlight)
 				}
-				if !cancelIt && len(c.takeResendLocked()) != 1 {
+				if !cancelIt && len(c.takeResendLocked(false)) != 1 {
 					t.Error("op is not resent on a later reconnect once its caller sent it")
 				}
 			})

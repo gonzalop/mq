@@ -223,7 +223,7 @@ func TestCompliance_QoS2_Retransmission(t *testing.T) {
 	}
 
 	// Simulate a reconnect
-	for _, p := range c.takeResendLocked() {
+	for _, p := range c.takeResendLocked(false) {
 		c.outgoing <- p
 	}
 

@@ -2,6 +2,7 @@ package mq
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -857,6 +858,54 @@ func TestConnect_ResubscribesWithoutBrokerSession(t *testing.T) {
 				if tt.wantSubscribe {
 					t.Error("did not resubscribe")
 				}
+			}
+		})
+	}
+}
+
+// TestReconnectDoesNotDuplicateSubscribes checks that a reconnect sends each
+// subscription once. Left over from the previous connection are a SUBSCRIBE
+// from Subscribe still waiting for its SUBACK and an unacked SUBSCRIBE from an
+// interrupted resubscribeAll, also still queued in outgoing. That one includes
+// old/t, unsubscribed since: a new broker session must not get it back.
+func TestReconnectDoesNotDuplicateSubscribes(t *testing.T) {
+	for _, sessionPresent := range []bool{false, true} {
+		t.Run(fmt.Sprintf("sessionPresent=%v", sessionPresent), func(t *testing.T) {
+			c := newTestClient(defaultOptions("tcp://x"))
+			c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
+			c.subscriptions["a/b"] = subscriptionEntry{options: SubscribeOptions{QoS: AtLeastOnce}}
+			c.subscriptions["x/y"] = subscriptionEntry{options: SubscribeOptions{QoS: AtLeastOnce}}
+
+			c.sessionLock.Lock()
+			c.addPendingLocked(1, &pendingOp{packet: &packets.SubscribePacket{PacketID: 1, Topics: []string{"x/y"}}, token: newToken()})
+			stale := &packets.SubscribePacket{PacketID: 2, Topics: []string{"a/b", "old/t"}}
+			c.addPendingLocked(2, &pendingOp{packet: stale, token: newToken(), resubscribe: true})
+			c.outgoing <- stale
+			sent := c.takeResendLocked(!sessionPresent)
+			c.sessionLock.Unlock()
+			if !sessionPresent {
+				c.resubscribeAll(nil)
+			}
+			for len(c.outgoing) > 0 {
+				sent = append(sent, <-c.outgoing)
+			}
+
+			count := map[string]int{}
+			for _, p := range sent {
+				if sub, ok := p.(*packets.SubscribePacket); ok {
+					for _, topic := range sub.Topics {
+						count[topic]++
+					}
+				}
+			}
+			if count["a/b"] != 1 || count["x/y"] != 1 {
+				t.Errorf("SUBSCRIBEs per topic = %v, want each topic once", count)
+			}
+			if !sessionPresent && count["old/t"] != 0 {
+				t.Errorf("unsubscribed topic old/t sent %d times to a new session", count["old/t"])
+			}
+			if len(c.pending) != 2 {
+				t.Errorf("pending = %d, want 2", len(c.pending))
 			}
 		})
 	}

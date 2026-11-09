@@ -230,9 +230,13 @@ func (c *Client) finalizeConnection(connack *packets.ConnackPacket) error {
 		return ErrClientDisconnected
 	}
 
+	// Without a session on the broker (a clean session, or a persistent one
+	// the broker no longer has), every subscription must be sent again.
+	resubscribe := c.opts.CleanSession || !connack.SessionPresent
+
 	// Taken first, before resubscribeAll can add new SUBSCRIBEs to pending.
 	c.sessionLock.Lock()
-	resend := c.takeResendLocked()
+	resend := c.takeResendLocked(resubscribe)
 	c.sessionLock.Unlock()
 
 	// Reset keepalive to requested value before processing server override
@@ -306,9 +310,7 @@ resendLoop:
 		}
 	}
 
-	// Without a session on the broker (a clean session, or a persistent one
-	// the broker no longer has), every subscription must be sent again.
-	if c.opts.CleanSession || !connack.SessionPresent {
+	if resubscribe {
 		go c.resubscribeAll(connDone)
 	}
 

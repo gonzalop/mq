@@ -159,7 +159,9 @@ type pendingOp struct {
 	// flag is cleared just after the send, so a reconnect that completes in
 	// between leaves the packet for the following reconnect; it stays pending.
 	sending atomic.Bool
-	seq     uint64 // Creation order, to resend in the original order
+	// resubscribe marks a SUBSCRIBE sent by resubscribeAll.
+	resubscribe bool
+	seq         uint64 // Creation order, to resend in the original order
 }
 
 // MessageHandler is called when a message is received on a subscribed topic.

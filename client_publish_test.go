@@ -451,7 +451,7 @@ func TestOrderedRetransmission(t *testing.T) {
 	c.outgoing <- qos0
 
 	c.sessionLock.Lock()
-	toSend := c.takeResendLocked()
+	toSend := c.takeResendLocked(false)
 	c.sessionLock.Unlock()
 
 	if len(toSend) != len(packetIDs)+1 {
@@ -491,7 +491,7 @@ func TestResendOrderAcrossPacketIDWrap(t *testing.T) {
 	c.addPendingLocked(2, &pendingOp{packet: &packets.PublishPacket{PacketID: 2, QoS: 1, Topic: "t"}})
 	c.removePending(2)
 
-	toSend := c.takeResendLocked()
+	toSend := c.takeResendLocked(false)
 	var got []uint16
 	for _, p := range toSend {
 		got = append(got, p.(*packets.PublishPacket).PacketID)
@@ -550,7 +550,7 @@ func TestPersistencePendingOrder(t *testing.T) {
 	// Restored publishes are resent in packet ID order
 	expectedOrder := []uint16{1, 5, 10, 20}
 	var got []uint16
-	for _, p := range c.takeResendLocked() {
+	for _, p := range c.takeResendLocked(false) {
 		got = append(got, p.(*packets.PublishPacket).PacketID)
 	}
 	if !slices.Equal(got, expectedOrder) {

@@ -330,7 +330,8 @@ func (c *Client) Unsubscribe(ctx context.Context, topic string, opts ...Unsubscr
 // resubscribeAll resubscribes to all active subscriptions after reconnection.
 // This is called automatically by the reconnect loop. It gives up when
 // connDone (the connection it was started for) closes; the packets it did not
-// send stay pending and are resent on the next connection.
+// send stay pending. The next connection resends them if the broker kept the
+// session, and otherwise drops them and runs resubscribeAll again.
 func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 	c.sessionLock.Lock()
 
@@ -341,9 +342,23 @@ func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 
 	c.opts.Logger.Debug("resubscribing to topics", "count", len(c.subscriptions))
 
+	// Topics of a SUBSCRIBE still pending from Subscribe go out with that
+	// packet; sending them here as well would subscribe twice.
+	pendingTopics := make(map[string]struct{})
+	for _, op := range c.pending {
+		if sub, ok := op.packet.(*packets.SubscribePacket); ok {
+			for _, topic := range sub.Topics {
+				pendingTopics[topic] = struct{}{}
+			}
+		}
+	}
+
 	var topics []string
 	var entries []subscriptionEntry
 	for topic, entry := range c.subscriptions {
+		if _, ok := pendingTopics[topic]; ok {
+			continue
+		}
 		topics = append(topics, topic)
 		entries = append(entries, entry)
 	}
@@ -451,9 +466,10 @@ func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 
 			// Store pending operation BEFORE sending packet to avoid race conditions
 			c.addPendingLocked(pkt.PacketID, &pendingOp{
-				packet: pkt,
-				token:  newToken(),
-				qos:    1,
+				packet:      pkt,
+				token:       newToken(),
+				qos:         1,
+				resubscribe: true,
 			})
 
 			packetsToSend = append(packetsToSend, pkt)

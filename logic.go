@@ -637,14 +637,25 @@ func (c *Client) handleUnsuback(p *packets.UnsubackPacket) []packets.Packet {
 // are dropped, since the resend replaces them. PUBLISH packets are resent as
 // copies with DUP set, so a stored packet is never modified. Ops whose caller
 // is still sending them (pendingOp.sending) are left to that caller.
+// With resubscribing set, the connection will run resubscribeAll, so the
+// SUBSCRIBEs of an earlier resubscribeAll are dropped instead of resent.
 // Assumes sessionLock is HELD and no write loop is running.
-func (c *Client) takeResendLocked() []packets.Packet {
+func (c *Client) takeResendLocked(resubscribing bool) []packets.Packet {
+	tracked := make(map[packets.Packet]struct{}, len(c.pending))
+	if resubscribing {
+		maps.DeleteFunc(c.pending, func(_ uint16, op *pendingOp) bool {
+			if op.resubscribe {
+				tracked[op.packet] = struct{}{} // drops queued copies too
+			}
+			return op.resubscribe
+		})
+	}
+
 	ops := slices.SortedFunc(maps.Values(c.pending), func(a, b *pendingOp) int {
 		return cmp.Compare(a.seq, b.seq)
 	})
 
 	toSend := make([]packets.Packet, 0, len(ops))
-	tracked := make(map[packets.Packet]struct{}, len(ops))
 	for _, op := range ops {
 		if op.sending.Load() {
 			continue
