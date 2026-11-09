@@ -217,7 +217,19 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 	// Register before receiving SUBACK to avoid racing
 	// with the server since it might sent messages right away
 	// before we get a SUBACK.
+	//
+	// Entries this request replaces are kept so that a request cancelled
+	// before its SUBSCRIBE is queued puts them back: the server never saw the
+	// new SUBSCRIBE and still holds the earlier subscription.
+	var replaced map[string]subscriptionEntry
 	for i, topic := range pkt.Topics {
+		if prev, ok := c.subscriptions[topic]; ok && prev.owner != op {
+			if replaced == nil {
+				replaced = make(map[string]subscriptionEntry)
+			}
+			replaced[topic] = prev
+		}
+
 		var subOpts SubscribeOptions
 		subOpts.Persistence = req.persistence
 
@@ -252,28 +264,38 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 		c.addSubscriptionLocked(topic, subscriptionEntry{
 			handler: c.wrapHandler(req.handler),
 			options: subOpts,
+			owner:   op,
 		})
 	}
 
 	c.sessionLock.Unlock()
+
+	rollback := func() {
+		c.sessionLock.Lock()
+		c.removePending(pkt.PacketID)
+		for _, topic := range pkt.Topics {
+			// Another Subscribe or Unsubscribe got to this filter while
+			// the send was blocked: the entry is no longer ours to undo.
+			if cur, ok := c.subscriptions[topic]; !ok || cur.owner != op {
+				continue
+			}
+			if prev, ok := replaced[topic]; ok {
+				c.addSubscriptionLocked(topic, prev)
+			} else {
+				c.removeSubscriptionLocked(topic)
+			}
+		}
+		c.sessionLock.Unlock()
+	}
+
 	select {
 	case c.outgoing <- pkt:
 		op.sending.Store(false)
 	case <-req.ctx.Done():
-		c.sessionLock.Lock()
-		c.removePending(pkt.PacketID)
-		for _, topic := range pkt.Topics {
-			c.removeSubscriptionLocked(topic)
-		}
-		c.sessionLock.Unlock()
+		rollback()
 		req.token.complete(req.ctx.Err())
 	case <-c.stop:
-		c.sessionLock.Lock()
-		c.removePending(pkt.PacketID)
-		for _, topic := range pkt.Topics {
-			c.removeSubscriptionLocked(topic)
-		}
-		c.sessionLock.Unlock()
+		rollback()
 		req.token.complete(ErrClientDisconnected)
 	}
 }
@@ -316,8 +338,8 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 	op.sending.Store(true)
 	c.addPendingLocked(pkt.PacketID, op)
 
-	c.opts.Logger.Debug("unsubscribing", "packet_id", pkt.PacketID, "topics", req.topics)
 	c.sessionLock.Unlock()
+	c.opts.Logger.Debug("unsubscribing", "packet_id", pkt.PacketID, "topics", req.topics)
 
 	select {
 	case c.outgoing <- pkt:

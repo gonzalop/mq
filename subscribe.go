@@ -340,7 +340,22 @@ func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 		return
 	}
 
-	c.opts.Logger.Debug("resubscribing to topics", "count", len(c.subscriptions))
+	// Logging runs user slog.Handler code, so records are collected here and
+	// emitted once sessionLock is released.
+	count := len(c.subscriptions)
+	type skippedTopic struct {
+		topic string
+		err   error
+	}
+	var skipped []skippedTopic
+	logDeferred := func() {
+		c.opts.Logger.Debug("resubscribing to topics", "count", count)
+		for _, s := range skipped {
+			c.opts.Logger.Warn("skipping resubscription: violates server capabilities",
+				"topic", s.topic,
+				"error", s.err)
+		}
+	}
 
 	// Topics of a SUBSCRIBE still pending from Subscribe go out with that
 	// packet; sending them here as well would subscribe twice.
@@ -392,9 +407,7 @@ func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 			// Skip resubscription if it violates server capabilities
 			if c.opts.ProtocolVersion >= ProtocolV50 {
 				if err := c.validateSubscribeCaps(batchTopics[j], entry.options.QoS); err != nil {
-					c.opts.Logger.Warn("skipping resubscription: violates server capabilities",
-						"topic", batchTopics[j],
-						"error", err)
+					skipped = append(skipped, skippedTopic{topic: batchTopics[j], err: err})
 					continue
 				}
 			}
@@ -423,11 +436,12 @@ func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 		for _, g := range groups {
 			packetID := c.nextID()
 			if packetID == 0 {
-				c.opts.Logger.Error("failed to resubscribe: no packet IDs available")
 				for _, p := range packetsToSend {
 					c.removePending(p.PacketID)
 				}
 				c.sessionLock.Unlock()
+				logDeferred()
+				c.opts.Logger.Error("failed to resubscribe: no packet IDs available")
 				return
 			}
 
@@ -476,6 +490,7 @@ func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 		}
 	}
 	c.sessionLock.Unlock()
+	logDeferred()
 
 	for _, pkt := range packetsToSend {
 		select {
@@ -543,6 +558,11 @@ func validateSubscribeOptions(topic string, subOpts *SubscribeOptions, opts *cli
 type subscriptionEntry struct {
 	handler MessageHandler
 	options SubscribeOptions
+
+	// owner is the Subscribe request that registered this entry (nil for
+	// restored entries). A cancelled request rolls back only entries it
+	// still owns, so it cannot undo a later Subscribe or Unsubscribe.
+	owner *pendingOp
 }
 
 // trieFilter returns the filter under which a subscription's handler is stored

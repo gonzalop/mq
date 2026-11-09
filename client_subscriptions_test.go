@@ -2,6 +2,7 @@ package mq
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -910,6 +911,180 @@ func TestReconnectDoesNotDuplicateSubscribes(t *testing.T) {
 			}
 			if len(c.pending) != 2 {
 				t.Errorf("pending = %d, want 2", len(c.pending))
+			}
+		})
+	}
+}
+
+// A Subscribe cancelled before its SUBSCRIBE is queued never reached the
+// server, so it must leave an earlier subscription to the same filter in
+// place, and must not leave a new filter behind.
+func TestSubscribeCancelledRestoresReplacedSubscription(t *testing.T) {
+	c := newTestClient(defaultOptions("tcp://x"))
+	c.outgoing = make(chan packets.Packet) // unbuffered: the send blocks
+
+	var h1Count, h2Count int
+	c.sessionLock.Lock()
+	c.addSubscriptionLocked("a", subscriptionEntry{
+		handler: func(*Client, Message) { h1Count++ },
+		options: SubscribeOptions{QoS: AtLeastOnce},
+	})
+	c.sessionLock.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	tok := newToken()
+	c.internalSubscribe(&subscribeRequest{
+		ctx:     ctx,
+		packet:  &packets.SubscribePacket{Topics: []string{"a", "b"}, QoS: []uint8{0, 0}},
+		handler: func(*Client, Message) { h2Count++ },
+		token:   tok,
+	})
+	if err := tok.Error(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("token error = %v, want context.Canceled", err)
+	}
+
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
+	if len(c.pending) != 0 {
+		t.Errorf("pending = %d, want 0", len(c.pending))
+	}
+	entry, ok := c.subscriptions["a"]
+	if !ok {
+		t.Fatal("existing subscription to \"a\" was dropped")
+	}
+	if entry.options.QoS != AtLeastOnce {
+		t.Errorf("restored QoS = %d, want %d", entry.options.QoS, AtLeastOnce)
+	}
+	if _, ok := c.subscriptions["b"]; ok {
+		t.Error("cancelled subscription to \"b\" was left registered")
+	}
+	for _, h := range c.trie.Match("a") {
+		h(c, Message{})
+	}
+	if h1Count != 1 || h2Count != 0 {
+		t.Errorf("handler calls: original=%d cancelled=%d, want 1 and 0", h1Count, h2Count)
+	}
+	if got := len(c.trie.Match("b")); got != 0 {
+		t.Errorf("trie matches for \"b\" = %d, want 0", got)
+	}
+}
+
+// lockProbeHandler records whether sessionLock was held when a record was logged.
+type lockProbeHandler struct {
+	c       *Client
+	records atomic.Int32
+	held    atomic.Int32
+}
+
+func (h *lockProbeHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h *lockProbeHandler) WithAttrs([]slog.Attr) slog.Handler       { return h }
+func (h *lockProbeHandler) WithGroup(string) slog.Handler            { return h }
+func (h *lockProbeHandler) Handle(context.Context, slog.Record) error {
+	h.records.Add(1)
+	if h.c.sessionLock.TryLock() {
+		h.c.sessionLock.Unlock()
+	} else {
+		h.held.Add(1)
+	}
+	return nil
+}
+
+// resubscribeAll must not run the user's slog.Handler while holding sessionLock.
+func TestResubscribeAll_LogsOutsideSessionLock(t *testing.T) {
+	opts := defaultOptions("tcp://x")
+	opts.ProtocolVersion = ProtocolV50
+	c := &Client{trie: newTopicTrie(), pending: map[uint16]*pendingOp{}, subscriptions: map[string]subscriptionEntry{},
+		opts: opts, outgoing: make(chan packets.Packet, 10), stop: make(chan struct{})}
+	probe := &lockProbeHandler{c: c}
+	c.opts.Logger = slog.New(probe)
+
+	caps := extractServerCapabilities(nil)
+	caps.WildcardAvailable = false
+	c.connState.Store(&connectionState{caps: caps})
+
+	h := func(*Client, Message) {}
+	c.addSubscriptionLocked("plain", subscriptionEntry{handler: h})
+	c.addSubscriptionLocked("wild/#", subscriptionEntry{handler: h}) // skipped: logs a warning
+
+	c.resubscribeAll(make(chan struct{}))
+
+	if probe.records.Load() == 0 {
+		t.Error("no log records, the probe saw nothing")
+	}
+	if got := probe.held.Load(); got != 0 {
+		t.Errorf("%d log records were emitted while holding sessionLock", got)
+	}
+}
+
+// A cancelled Subscribe must not undo what another caller did to the same
+// filter while its send was blocked.
+func TestSubscribeCancelledLeavesLaterChangesAlone(t *testing.T) {
+	later := SubscribeOptions{QoS: ExactlyOnce}
+	tests := map[string]struct {
+		change func(c *Client)
+		want   *SubscribeOptions // nil: the filter must stay removed
+	}{
+		"unsubscribed": {
+			change: func(c *Client) { c.removeSubscriptionLocked("a") },
+		},
+		"resubscribed": {
+			change: func(c *Client) {
+				c.addSubscriptionLocked("a", subscriptionEntry{handler: func(*Client, Message) {}, options: later, owner: &pendingOp{}})
+			},
+			want: &later,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			c := newTestClient(defaultOptions("tcp://x"))
+			c.outgoing = make(chan packets.Packet) // unbuffered: the send blocks
+			c.sessionLock.Lock()
+			c.addSubscriptionLocked("a", subscriptionEntry{handler: func(*Client, Message) {}, options: SubscribeOptions{QoS: AtLeastOnce}})
+			c.sessionLock.Unlock()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan struct{})
+			go func() {
+				c.internalSubscribe(&subscribeRequest{
+					ctx:     ctx,
+					packet:  &packets.SubscribePacket{Topics: []string{"a"}, QoS: []uint8{0}},
+					handler: func(*Client, Message) {},
+					token:   newToken(),
+				})
+				close(done)
+			}()
+
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				c.sessionLock.Lock()
+				n := len(c.pending)
+				if n == 1 {
+					tc.change(c)
+				}
+				c.sessionLock.Unlock()
+				if n == 1 {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("request never reached the send")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			cancel()
+			<-done
+
+			c.sessionLock.Lock()
+			defer c.sessionLock.Unlock()
+			entry, ok := c.subscriptions["a"]
+			switch {
+			case tc.want == nil && ok:
+				t.Error("cancelled Subscribe brought back an unsubscribed filter")
+			case tc.want != nil && !ok:
+				t.Error("cancelled Subscribe removed a later subscription")
+			case tc.want != nil && entry.options.QoS != tc.want.QoS:
+				t.Errorf("QoS = %d, want the later subscription's %d", entry.options.QoS, tc.want.QoS)
 			}
 		})
 	}
