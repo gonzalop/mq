@@ -55,7 +55,10 @@ max_inflight_messages 2
 	// Test B: Receive Maximum (Flow Control)
 	t.Run("ReceiveMaximum", func(t *testing.T) {
 		t.Parallel()
-		client, err := mq.Dial(server,
+		// The proxy lets the test see what is on the wire while it keeps the
+		// broker from acknowledging anything.
+		proxy := newTapProxy(t, server, mq.ProtocolV50)
+		client, err := mq.Dial(proxy.server(),
 			mq.WithClientID("test-limits-flow-"+t.Name()),
 			mq.WithProtocolVersion(mq.ProtocolV50),
 		)
@@ -79,6 +82,7 @@ max_inflight_messages 2
 		// Publish messages rapidly in parallel
 		// The client should throttle sending to respect ReceiveMaximum=2
 		start := time.Now()
+		proxy.withhold()
 
 		for i := 0; i < numMsgs; i++ {
 			go func(_ int) {
@@ -86,6 +90,22 @@ max_inflight_messages 2
 				err := token.Wait(context.Background())
 				done <- err
 			}(i)
+		}
+
+		// With no PUBACK coming back, exactly 2 publishes may be on the wire.
+		deadline := time.Now().Add(5 * time.Second)
+		for proxy.qosPublishes.Load() < 2 {
+			if time.Now().After(deadline) {
+				proxy.release()
+				t.Fatalf("only %d publishes reached the wire, want 2", proxy.qosPublishes.Load())
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		time.Sleep(300 * time.Millisecond) // time for a client that ignores the limit to send more
+		inFlight := proxy.qosPublishes.Load()
+		proxy.release()
+		if inFlight != 2 {
+			t.Errorf("%d unacknowledged publishes on the wire, want 2 (ReceiveMaximum)", inFlight)
 		}
 
 		// Wait for all to complete
@@ -103,8 +123,5 @@ max_inflight_messages 2
 		elapsed := time.Since(start)
 		t.Logf("Published %d messages in %v", numMsgs, elapsed)
 
-		// Note: Verifying that flow control *actually* happened (waiting) is hard
-		// without internal hooks, but if we didn't crash or get disconnected by server,
-		// it means we adhered to the quota (server would disconnect on protocol violation).
 	})
 }

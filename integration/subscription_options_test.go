@@ -129,7 +129,9 @@ func TestSubscriptionOptions_RetainHandling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pub.Publish(context.Background(), topic, []byte("pre-existing"), mq.WithRetain(true), mq.WithQoS(1)).Wait(context.Background())
+	if err := pub.Publish(context.Background(), topic, []byte("pre-existing"), mq.WithRetain(true), mq.WithQoS(1)).Wait(context.Background()); err != nil {
+		t.Fatalf("Publish retained: %v", err)
+	}
 	pub.Disconnect(context.Background())
 
 	// 2. Client subscribes with RetainHandling = 2 (Do not send)
@@ -143,9 +145,11 @@ func TestSubscriptionOptions_RetainHandling(t *testing.T) {
 	defer sub.Disconnect(context.Background())
 
 	received := make(chan string, 1)
-	sub.Subscribe(context.Background(), topic, 1, func(_ *mq.Client, msg mq.Message) {
+	if err := sub.Subscribe(context.Background(), topic, 1, func(_ *mq.Client, msg mq.Message) {
 		received <- string(msg.Payload)
-	}, mq.WithRetainHandling(2)).Wait(context.Background())
+	}, mq.WithRetainHandling(2)).Wait(context.Background()); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
 
 	// 3. Should NOT receive the retained message
 	select {

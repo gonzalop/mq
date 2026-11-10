@@ -86,9 +86,11 @@ func TestKeepAliveWithContinuousQoS0Publishing(t *testing.T) {
 	}
 }
 
-// TestKeepAliveTimeoutWithNoActivity verifies that the client disconnects
-// when there's no activity (no sending or receiving) for 1.5x keepalive.
-func TestKeepAliveTimeoutWithNoActivity(t *testing.T) {
+// TestKeepAliveIdleConnectionStaysUp verifies that an idle client stays
+// connected past 1.5x keepalive, because the server answers its PINGREQs.
+// The timeout itself (no PINGRESP) is covered by the unit tests in
+// keepalive_test.go.
+func TestKeepAliveIdleConnectionStaysUp(t *testing.T) {
 	t.Parallel()
 	server, cleanup := startMosquitto(t, "")
 	defer cleanup()

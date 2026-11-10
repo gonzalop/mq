@@ -23,11 +23,18 @@ func TestComplianceIntegration_AssignedClientID_Resumption(t *testing.T) {
 	port := parts[len(parts)-1]
 
 	// 1. Connect with empty ClientID and persistent session (CleanSession=false)
+	lost := make(chan struct{}, 1)
 	client, err := mq.Dial(server,
 		mq.WithClientID(""),
 		mq.WithCleanSession(false),
 		mq.WithProtocolVersion(mq.ProtocolV50),
 		mq.WithAutoReconnect(true),
+		mq.WithOnConnectionLost(func(*mq.Client, error) {
+			select {
+			case lost <- struct{}{}:
+			default:
+			}
+		}),
 		mq.WithReconnectBackoff(50*time.Millisecond, 1*time.Second, false),
 		mq.WithSessionExpiryInterval(3600))
 	if err != nil {
@@ -44,10 +51,11 @@ func TestComplianceIntegration_AssignedClientID_Resumption(t *testing.T) {
 	// 2. Kill the server to force a disconnection
 	cleanup()
 
-	// Wait a bit for client to detect disconnect
-	time.Sleep(2 * time.Second)
-	if client.IsConnected() {
-		t.Log("Client still thinks it is connected, but server is gone.")
+	// The client must notice the loss, or the reconnect below proves nothing.
+	select {
+	case <-lost:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Client never noticed that the server is gone")
 	}
 
 	// 3. Restart the server on SAME PORT
@@ -139,15 +147,40 @@ func TestComplianceIntegration_NoLocal_Persistence(t *testing.T) {
 		t.Fatal("Client failed to reconnect")
 	}
 
-	// Give it a moment to finish resubscribing
-	time.Sleep(2 * time.Second)
+	// Wait until the resubscription is live: a message from another client
+	// must arrive, or the check below would pass with no subscription at all.
+	other, err := mq.Dial(server, mq.WithClientID("nolocal-reconnect-other"))
+	if err != nil {
+		t.Fatalf("Failed to connect second client: %v", err)
+	}
+	defer other.Disconnect(context.Background())
+
+	resubscribed := false
+	for deadline := time.Now().Add(15 * time.Second); !resubscribed && time.Now().Before(deadline); {
+		other.Publish(context.Background(), topic, []byte("control"), mq.WithQoS(1)).Wait(context.Background())
+		select {
+		case <-received:
+			resubscribed = true
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	if !resubscribed {
+		t.Fatal("Subscription was not restored after reconnect")
+	}
 
 	// 4. Verify NoLocal STILL works
 	client.Publish(context.Background(), topic, []byte("msg2"), mq.WithQoS(1)).Wait(context.Background())
-	select {
-	case msg := <-received:
-		t.Fatalf("Received own message '%s' AFTER reconnect. NoLocal option was lost!", msg)
-	case <-time.After(1 * time.Second):
-		t.Log("✅ NoLocal option persisted through reconnection!")
+	timeout := time.After(1 * time.Second)
+	for {
+		select {
+		case msg := <-received:
+			if msg == "control" { // a late copy from the loop above
+				continue
+			}
+			t.Fatalf("Received own message '%s' AFTER reconnect. NoLocal option was lost!", msg)
+		case <-timeout:
+			t.Log("✅ NoLocal option persisted through reconnection!")
+			return
+		}
 	}
 }

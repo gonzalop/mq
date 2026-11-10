@@ -27,6 +27,11 @@ type tapProxy struct {
 
 	gate sync.Mutex // held while paused; the client->broker copy waits on it
 
+	// forward is held while withholding: client packets are still read and
+	// recorded, but not passed on to the broker.
+	forward      sync.Mutex
+	qosPublishes atomic.Int32 // QoS 1/2 PUBLISH packets read from clients
+
 	mu         sync.Mutex
 	conns      []net.Conn
 	subscribes [][]string // SUBSCRIBE topics sent on each connection, in accept order
@@ -89,10 +94,12 @@ func (p *tapProxy) handle(client net.Conn) {
 		p.gate.Unlock() //nolint:staticcheck // waiting for a paused proxy to resume
 		n, err := client.Read(buf)
 		if n > 0 {
+			_, _ = pw.Write(buf[:n])
+			p.forward.Lock()
+			p.forward.Unlock() //nolint:staticcheck // waiting for withheld traffic to be released
 			if _, werr := broker.Write(buf[:n]); werr != nil {
 				break
 			}
-			_, _ = pw.Write(buf[:n])
 		}
 		if err != nil {
 			break
@@ -110,10 +117,15 @@ func (p *tapProxy) sniff(idx int, r io.Reader) {
 			_, _ = io.Copy(io.Discard, r)
 			return
 		}
-		if s, ok := pkt.(*packets.SubscribePacket); ok {
+		switch pkt := pkt.(type) {
+		case *packets.SubscribePacket:
 			p.mu.Lock()
-			p.subscribes[idx] = append(p.subscribes[idx], s.Topics...)
+			p.subscribes[idx] = append(p.subscribes[idx], pkt.Topics...)
 			p.mu.Unlock()
+		case *packets.PublishPacket:
+			if pkt.QoS > 0 {
+				p.qosPublishes.Add(1)
+			}
 		}
 	}
 }
@@ -138,6 +150,11 @@ func (p *tapProxy) dropAll() {
 
 func (p *tapProxy) pause()  { p.gate.Lock() }
 func (p *tapProxy) resume() { p.gate.Unlock() }
+
+// withhold keeps reading and recording client packets but stops passing them
+// to the broker, so nothing the client sends is acknowledged until release.
+func (p *tapProxy) withhold() { p.forward.Lock() }
+func (p *tapProxy) release()  { p.forward.Unlock() }
 
 // waitFor polls cond until it is true or the timeout expires.
 func waitFor(timeout time.Duration, cond func() bool) bool {
