@@ -370,7 +370,11 @@ func TestHandlePublish_ConcurrencyLimit(t *testing.T) {
 	}
 
 	// Wait for all to finish (total 5)
+	deadline := time.Now().Add(5 * time.Second)
 	for totalProcessed.Load() < 5 {
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d of 5 messages were processed", totalProcessed.Load())
+		}
 		time.Sleep(10 * time.Millisecond)
 	}
 

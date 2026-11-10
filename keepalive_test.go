@@ -79,7 +79,7 @@ func TestKeepAliveTimeoutPrevented(t *testing.T) {
 	defer clientConn.Close()
 
 	// Create client with short keepalive
-	keepalive := 60 * time.Millisecond
+	keepalive := 200 * time.Millisecond
 	client := &Client{trie: newTopicTrie(),
 		opts: &clientOptions{
 			KeepAlive:       keepalive,
@@ -114,12 +114,12 @@ func TestKeepAliveTimeoutPrevented(t *testing.T) {
 		disconnected.Store(true)
 	}()
 
-	// Simulate receiving packets periodically (every 30ms)
-	// This should prevent timeout (1.5x keepalive = 90ms)
-	ticker := time.NewTicker(30 * time.Millisecond)
+	// Simulate receiving packets periodically (every 50ms)
+	// This should prevent timeout (1.5x keepalive = 300ms)
+	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 
-	for range 5 {
+	for range 10 {
 		<-ticker.C
 		// Signal packet received
 		select {
@@ -128,7 +128,7 @@ func TestKeepAliveTimeoutPrevented(t *testing.T) {
 		}
 	}
 
-	// After 150ms of periodic packets, client should still be connected
+	// After 500ms of periodic packets, client should still be connected
 	if disconnected.Load() {
 		t.Error("Client should not disconnect when receiving packets regularly")
 	}
@@ -518,4 +518,67 @@ func TestWriteLoop_WriteTimeoutDisconnects(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("runWriteLoop hung and did not respect WriteTimeout")
 	}
+}
+
+// TestKeepAlivePINGRESPAllowsNextPINGREQ verifies that a PINGRESP clears the
+// pending flag: without that, only one PINGREQ is ever sent per connection.
+func TestKeepAlivePINGRESPAllowsNextPINGREQ(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	client := &Client{trie: newTopicTrie(),
+		opts: &clientOptions{
+			KeepAlive:       60 * time.Millisecond,
+			Server:          "tcp://test:1883",
+			Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+			ProtocolVersion: ProtocolV311,
+		},
+		conn:           clientConn,
+		outgoing:       make(chan packets.Packet, 10),
+		packetReceived: make(chan struct{}, 1),
+		pingPendingCh:  make(chan struct{}, 1),
+		stop:           make(chan struct{}),
+	}
+	client.connected.Store(true)
+
+	// Server side: answer every PINGREQ the way readLoop does on PINGRESP.
+	pingreqs := make(chan struct{}, 10)
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, err := serverConn.Read(buf)
+			if err != nil {
+				return
+			}
+			for i := 0; i < n-1; i++ {
+				if buf[i] == 0xc0 && buf[i+1] == 0x00 {
+					select {
+					case client.pingPendingCh <- struct{}{}:
+					default:
+					}
+					select {
+					case client.packetReceived <- struct{}{}:
+					default:
+					}
+					pingreqs <- struct{}{}
+				}
+			}
+		}
+	}()
+
+	client.wg.Add(1)
+	go client.runWriteLoop(client.conn, make(chan struct{}), client.opts.KeepAlive)
+
+	for i := 1; i <= 2; i++ {
+		select {
+		case <-pingreqs:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("PINGREQ %d was never sent", i)
+		}
+	}
+
+	close(client.stop)
+	_ = clientConn.Close()
+	client.wg.Wait()
 }

@@ -234,6 +234,26 @@ func TestAsyncStore_CloseDrainsQueue(t *testing.T) {
 	}
 }
 
+// TestAsyncStore_EnqueueAfterCloseDropped pins the documented behavior:
+// operations enqueued after Close never reach the wrapped store.
+func TestAsyncStore_EnqueueAfterCloseDropped(t *testing.T) {
+	store := &slowCountingStore{}
+	asyncStore := NewAsyncStore(store, 1)
+	if err := asyncStore.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	if err := asyncStore.SavePendingPublish(1, &PersistedPublish{Topic: "test"}); err != nil {
+		t.Errorf("SavePendingPublish after Close: %v", err)
+	}
+	if _, err := asyncStore.LoadPendingPublishes(); err != nil { // must not block on the stopped worker
+		t.Errorf("LoadPendingPublishes after Close: %v", err)
+	}
+	if n := store.saved.Load(); n != 0 {
+		t.Errorf("%d writes reached the store after Close, want 0", n)
+	}
+}
+
 type failingSaveStore struct {
 	dummySessionStore
 }

@@ -363,7 +363,13 @@ func TestTopicAliasDefinedBeforeUse(t *testing.T) {
 	aliases := newTopicAliases(10)
 
 	// The QoS 0 publish is written first: it must define the alias.
-	first := aliases.prepare(<-c.outgoing).(*packets.PublishPacket)
+	var sent packets.Packet
+	select {
+	case sent = <-c.outgoing:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the QoS 0 publish was never queued for writing")
+	}
+	first := aliases.prepare(sent).(*packets.PublishPacket)
 	if first.Topic != "a/b" || first.Properties.TopicAlias != 1 {
 		t.Errorf("first packet on the wire: topic=%q alias=%d, want topic \"a/b\" with alias 1",
 			first.Topic, first.Properties.TopicAlias)

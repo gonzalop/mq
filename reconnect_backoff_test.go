@@ -164,7 +164,7 @@ func TestReconnectBackoff_StableConnectionResetsBackoff(t *testing.T) {
 					return
 				case 2:
 					// Second attempt stays alive for > stableThreshold, then closes
-					time.Sleep(60 * time.Millisecond)
+					time.Sleep(150 * time.Millisecond)
 					return
 				case 3:
 					// Third connection arrived after reset; signal done
@@ -179,9 +179,9 @@ func TestReconnectBackoff_StableConnectionResetsBackoff(t *testing.T) {
 		}
 	}()
 
-	baseBackoff := 15 * time.Millisecond
-	maxBackoff := 250 * time.Millisecond
-	stableThreshold := 30 * time.Millisecond
+	baseBackoff := 40 * time.Millisecond
+	maxBackoff := time.Second
+	stableThreshold := 80 * time.Millisecond
 
 	client, err := Dial("tcp://"+ln.Addr().String(),
 		WithClientID("test-stable-reset"),
@@ -210,11 +210,11 @@ func TestReconnectBackoff_StableConnectionResetsBackoff(t *testing.T) {
 		t.Fatalf("expected at least 3 connections, got %d", len(times))
 	}
 
-	// Connection 2 stays up 60ms (> stableThreshold), so the backoff before
-	// connection 3 resets to baseBackoff (15ms). Without the reset it would be
-	// at least 4*baseBackoff (60ms), so 50ms of slack can't hide a regression.
-	extra := times[2].Sub(times[1]) - 60*time.Millisecond
-	if extra >= 50*time.Millisecond {
+	// Connection 2 stays up 150ms (> stableThreshold), so the backoff before
+	// connection 3 resets to baseBackoff (40ms). Without the reset it would be
+	// at least 4*baseBackoff (160ms); the 100ms cut-off sits 60ms from both.
+	extra := times[2].Sub(times[1]) - 150*time.Millisecond
+	if extra >= 100*time.Millisecond {
 		t.Errorf("reconnect after stable connection took %v beyond its uptime, want ~%v (backoff not reset)", extra, baseBackoff)
 	}
 	t.Logf("reconnect count: %d, gap after stable conn: %v", client.GetStats().ReconnectCount, extra)

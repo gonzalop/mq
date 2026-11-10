@@ -1089,3 +1089,47 @@ func TestSubscribeCancelledLeavesLaterChangesAlone(t *testing.T) {
 		})
 	}
 }
+
+// failingLoadStore fails the Load method named by fail.
+type failingLoadStore struct {
+	*MockSubscriptionSessionStore
+	fail string
+}
+
+var errLoadFailed = errors.New("load failed")
+
+func (s *failingLoadStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
+	if s.fail == "pending" {
+		return nil, errLoadFailed
+	}
+	return s.MockSubscriptionSessionStore.LoadPendingPublishes()
+}
+
+func (s *failingLoadStore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {
+	if s.fail == "subscriptions" {
+		return nil, errLoadFailed
+	}
+	return s.MockSubscriptionSessionStore.LoadSubscriptions()
+}
+
+func (s *failingLoadStore) LoadReceivedQoS2() (map[uint16]struct{}, error) {
+	if s.fail == "qos2" {
+		return nil, errLoadFailed
+	}
+	return s.MockSubscriptionSessionStore.LoadReceivedQoS2()
+}
+
+// loadSessionState must report a Load error from the session store.
+func TestLoadSessionState_LoadErrors(t *testing.T) {
+	for _, fail := range []string{"pending", "subscriptions", "qos2"} {
+		t.Run(fail, func(t *testing.T) {
+			store := &failingLoadStore{MockSubscriptionSessionStore: newMockSubscriptionStore(), fail: fail}
+
+			c := newTestClient(defaultOptions("tcp://x"))
+			c.opts.SessionStore = store
+			if err := c.loadSessionState(); !errors.Is(err, errLoadFailed) {
+				t.Errorf("loadSessionState error = %v, want the store's error", err)
+			}
+		})
+	}
+}

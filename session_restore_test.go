@@ -3,6 +3,7 @@ package mq
 import (
 	"context"
 	"maps"
+	"net"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -101,11 +102,19 @@ func (c *clearTrackingSessionStore) Clear() error {
 func TestClearSessionStoreOnCleanSession(t *testing.T) {
 	mockStore := &clearTrackingSessionStore{}
 
+	// A port nothing listens on, so the test never reaches a real broker.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+
 	// Attempt connection (will fail since there is no broker running, but Clear should run first)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	_, _ = DialContext(ctx, "tcp://localhost:1883",
+	_, _ = DialContext(ctx, "tcp://"+addr,
 		WithSessionStore(mockStore),
 		WithCleanSession(true),
 	)
@@ -244,6 +253,7 @@ func (s *checkingStore) check() func() {
 	locked := make(chan struct{})
 	go func() {
 		s.c.sessionLock.Lock()
+		//lint:ignore SA2001 probe: only checks that the lock can be taken
 		s.c.sessionLock.Unlock()
 		close(locked)
 	}()
