@@ -88,6 +88,18 @@ func (p *tapProxy) handle(client net.Conn) {
 	pr, pw := io.Pipe()
 	go p.sniff(idx, pr)
 
+	fwd := make(chan []byte, 256)
+	go func() {
+		defer broker.Close() // the broker must see the drop, not a half-open connection
+		for chunk := range fwd {
+			p.forward.Lock()
+			p.forward.Unlock() //nolint:staticcheck // waiting for withheld traffic to be released
+			if _, werr := broker.Write(chunk); werr != nil {
+				client.Close()
+			}
+		}
+	}()
+
 	buf := make([]byte, 16<<10)
 	for {
 		p.gate.Lock()
@@ -95,18 +107,14 @@ func (p *tapProxy) handle(client net.Conn) {
 		n, err := client.Read(buf)
 		if n > 0 {
 			_, _ = pw.Write(buf[:n])
-			p.forward.Lock()
-			p.forward.Unlock() //nolint:staticcheck // waiting for withheld traffic to be released
-			if _, werr := broker.Write(buf[:n]); werr != nil {
-				break
-			}
+			fwd <- slices.Clone(buf[:n])
 		}
 		if err != nil {
 			break
 		}
 	}
 	pw.Close()
-	broker.Close() // the broker must see the drop, not a half-open connection
+	close(fwd)
 	client.Close()
 }
 
