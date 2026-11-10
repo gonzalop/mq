@@ -1119,7 +1119,7 @@ func (s *failingLoadStore) LoadReceivedQoS2() (map[uint16]struct{}, error) {
 	return s.MockSubscriptionSessionStore.LoadReceivedQoS2()
 }
 
-// loadSessionState must report a Load error from the session store.
+// A Load error from the session store must fail the connection attempt.
 func TestLoadSessionState_LoadErrors(t *testing.T) {
 	for _, fail := range []string{"pending", "subscriptions", "qos2"} {
 		t.Run(fail, func(t *testing.T) {
@@ -1129,6 +1129,12 @@ func TestLoadSessionState_LoadErrors(t *testing.T) {
 			c.opts.SessionStore = store
 			if err := c.loadSessionState(); !errors.Is(err, errLoadFailed) {
 				t.Errorf("loadSessionState error = %v, want the store's error", err)
+			}
+
+			// Dial fails on the load, before it touches the network.
+			_, err := Dial("tcp://127.0.0.1:1", WithClientID("load-errors"), WithSessionStore(store), WithCleanSession(false))
+			if !errors.Is(err, errLoadFailed) {
+				t.Errorf("Dial error = %v, want the store's error", err)
 			}
 		})
 	}

@@ -250,8 +250,10 @@ func DialContext(ctx context.Context, server string, opts ...Option) (*Client, e
 	}
 
 	if !c.opts.CleanSession {
+		// Connecting with a session that was only partly restored would
+		// silently drop pending publishes or subscriptions.
 		if err := c.loadSessionState(); err != nil {
-			c.opts.Logger.Warn("failed to load session state", "error", err)
+			return nil, fmt.Errorf("failed to load session state: %w", err)
 		}
 	} else if c.opts.SessionStore != nil {
 		if err := c.opts.SessionStore.Clear(); err != nil {
