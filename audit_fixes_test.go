@@ -21,8 +21,10 @@ func TestDispatch_MultipleHandlersOwnContext(t *testing.T) {
 	ctxs := make(chan context.Context, 2)
 	errs := make(chan error, 1)
 
+	firstCtx := make(chan context.Context, 1)
 	first := func(_ *Client, m Message) {
 		ctxs <- m.Context
+		firstCtx <- m.Context
 		started.Done()
 		// Return right away: this cancels only this handler's context.
 	}
@@ -40,7 +42,11 @@ func TestDispatch_MultipleHandlersOwnContext(t *testing.T) {
 	c.dispatchAndAcknowledge(p, Message{Topic: p.Topic}, []MessageHandler{first, second})
 
 	started.Wait()
-	time.Sleep(20 * time.Millisecond) // let first return and cancel its ctx
+	select {
+	case <-(<-firstCtx).Done(): // first returned and its ctx was cancelled
+	case <-time.After(5 * time.Second):
+		t.Fatal("first handler's context was never cancelled")
+	}
 	close(release)
 
 	if err := <-errs; err != nil {
@@ -209,5 +215,30 @@ func TestToPublishProperties_DropsReasonString(t *testing.T) {
 	}
 	if toPublishProperties(nil) != nil {
 		t.Error("nil in should give nil out")
+	}
+}
+
+// With HandlerTimeout set, a handler that outlives it sees Message.Context
+// cancelled with DeadlineExceeded.
+func TestDispatch_HandlerTimeoutCancelsContext(t *testing.T) {
+	opts := defaultOptions("tcp://x")
+	opts.HandlerTimeout = 20 * time.Millisecond
+	c := newTestClient(opts)
+
+	errs := make(chan error, 1)
+	h := func(_ *Client, m Message) {
+		select {
+		case <-m.Context.Done():
+			errs <- m.Context.Err()
+		case <-time.After(5 * time.Second):
+			errs <- nil
+		}
+	}
+
+	p := &packets.PublishPacket{Topic: "sensors/temp"}
+	c.dispatchAndAcknowledge(p, Message{Topic: p.Topic}, []MessageHandler{h})
+
+	if err := <-errs; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("handler context error = %v, want DeadlineExceeded", err)
 	}
 }

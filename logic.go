@@ -368,9 +368,12 @@ func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, h
 			}
 
 			// Create a context for the handler
-			ctx, cancel := context.WithCancel(context.Background())
+			var ctx context.Context
+			var cancel context.CancelFunc
 			if c.opts.HandlerTimeout > 0 {
 				ctx, cancel = context.WithTimeout(context.Background(), c.opts.HandlerTimeout)
+			} else {
+				ctx, cancel = context.WithCancel(context.Background())
 			}
 			defer cancel()
 

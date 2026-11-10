@@ -58,7 +58,12 @@ func main() {
 			fmt.Printf("📨 Received response for request %s\n", correlationID)
 
 			if ch, ok := responses.Load(correlationID); ok {
-				ch.(chan string) <- string(msg.Payload)
+				// Never block the handler: a redelivered (duplicate)
+				// response finds the buffer full or nobody waiting.
+				select {
+				case ch.(chan string) <- string(msg.Payload):
+				default:
+				}
 			}
 		}
 	})
