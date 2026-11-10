@@ -272,31 +272,40 @@ func (c *Client) enforceReceiveMaximum(p *packets.PublishPacket) error {
 		return nil
 	}
 
-	c.sessionLock.Lock()
-	defer c.sessionLock.Unlock()
+	// Logging runs user slog.Handler code, so it happens after sessionLock
+	// is released.
+	limit := c.opts.ReceiveMaximum
+	if limit == 0 {
+		limit = 65535
+	}
+	exceeded, warn := false, false
 
+	c.sessionLock.Lock()
 	if _, exists := c.inboundUnacked[p.PacketID]; !exists {
 		// New message. Check if we have capacity.
-		limit := c.opts.ReceiveMaximum
-		if limit == 0 {
-			limit = 65535
-		}
 		if len(c.inboundUnacked) >= int(limit) {
 			if c.opts.ReceiveMaximumPolicy == LimitPolicyStrict {
-				c.opts.Logger.Error("receive maximum exceeded", "limit", limit)
-				// Returning error to trigger disconnect in caller
-				return fmt.Errorf("receive maximum exceeded: %d", limit)
-			}
-
-			// Ignore policy: log warning once
-			if !c.receiveMaxExceededLogged {
-				c.opts.Logger.Warn("receive maximum exceeded, ignoring (server is misbehaving)", "limit", limit)
+				exceeded = true
+			} else if !c.receiveMaxExceededLogged {
+				// Ignore policy: log warning once
+				warn = true
 				c.receiveMaxExceededLogged = true
 			}
 		}
-		c.inboundUnacked[p.PacketID] = struct{}{}
+		if !exceeded {
+			c.inboundUnacked[p.PacketID] = struct{}{}
+		}
 	}
+	c.sessionLock.Unlock()
 
+	if exceeded {
+		c.opts.Logger.Error("receive maximum exceeded", "limit", limit)
+		// Returning error to trigger disconnect in caller
+		return fmt.Errorf("receive maximum exceeded: %d", limit)
+	}
+	if warn {
+		c.opts.Logger.Warn("receive maximum exceeded, ignoring (server is misbehaving)", "limit", limit)
+	}
 	return nil
 }
 
@@ -547,9 +556,8 @@ func (c *Client) handleSuback(p *packets.SubackPacket) []packets.Packet {
 	}
 
 	subPkt, isSub := op.packet.(*packets.SubscribePacket)
-	if isSub && len(p.ReturnCodes) != len(subPkt.Topics) {
-		c.opts.Logger.Warn("SUBACK return codes count mismatch",
-			"expected", len(subPkt.Topics), "got", len(p.ReturnCodes))
+	countMismatch := isSub && len(p.ReturnCodes) != len(subPkt.Topics)
+	if countMismatch {
 		if err == nil {
 			err = fmt.Errorf("%w: return codes count mismatch (expected %d, got %d)",
 				ErrSubscriptionFailed, len(subPkt.Topics), len(p.ReturnCodes))
@@ -595,6 +603,10 @@ func (c *Client) handleSuback(p *packets.SubackPacket) []packets.Packet {
 	c.removePending(p.PacketID)
 	toSend := c.processPublishQueueLocked()
 	c.sessionLock.Unlock()
+	if countMismatch { // logged outside sessionLock: it runs the user's slog.Handler
+		c.opts.Logger.Warn("SUBACK return codes count mismatch",
+			"expected", len(subPkt.Topics), "got", len(p.ReturnCodes))
+	}
 	c.flushStore()
 
 	// Completed after the store writes, so a caller that waits on the token

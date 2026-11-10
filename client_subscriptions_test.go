@@ -1139,3 +1139,51 @@ func TestLoadSessionState_LoadErrors(t *testing.T) {
 		})
 	}
 }
+
+// Packet handlers must not run the user's slog.Handler while holding sessionLock.
+func TestPacketHandlers_LogOutsideSessionLock(t *testing.T) {
+	tests := map[string]func(c *Client){
+		"SUBACK count mismatch": func(c *Client) {
+			c.pending[1] = &pendingOp{token: newToken(), packet: &packets.SubscribePacket{Topics: []string{"a", "b"}}}
+			c.handleSuback(&packets.SubackPacket{PacketID: 1, ReturnCodes: []uint8{0}})
+		},
+		"receive maximum, strict": func(c *Client) {
+			c.opts.ReceiveMaximumPolicy = LimitPolicyStrict
+			c.inboundUnacked[1] = struct{}{}
+			if err := c.enforceReceiveMaximum(&packets.PublishPacket{QoS: 1, PacketID: 2}); err == nil {
+				t.Error("expected an error over the limit with the strict policy")
+			}
+			if _, ok := c.inboundUnacked[2]; ok {
+				t.Error("rejected packet was recorded as unacked")
+			}
+		},
+		"receive maximum, ignore": func(c *Client) {
+			c.inboundUnacked[1] = struct{}{}
+			if err := c.enforceReceiveMaximum(&packets.PublishPacket{QoS: 1, PacketID: 2}); err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if _, ok := c.inboundUnacked[2]; !ok {
+				t.Error("accepted packet was not recorded as unacked")
+			}
+		},
+	}
+	for name, run := range tests {
+		t.Run(name, func(t *testing.T) {
+			opts := defaultOptions("tcp://x")
+			opts.ProtocolVersion = ProtocolV50
+			opts.ReceiveMaximum = 1
+			c := newTestClient(opts)
+			probe := &lockProbeHandler{c: c}
+			c.opts.Logger = slog.New(probe)
+
+			run(c)
+
+			if probe.records.Load() == 0 {
+				t.Error("no log records, the probe saw nothing")
+			}
+			if got := probe.held.Load(); got != 0 {
+				t.Errorf("%d log records were emitted while holding sessionLock", got)
+			}
+		})
+	}
+}
