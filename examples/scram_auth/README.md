@@ -7,7 +7,7 @@ It uses the `mq.Authenticator` interface to handle the SASL-style challenge/resp
 ## Prerequisites
 
 - An MQTT server configured to support SCRAM-SHA-256 (e.g., Mosquitto with `mosquitto-go-auth` or similar plugin, or a compliant cloud server).
-- Go 1.26+
+- Go 1.27+
 
 ## Description
 
