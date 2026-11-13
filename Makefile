@@ -1,114 +1,159 @@
-.PHONY: all build clean coverage fix full fuzz fmt help integration lint test examples
+.PHONY: all full help fmt fix lint vuln build examples test benchmark bench \
+	fuzz integration coverage coverage-html install-tools version clean
 
+GO           ?= go
+PKGS         := ./...
+COVERPKG     := ./...
+FMT_DIRS     := .
+VERSION      ?= $(shell git describe --tags --always --dirty --match=v* 2>/dev/null || cat .version 2>/dev/null || echo dev)
+BENCH        ?= .
+FUZZTIME     ?= 10s
 EXAMPLE_SRCS := $(wildcard examples/*/main.go)
-EXAMPLES := $(foreach dir,$(patsubst %/main.go,%,$(EXAMPLE_SRCS)),$(dir)/$(notdir $(dir)))
+EXAMPLES     := $(foreach dir,$(patsubst %/main.go,%,$(EXAMPLE_SRCS)),$(dir)/$(notdir $(dir)))
 
-all: fmt fix lint build test
-	@echo "✅ Formatted, fixed, linted, built, tested."
-	@echo "ℹ️  Run 'make help' to see other available targets."
+# Verbosity:
+#   V=0 (default): one status line per operation; command output shown only on error.
+#   V=1:           status lines + standard tool output (e.g. package test summaries).
+#   V=2:           echoed commands + verbose flags (-v).
+VERBOSE  ?= 0
+V        ?= $(VERBOSE)
+ifeq ($(V),0)
+Q        := @
+RUN      := @quiet() { out=$$("$$@" 2>&1) || { printf '%s\n' "$$out" >&2; exit 1; }; }; quiet
+TEST_V   :=
+VULN_V   :=
+else ifeq ($(V),1)
+Q        := @
+RUN      := @
+TEST_V   :=
+VULN_V   :=
+else
+Q        :=
+RUN      :=
+TEST_V   := -v
+VULN_V   := -show verbose
+endif
 
-full: clean fmt fix lint build test examples fuzz integration coverage benchmark
+# Tool discovery (PATH -> GOPATH/bin -> ~/go/bin)
+GOBIN       := $(shell $(GO) env GOPATH)/bin
+find_tool    = $(or $(shell command -v $(1) 2>/dev/null),$(wildcard $(GOBIN)/$(1)),$(wildcard $(HOME)/go/bin/$(1)))
+REVIVE      := $(call find_tool,revive)
+STATICCHECK := $(call find_tool,staticcheck)
+GOVULNCHECK := $(call find_tool,govulncheck)
 
-help:
-	@echo "Available targets:"
-	@echo "  make          - Run format, fix, lint, build, and test"
-	@echo "  make full     - Run format, fix, lint, build, test, fuzz, integration, coverage, and benchmark (~3-4m)"
-	@echo "  make fmt      - Format code with gofmt"
-	@echo "  make fix      - Update code with go fix"
-	@echo "  make lint     - Run linter (revive)"
-	@echo "  make build    - Build the project"
-	@echo "  make examples - Build all example binaries"
-	@echo "  make test     - Run unit tests with race detector"
-	@echo "  make benchmark - Run benchmark tests"
-	@echo "  make fuzz     - Run fuzz tests"
-	@echo "  make coverage - Generate coverage report"
-	@echo "  make integration - Run integration tests with Podman or Docker"
-	@echo "  make clean    - Remove build artifacts"
-
-fmt:
-	@echo "🖌️  Formatting: gofmt -w ."
-	@gofmt -w .
-
-fix:
-	@echo "🔧 Fixing: go fix ./..."
-	@go fix ./...
-
-lint:
-	@if command -v revive >/dev/null 2>&1; then \
-		echo "🔍 Linting: revive"; \
-		revive; \
-	else \
-		echo "⚠️  revive not installed, skipping"; \
-		echo "   To install: go install github.com/mgechev/revive@latest"; \
+define require_tool
+	@if [ -z "$(1)" ] || [ ! -x "$(1)" ]; then \
+		echo "Error: $(2) not found (run 'make install-tools')" >&2; \
+		exit 1; \
 	fi
+endef
 
-build:
-	@echo "🏗️  Building: go build ./..."
-	@go build ./...
+all: fix fmt lint build test ## Run fix, fmt, lint, build, and test
 
-examples: $(EXAMPLES)
+full: clean fix fmt lint vuln build test examples fuzz integration coverage benchmark ## Clean and run all checks, examples, fuzz, integration, coverage, and benchmarks
+
+help: ## Show available targets
+	@echo "Usage: make [target] [V=0|1|2]"
+	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
+
+fmt: ## Format source files with gofmt
+	@echo "Formatting..."
+	$(RUN) gofmt -w $(FMT_DIRS)
+
+fix: ## Modernize Go code with go fix
+	@echo "Fixing..."
+	$(RUN) $(GO) fix $(PKGS)
+
+lint: ## Run go vet, revive, and staticcheck
+	$(call require_tool,$(REVIVE),revive)
+	$(call require_tool,$(STATICCHECK),staticcheck)
+	@echo "Linting..."
+	$(RUN) $(GO) vet $(PKGS)
+	$(RUN) "$(REVIVE)" -set_exit_status $(PKGS)
+	$(RUN) "$(STATICCHECK)" $(PKGS)
+
+vuln: ## Check for vulnerabilities with govulncheck
+	$(call require_tool,$(GOVULNCHECK),govulncheck)
+	@echo "Checking vulnerabilities..."
+	$(RUN) "$(GOVULNCHECK)" $(VULN_V) $(PKGS)
+
+build: ## Build all packages
+	@echo "Building..."
+	$(RUN) $(GO) build $(PKGS)
+
+examples: $(EXAMPLES) ## Build all example binaries
 
 define EXAMPLE_RULE
 $(1)/$(notdir $(1)): $(1)/main.go
-	@echo "🔨 Building $$@..."
-	@cd $(1) && go build -tags ignore_test -o $$(notdir $$@)
+	@echo "Building $$@..."
+	$$(RUN) $$(GO) -C $(1) build -tags ignore_test -o $(notdir $(1))
 endef
 
 $(foreach dir,$(patsubst %/main.go,%,$(EXAMPLE_SRCS)),$(eval $(call EXAMPLE_RULE,$(dir))))
 
-test:
-	@echo "🧪 Testing: go test -race ./..."
-	@go test -race ./...
+test: ## Run unit tests with race detector
+	@echo "Running tests..."
+	$(RUN) $(GO) test -race $(TEST_V) $(PKGS)
 
-benchmark:
-	@echo "🔥 Running benchmarks: go test -bench=. -benchmem -v ./..."
-	@go test -bench=. -benchmem -run=^$ -v ./...
+benchmark: ## Run benchmarks
+	@echo "Running benchmarks..."
+	$(Q) $(GO) test -bench=$(BENCH) -benchmem -run='^$$' $(TEST_V) $(PKGS)
 
+bench: benchmark
 
-# Fuzzing time (default 10s)
-FUZZTIME ?= 10s
-
-fuzz:
-	@echo "🌀 Discovering and running all fuzz tests (time: $(FUZZTIME))..."
-	@for dir in . ./internal/packets; do \
+fuzz: ## Discover and run all fuzz tests (FUZZTIME=10s)
+	@echo "Running fuzz tests (FUZZTIME=$(FUZZTIME))..."
+	$(Q) for dir in . ./internal/packets; do \
 		tests=$$(grep -oh "func Fuzz[A-Z][a-zA-Z0-9]*" $$dir/*.go 2>/dev/null | cut -d' ' -f2); \
 		if [ -n "$$tests" ]; then \
 			echo "  --- Package: $$dir ---"; \
 			for t in $$tests; do \
-				echo "    🔥 Fuzzing $$t..."; \
-				go test -fuzz=$$t -fuzztime=$(FUZZTIME) $$dir; \
+				echo "    Fuzzing $$t..."; \
+				$(GO) test -fuzz=$$t -fuzztime=$(FUZZTIME) $$dir || exit 1; \
 			done; \
 		fi; \
 	done
-	@echo "✅ All discovered fuzz tests complete"
 
-coverage:
-	@echo "📊 Generating coverage report..."
-	@ go test -coverprofile=coverage.out -coverpkg=./... ./...
-	@ go tool cover -html=coverage.out -o coverage.html
-	@echo "✅ Coverage report generated at coverage.html"
+coverage: ## Run tests with coverage summary (coverage.out)
+	@echo "Generating coverage..."
+	$(RUN) $(GO) test -coverprofile=coverage.out -covermode=atomic -coverpkg=$(COVERPKG) $(PKGS)
+	@$(GO) tool cover -func=coverage.out | $(if $(filter 0,$(V)),tail -n 1,cat)
 
-integration:
-	@echo "🧪 Running integration tests..."
+coverage-html: coverage ## Generate HTML coverage report (coverage.html)
+	@echo "Generating coverage HTML..."
+	@$(GO) tool cover -html=coverage.out -o coverage.html
+
+integration: ## Run integration tests with Podman or Docker
+	@echo "Running integration tests..."
 	@if command -v podman >/dev/null 2>&1; then \
-		echo "✓ Using Podman"; \
+		echo "Using Podman"; \
 		if ! systemctl --user is-active --quiet podman.socket 2>/dev/null; then \
 			echo "  Starting Podman socket..."; \
 			systemctl --user start podman.socket || true; \
 		fi; \
-		cd integration && go mod tidy && DOCKER_HOST=unix:///run/user/$(shell id -u)/podman/podman.sock TESTCONTAINERS_RYUK_DISABLED=true go test -v -timeout=5m; \
+		cd integration && $(GO) mod tidy && DOCKER_HOST=unix:///run/user/$(shell id -u)/podman/podman.sock TESTCONTAINERS_RYUK_DISABLED=true $(GO) test -v -timeout=5m; \
 	elif command -v docker >/dev/null 2>&1; then \
-		echo "✓ Using Docker"; \
-		cd integration && go mod tidy && TESTCONTAINERS_RYUK_DISABLED=true go test -v -timeout=5m; \
+		echo "Using Docker"; \
+		cd integration && $(GO) mod tidy && TESTCONTAINERS_RYUK_DISABLED=true $(GO) test -v -timeout=5m; \
 	else \
-		echo "❌ Error: Neither Podman nor Docker found"; \
-		echo "   Please install one of them to run integration tests"; \
+		echo "Error: Neither Podman nor Docker found" >&2; \
+		echo "Please install one of them to run integration tests" >&2; \
 		exit 1; \
 	fi
 
-clean:
-	@echo "🧹 Cleaning up..."
-	@rm -fv coverage.html coverage.out coverage.txt cpu.out mem.out mq.test packets.test \
-            ${EXAMPLES} \
-            examples/throughput/paho_v3/paho_v3 \
-            examples/throughput/paho_v5/paho_v5
+install-tools: ## Install revive, staticcheck, and govulncheck
+	@echo "Installing tools..."
+	$(RUN) $(GO) install github.com/mgechev/revive@latest
+	$(RUN) $(GO) install honnef.co/go/tools/cmd/staticcheck@latest
+	$(RUN) $(GO) install golang.org/x/vuln/cmd/govulncheck@latest
+
+version: ## Show current version
+	@echo "$(VERSION)"
+
+clean: ## Remove build and test artifacts
+	@echo "Cleaning..."
+	$Q rm -rf coverage.out coverage.html coverage.txt cpu.out mem.out *.test \
+		$(EXAMPLES) \
+		examples/throughput/paho_v3/paho_v3 \
+		examples/throughput/paho_v5/paho_v5

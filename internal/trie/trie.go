@@ -1,3 +1,4 @@
+// Package trie provides a trie-based structure for MQTT topic filter matching.
 package trie
 
 import (
