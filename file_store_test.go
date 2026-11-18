@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -215,6 +216,12 @@ func TestFileStore_Subscriptions(t *testing.T) {
 				NoLocal:           true,
 				RetainAsPublished: false,
 				RetainHandling:    2,
+				UserProperties:    map[string]string{"dup": "second"},
+				UserPropertyList: []UserProperty{
+					{Key: "dup", Value: "first"},
+					{Key: "extra", Value: "ok"},
+					{Key: "dup", Value: "second"},
+				},
 			},
 		}
 
@@ -241,6 +248,9 @@ func TestFileStore_Subscriptions(t *testing.T) {
 		}
 		if loadedSub.Options.NoLocal != sub.Options.NoLocal {
 			t.Errorf("NoLocal = %v, want %v", loadedSub.Options.NoLocal, sub.Options.NoLocal)
+		}
+		if !slices.Equal(loadedSub.Options.UserPropertyList, sub.Options.UserPropertyList) {
+			t.Errorf("UserPropertyList = %v, want %v", loadedSub.Options.UserPropertyList, sub.Options.UserPropertyList)
 		}
 	})
 

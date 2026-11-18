@@ -2,6 +2,7 @@ package mq
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/gonzalop/mq/internal/packets"
@@ -140,12 +141,7 @@ func (c *Client) convertToPersistedPublish(req *publishRequest) *PersistedPublis
 		}
 
 		if n := len(req.packet.Properties.UserProperties); n > 0 {
-			p.Properties.UserProperties = make(map[string]string, n)
-			p.Properties.UserPropertyList = make([]UserProperty, n)
-			for i, up := range req.packet.Properties.UserProperties {
-				p.Properties.UserProperties[up.Key] = up.Value
-				p.Properties.UserPropertyList[i] = UserProperty{Key: up.Key, Value: up.Value}
-			}
+			p.Properties.UserPropertyList, p.Properties.UserProperties = fromPacketUserProperties(req.packet.Properties.UserProperties)
 		}
 	}
 
@@ -190,16 +186,8 @@ func (c *Client) convertFromPersistedPublish(p *PersistedPublish) *pendingOp {
 			pkt.Properties.Presence |= packets.PresContentType
 		}
 
-		if len(p.Properties.UserPropertyList) > 0 {
-			pkt.Properties.UserProperties = make([]packets.UserProperty, len(p.Properties.UserPropertyList))
-			for i, up := range p.Properties.UserPropertyList {
-				pkt.Properties.UserProperties[i] = packets.UserProperty{Key: up.Key, Value: up.Value}
-			}
-		} else if len(p.Properties.UserProperties) > 0 {
-			pkt.Properties.UserProperties = make([]packets.UserProperty, 0, len(p.Properties.UserProperties))
-			for k, v := range p.Properties.UserProperties {
-				pkt.Properties.UserProperties = append(pkt.Properties.UserProperties, packets.UserProperty{Key: k, Value: v})
-			}
+		if ups := toPacketUserProperties(p.Properties.UserPropertyList, p.Properties.UserProperties); len(ups) > 0 {
+			pkt.Properties.UserProperties = ups
 		}
 	}
 
@@ -215,7 +203,8 @@ func (c *Client) convertToPersistedSubscription(entry subscriptionEntry) *Persis
 		NoLocal:           entry.options.NoLocal,
 		RetainAsPublished: entry.options.RetainAsPublished,
 		RetainHandling:    entry.options.RetainHandling,
-		UserProperties:    entry.options.UserProperties,
+		UserProperties:    maps.Clone(entry.options.UserProperties),
+		UserPropertyList:  slices.Clone(entry.options.UserPropertyList),
 	}
 
 	if entry.options.SubscriptionID > 0 {
@@ -238,7 +227,8 @@ func (c *Client) convertFromPersistedSubscription(sub *PersistedSubscription) su
 		opts.NoLocal = sub.Options.NoLocal
 		opts.RetainAsPublished = sub.Options.RetainAsPublished
 		opts.RetainHandling = sub.Options.RetainHandling
-		opts.UserProperties = sub.Options.UserProperties
+		opts.UserProperties = maps.Clone(sub.Options.UserProperties)
+		opts.UserPropertyList = slices.Clone(sub.Options.UserPropertyList)
 
 		if sub.Options.SubscriptionID != nil {
 			opts.SubscriptionID = int(*sub.Options.SubscriptionID)

@@ -118,14 +118,11 @@ func (c *Client) buildConnectPacket() *packets.ConnectPacket {
 			pkt.Properties.Presence |= packets.PresMaximumPacketSize
 		}
 
-		if len(c.opts.ConnectUserProperties) > 0 {
-			pkt.Properties.UserProperties = make([]packets.UserProperty, 0, len(c.opts.ConnectUserProperties))
-			for k, v := range c.opts.ConnectUserProperties {
-				pkt.Properties.UserProperties = append(pkt.Properties.UserProperties, packets.UserProperty{
-					Key:   k,
-					Value: v,
-				})
-			}
+		if len(c.opts.ConnectUserProperties) > 0 || len(c.opts.ConnectUserPropertyList) > 0 {
+			pkt.Properties.UserProperties = append(
+				toPacketUserProperties(nil, c.opts.ConnectUserProperties),
+				toPacketUserProperties(c.opts.ConnectUserPropertyList, nil)...,
+			)
 		}
 
 		if c.opts.Authenticator != nil {

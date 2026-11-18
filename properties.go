@@ -124,11 +124,15 @@ func (p *Properties) SetUserProperty(key, value string) {
 // AddUserProperty appends a user property key-value pair, preserving insertion
 // order and allowing duplicate keys as permitted by MQTT v5.0.
 func (p *Properties) AddUserProperty(key, value string) {
-	if p.UserProperties == nil {
-		p.UserProperties = make(map[string]string)
+	appendUserProperty(&p.UserPropertyList, &p.UserProperties, key, value)
+}
+
+func appendUserProperty(list *[]UserProperty, m *map[string]string, key, value string) {
+	if *m == nil {
+		*m = make(map[string]string)
 	}
-	p.UserProperties[key] = value
-	p.UserPropertyList = append(p.UserPropertyList, UserProperty{Key: key, Value: value})
+	(*m)[key] = value
+	*list = append(*list, UserProperty{Key: key, Value: value})
 }
 
 // GetUserProperty retrieves a user property value.
@@ -168,20 +172,29 @@ func validatePropertiesFieldLengths(props *Properties) error {
 	if len(props.CorrelationData) > maxFieldLength {
 		return fmt.Errorf("correlation data length %d exceeds maximum %d", len(props.CorrelationData), maxFieldLength)
 	}
-	for _, up := range props.UserPropertyList {
+	return validateUserProperties("", props.UserPropertyList, props.UserProperties)
+}
+
+// validateUserProperties checks that all user property keys and values fit in MQTT 2-byte length-prefixed strings.
+func validateUserProperties(prefix string, list []UserProperty, m map[string]string) error {
+	label := "user property"
+	if prefix != "" {
+		label = prefix + " user property"
+	}
+	for _, up := range list {
 		if len(up.Key) > maxFieldLength {
-			return fmt.Errorf("user property key length %d exceeds maximum %d", len(up.Key), maxFieldLength)
+			return fmt.Errorf("%s key length %d exceeds maximum %d", label, len(up.Key), maxFieldLength)
 		}
 		if len(up.Value) > maxFieldLength {
-			return fmt.Errorf("user property value length %d exceeds maximum %d", len(up.Value), maxFieldLength)
+			return fmt.Errorf("%s value length %d exceeds maximum %d", label, len(up.Value), maxFieldLength)
 		}
 	}
-	for k, v := range props.UserProperties {
+	for k, v := range m {
 		if len(k) > maxFieldLength {
-			return fmt.Errorf("user property key length %d exceeds maximum %d", len(k), maxFieldLength)
+			return fmt.Errorf("%s key length %d exceeds maximum %d", label, len(k), maxFieldLength)
 		}
 		if len(v) > maxFieldLength {
-			return fmt.Errorf("user property value length %d exceeds maximum %d", len(v), maxFieldLength)
+			return fmt.Errorf("%s value length %d exceeds maximum %d", label, len(v), maxFieldLength)
 		}
 	}
 	return nil

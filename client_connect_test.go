@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -437,5 +438,83 @@ func TestKeepAliveZeroPreservedAcrossServerOverride(t *testing.T) {
 	pkt2 := c.buildConnectPacket()
 	if pkt2.KeepAlive != 0 {
 		t.Errorf("reconnect Connect packet KeepAlive = %d, want 0 (user setting was overwritten)", pkt2.KeepAlive)
+	}
+}
+
+func TestConnectAndConnackUserPropertyList(t *testing.T) {
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.ProtocolVersion = ProtocolV50
+	WithConnectUserProperty("cap", "v1")(opts)
+	WithConnectUserProperty("role", "worker")(opts)
+	WithConnectUserProperty("cap", "v2")(opts)
+
+	c := &Client{
+		trie: newTopicTrie(),
+		opts: opts,
+	}
+
+	pkt := c.buildConnectPacket()
+	if pkt.Properties == nil {
+		t.Fatal("Connect packet properties should not be nil")
+	}
+	wantWire := []packets.UserProperty{
+		{Key: "cap", Value: "v1"},
+		{Key: "role", Value: "worker"},
+		{Key: "cap", Value: "v2"},
+	}
+	if !slices.Equal(pkt.Properties.UserProperties, wantWire) {
+		t.Fatalf("CONNECT UserProperties = %v, want %v", pkt.Properties.UserProperties, wantWire)
+	}
+
+	// Verify v3.1.1 ignores WithConnectUserProperty
+	c.opts.ProtocolVersion = ProtocolV311
+	if pktV3 := c.buildConnectPacket(); pktV3.Properties != nil {
+		t.Fatalf("expected nil properties for v3.1.1, got %+v", pktV3.Properties)
+	}
+
+	// Verify CONNACK preserves order, duplicate keys, and returns a defensive copy.
+	c.opts.ProtocolVersion = ProtocolV50
+	c.processConnackProperties(&packets.ConnackPacket{
+		ReturnCode: 0,
+		Properties: &packets.Properties{
+			UserProperties: wantWire,
+		},
+	})
+	wantList := []UserProperty{
+		{Key: "cap", Value: "v1"},
+		{Key: "role", Value: "worker"},
+		{Key: "cap", Value: "v2"},
+	}
+	gotList := c.ConnectionUserPropertyList()
+	if !slices.Equal(gotList, wantList) {
+		t.Fatalf("ConnectionUserPropertyList() = %v, want %v", gotList, wantList)
+	}
+	if m := c.ConnectionUserProperties(); m["cap"] != "v2" || m["role"] != "worker" {
+		t.Fatalf("ConnectionUserProperties() = %v, unexpected values", m)
+	}
+	gotList[0].Value = "mutated"
+	if after := c.ConnectionUserPropertyList(); !slices.Equal(after, wantList) {
+		t.Fatalf("mutating returned slice affected client state: %v", after)
+	}
+
+	// Verify combining WithConnectUserProperties and WithConnectUserProperty preserves overlapping keys.
+	combinedOpts := defaultOptions("tcp://localhost:1883")
+	combinedOpts.ProtocolVersion = ProtocolV50
+	WithConnectUserProperties(map[string]string{"env": "prod"})(combinedOpts)
+	WithConnectUserProperty("env", "canary")(combinedOpts)
+	combinedPkt := (&Client{trie: newTopicTrie(), opts: combinedOpts}).buildConnectPacket()
+	wantCombined := []packets.UserProperty{
+		{Key: "env", Value: "prod"},
+		{Key: "env", Value: "canary"},
+	}
+	if !slices.Equal(combinedPkt.Properties.UserProperties, wantCombined) {
+		t.Fatalf("combined CONNECT UserProperties = %v, want %v", combinedPkt.Properties.UserProperties, wantCombined)
+	}
+
+	// Verify v3.1.1 clears CONNACK user property list.
+	c.opts.ProtocolVersion = ProtocolV311
+	c.processConnackProperties(&packets.ConnackPacket{ReturnCode: 0})
+	if got := c.ConnectionUserPropertyList(); got != nil {
+		t.Errorf("expected nil ConnectionUserPropertyList for v3.1.1, got %v", got)
 	}
 }

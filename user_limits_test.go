@@ -91,6 +91,8 @@ func TestDial_OversizedOptionsErrors(t *testing.T) {
 		{"Password", WithCredentials("user", longStr)},
 		{"ConnectUserProperty Key", WithConnectUserProperties(map[string]string{longStr: "v"})},
 		{"ConnectUserProperty Value", WithConnectUserProperties(map[string]string{"k": longStr})},
+		{"ConnectUserPropertyList Key", WithConnectUserProperty(longStr, "v")},
+		{"ConnectUserPropertyList Value", WithConnectUserProperty("k", longStr)},
 		{"Will Topic", WithWill(longStr, []byte("offline"), 1, false)},
 		{"Will Payload", WithWill("status", longBytes, 1, false)},
 		{"Will Property", WithWill("status", []byte("offline"), 1, false, &Properties{ContentType: longStr})},

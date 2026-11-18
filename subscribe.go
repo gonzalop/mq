@@ -29,7 +29,8 @@ type SubscribeOptions struct {
 	RetainHandling    RetainHandling
 	Persistence       bool              // Persistence enabled by default (must be manually set to true by default logic)
 	SubscriptionID    int               // MQTT v5.0: Subscription identifier (1-268435455, 0 = none).
-	UserProperties    map[string]string // MQTT v5.0: User properties
+	UserProperties    map[string]string // MQTT v5.0: User properties (last value per key if duplicate)
+	UserPropertyList  []UserProperty    // MQTT v5.0: User properties in order, preserving duplicate keys; preferred when set.
 }
 
 // SubscribeOption is a functional option for configuring a subscription.
@@ -44,15 +45,12 @@ func WithSubscriptionQoS(qos QoS) SubscribeOption {
 }
 
 // WithSubscribeUserProperty (MQTT v5.0) adds a user property to the subscription.
-// User properties are key-value pairs that can be used to send metadata to the server.
+// Can be called multiple times; call order and duplicate keys are preserved.
 //
 // This option is ignored when using MQTT v3.1.1.
 func WithSubscribeUserProperty(key, value string) SubscribeOption {
 	return func(o *SubscribeOptions) {
-		if o.UserProperties == nil {
-			o.UserProperties = make(map[string]string)
-		}
-		o.UserProperties[key] = value
+		appendUserProperty(&o.UserPropertyList, &o.UserProperties, key, value)
 	}
 }
 
@@ -127,22 +125,20 @@ func WithSubscriptionIdentifier(id int) SubscribeOption {
 
 // UnsubscribeOptions holds configuration for an unsubscription.
 type UnsubscribeOptions struct {
-	UserProperties map[string]string // MQTT v5.0: User properties
+	UserProperties   map[string]string // MQTT v5.0: User properties (last value per key if duplicate)
+	UserPropertyList []UserProperty    // MQTT v5.0: User properties in order, preserving duplicate keys; preferred when set.
 }
 
 // UnsubscribeOption is a functional option for configuring an unsubscription.
 type UnsubscribeOption func(*UnsubscribeOptions)
 
 // WithUnsubscribeUserProperty (MQTT v5.0) adds a user property to the unsubscribe packet.
-// User properties are key-value pairs that can be used to send metadata to the server.
+// Can be called multiple times; call order and duplicate keys are preserved.
 //
 // This option is ignored when using MQTT v3.1.1.
 func WithUnsubscribeUserProperty(key, value string) UnsubscribeOption {
 	return func(o *UnsubscribeOptions) {
-		if o.UserProperties == nil {
-			o.UserProperties = make(map[string]string)
-		}
-		o.UserProperties[key] = value
+		appendUserProperty(&o.UserPropertyList, &o.UserProperties, key, value)
 	}
 }
 
@@ -229,13 +225,8 @@ func (c *Client) Subscribe(ctx context.Context, topic string, qos QoS, handler M
 			props.SubscriptionIdentifier = []int{subOpts.SubscriptionID}
 			hasProps = true
 		}
-		if len(subOpts.UserProperties) > 0 {
-			for k, v := range subOpts.UserProperties {
-				props.UserProperties = append(props.UserProperties, packets.UserProperty{
-					Key:   k,
-					Value: v,
-				})
-			}
+		if ups := toPacketUserProperties(subOpts.UserPropertyList, subOpts.UserProperties); len(ups) > 0 {
+			props.UserProperties = ups
 			hasProps = true
 		}
 
@@ -290,17 +281,10 @@ func (c *Client) Unsubscribe(ctx context.Context, topic string, opts ...Unsubscr
 		opt(unsubOpts)
 	}
 
-	for k, v := range unsubOpts.UserProperties {
-		if len(k) > maxFieldLength {
-			tok := newToken()
-			tok.complete(fmt.Errorf("user property key length %d exceeds maximum %d", len(k), maxFieldLength))
-			return tok
-		}
-		if len(v) > maxFieldLength {
-			tok := newToken()
-			tok.complete(fmt.Errorf("user property value length %d exceeds maximum %d", len(v), maxFieldLength))
-			return tok
-		}
+	if err := validateUserProperties("", unsubOpts.UserPropertyList, unsubOpts.UserProperties); err != nil {
+		tok := newToken()
+		tok.complete(err)
+		return tok
 	}
 
 	pkt := &packets.UnsubscribePacket{
@@ -312,13 +296,8 @@ func (c *Client) Unsubscribe(ctx context.Context, topic string, opts ...Unsubscr
 		props := &packets.Properties{}
 		hasProps := false
 
-		if len(unsubOpts.UserProperties) > 0 {
-			for k, v := range unsubOpts.UserProperties {
-				props.UserProperties = append(props.UserProperties, packets.UserProperty{
-					Key:   k,
-					Value: v,
-				})
-			}
+		if ups := toPacketUserProperties(unsubOpts.UserPropertyList, unsubOpts.UserProperties); len(ups) > 0 {
+			props.UserProperties = ups
 			hasProps = true
 		}
 
@@ -413,6 +392,7 @@ func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 			retainHandling    []uint8
 			id                int
 			userProps         map[string]string
+			userList          []UserProperty
 		})
 
 		for j, entry := range batchEntries {
@@ -424,13 +404,16 @@ func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 				}
 			}
 
-			key := subGroupKey(entry.options.SubscriptionID, entry.options.UserProperties)
+			key := subGroupKey(entry.options.SubscriptionID, entry.options.UserPropertyList, entry.options.UserProperties)
 			g := groups[key]
 
 			// Initialize if new group
 			if len(g.topics) == 0 {
 				g.id = entry.options.SubscriptionID
 				g.userProps = entry.options.UserProperties
+			}
+			if len(g.userList) == 0 && len(entry.options.UserPropertyList) > 0 {
+				g.userList = entry.options.UserPropertyList
 			}
 
 			g.topics = append(g.topics, batchTopics[j])
@@ -475,13 +458,8 @@ func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 					props.SubscriptionIdentifier = []int{g.id}
 					hasProps = true
 				}
-				if len(g.userProps) > 0 {
-					for k, v := range g.userProps {
-						props.UserProperties = append(props.UserProperties, packets.UserProperty{
-							Key:   k,
-							Value: v,
-						})
-					}
+				if ups := toPacketUserProperties(g.userList, g.userProps); len(ups) > 0 {
+					props.UserProperties = ups
 					hasProps = true
 				}
 
@@ -520,21 +498,37 @@ func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 }
 
 // subGroupKey generates a unique key for grouping subscriptions by ID and User Properties.
-func subGroupKey(id int, props map[string]string) string {
-	if len(props) == 0 {
+func subGroupKey(id int, list []UserProperty, props map[string]string) string {
+	if len(list) == 0 && len(props) == 0 {
 		return fmt.Sprintf("%d", id)
 	}
-	// Sort keys for deterministic output
-	keys := make([]string, 0, len(props))
-	for k := range props {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%d|", id)
-	for _, k := range keys {
-		fmt.Fprintf(&sb, "%s=%s|", k, props[k])
+
+	var seen map[string]struct{}
+	if len(list) > 0 && len(props) > 0 {
+		seen = make(map[string]struct{}, len(list))
+	}
+	for _, up := range list {
+		fmt.Fprintf(&sb, "%d:%s=%d:%s|", len(up.Key), up.Key, len(up.Value), up.Value)
+		if seen != nil {
+			seen[up.Key] = struct{}{}
+		}
+	}
+	if len(props) > 0 {
+		// Sort keys for deterministic output
+		keys := make([]string, 0, len(props))
+		for k := range props {
+			if _, ok := seen[k]; !ok {
+				keys = append(keys, k)
+			}
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			v := props[k]
+			fmt.Fprintf(&sb, "%d:%s=%d:%s|", len(k), k, len(v), v)
+		}
 	}
 	return sb.String()
 }
@@ -544,13 +538,8 @@ func validateSubscribeOptions(topic string, subOpts *SubscribeOptions, opts *cli
 		return fmt.Errorf("invalid topic filter: %w", err)
 	}
 
-	for k, v := range subOpts.UserProperties {
-		if len(k) > maxFieldLength {
-			return fmt.Errorf("user property key length %d exceeds maximum %d", len(k), maxFieldLength)
-		}
-		if len(v) > maxFieldLength {
-			return fmt.Errorf("user property value length %d exceeds maximum %d", len(v), maxFieldLength)
-		}
+	if err := validateUserProperties("", subOpts.UserPropertyList, subOpts.UserProperties); err != nil {
+		return err
 	}
 
 	// Validate subscription ID (MQTT v5.0)

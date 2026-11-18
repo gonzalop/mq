@@ -110,7 +110,8 @@ type clientOptions struct {
 	SessionExpirySet      bool // Track if explicitly set vs default
 
 	// MQTT v5.0 User Properties for CONNECT packet
-	ConnectUserProperties map[string]string
+	ConnectUserProperties   map[string]string
+	ConnectUserPropertyList []UserProperty
 
 	// Default publish handler (optional)
 	// Called when a PUBLISH packet doesn't match any registered subscription.
@@ -469,6 +470,24 @@ func WithConnectUserProperties(props map[string]string) Option {
 			o.ConnectUserProperties = make(map[string]string)
 		}
 		maps.Copy(o.ConnectUserProperties, props)
+	}
+}
+
+// WithConnectUserProperty appends a single User Property to the CONNECT packet,
+// preserving call order and allowing duplicate keys as permitted by MQTT v5.0.
+//
+// This option is ignored when using MQTT v3.1.1.
+//
+// Example:
+//
+//	client, _ := mq.Dial("tcp://localhost:1883",
+//	    mq.WithProtocolVersion(mq.ProtocolV50),
+//	    mq.WithConnectUserProperty("role", "worker"),
+//	    mq.WithConnectUserProperty("cap", "v1"),
+//	    mq.WithConnectUserProperty("cap", "v2"))
+func WithConnectUserProperty(key, value string) Option {
+	return func(o *clientOptions) {
+		o.ConnectUserPropertyList = append(o.ConnectUserPropertyList, UserProperty{Key: key, Value: value})
 	}
 }
 

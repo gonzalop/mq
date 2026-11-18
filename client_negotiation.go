@@ -2,6 +2,7 @@ package mq
 
 import (
 	"maps"
+	"slices"
 	"time"
 
 	"github.com/gonzalop/mq/internal/packets"
@@ -62,7 +63,8 @@ type connectionState struct {
 	serverReference string
 
 	// userProperties holds user properties received in CONNACK.
-	userProperties map[string]string
+	userProperties   map[string]string
+	userPropertyList []UserProperty
 }
 
 // ServerCapabilities represents the capabilities and limits advertised by the MQTT server.
@@ -111,6 +113,9 @@ func (c *Client) ServerCapabilities() ServerCapabilities {
 // in the CONNACK packet. These are application-specific key-value pairs provided
 // by the server during the connection handshake.
 //
+// When duplicate keys are present, this map holds the last value for each key;
+// use [Client.ConnectionUserPropertyList] to inspect all pairs in wire order.
+//
 // This is only populated for MQTT v5.0 connections.
 // Returns a copy of the map to prevent concurrent modification.
 func (c *Client) ConnectionUserProperties() map[string]string {
@@ -119,6 +124,19 @@ func (c *Client) ConnectionUserProperties() map[string]string {
 		return nil
 	}
 	return maps.Clone(state.userProperties)
+}
+
+// ConnectionUserPropertyList returns the User Properties received from the
+// server in the CONNACK packet in wire order, preserving duplicate keys.
+//
+// This is only populated for MQTT v5.0 connections.
+// Returns a copy of the slice to prevent concurrent modification.
+func (c *Client) ConnectionUserPropertyList() []UserProperty {
+	state := c.connState.Load()
+	if state == nil || len(state.userPropertyList) == 0 {
+		return nil
+	}
+	return slices.Clone(state.userPropertyList)
 }
 
 // extractServerCapabilities extracts server capabilities from CONNACK properties.
@@ -232,11 +250,8 @@ func (c *Client) processConnackProperties(connack *packets.ConnackPacket) {
 		}
 
 		if len(connack.Properties.UserProperties) > 0 {
-			newState.userProperties = make(map[string]string, len(connack.Properties.UserProperties))
-			for _, up := range connack.Properties.UserProperties {
-				newState.userProperties[up.Key] = up.Value
-			}
-			c.opts.Logger.Debug("received connack user properties", "count", len(newState.userProperties))
+			newState.userPropertyList, newState.userProperties = fromPacketUserProperties(connack.Properties.UserProperties)
+			c.opts.Logger.Debug("received connack user properties", "count", len(newState.userPropertyList))
 		}
 
 		// Update the connection state atomically

@@ -324,4 +324,5 @@ type PersistedSubscriptionOptions struct {
 	RetainHandling    RetainHandling
 	SubscriptionID    *uint32
 	UserProperties    map[string]string
+	UserPropertyList  []UserProperty // Wire order with duplicate keys; preferred over UserProperties when set.
 }

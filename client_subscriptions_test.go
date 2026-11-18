@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 	"net"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -1185,5 +1186,88 @@ func TestPacketHandlers_LogOutsideSessionLock(t *testing.T) {
 				t.Errorf("%d log records were emitted while holding sessionLock", got)
 			}
 		})
+	}
+}
+
+func TestSubscribeAndUnsubscribeUserPropertyList(t *testing.T) {
+	c := newTestClient(defaultOptions("tcp://test:1883"))
+	c.opts.ProtocolVersion = ProtocolV50
+	c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
+
+	wantList := []UserProperty{
+		{Key: "dup", Value: "first"},
+		{Key: "single", Value: "val"},
+		{Key: "dup", Value: "second"},
+	}
+	wantWire := []packets.UserProperty{
+		{Key: "dup", Value: "first"},
+		{Key: "single", Value: "val"},
+		{Key: "dup", Value: "second"},
+	}
+
+	_ = c.Subscribe(context.Background(), "t/1", 1, func(*Client, Message) {},
+		WithSubscribeUserProperty("dup", "first"),
+		WithSubscribeUserProperty("single", "val"),
+		WithSubscribeUserProperty("dup", "second"),
+	)
+
+	recvOutgoing := func() packets.Packet {
+		t.Helper()
+		select {
+		case p := <-c.outgoing:
+			return p
+		case <-time.After(time.Second):
+			t.Fatal("timeout waiting for outgoing packet")
+			return nil
+		}
+	}
+
+	pkt := recvOutgoing().(*packets.SubscribePacket)
+	if pkt.Properties == nil || !slices.Equal(pkt.Properties.UserProperties, wantWire) {
+		t.Fatalf("SUBSCRIBE UserProperties = %v, want %v", pkt.Properties, wantWire)
+	}
+	c.handleSuback(&packets.SubackPacket{PacketID: pkt.PacketID, ReturnCodes: []uint8{1}, Version: 5})
+
+	c.sessionLock.Lock()
+	entry := c.subscriptions["t/1"]
+	c.sessionLock.Unlock()
+	if !slices.Equal(entry.options.UserPropertyList, wantList) {
+		t.Fatalf("stored UserPropertyList = %v, want %v", entry.options.UserPropertyList, wantList)
+	}
+
+	// Verify persistence round-trip preserves order and duplicates.
+	persisted := c.convertToPersistedSubscription(entry)
+	restored := c.convertFromPersistedSubscription(persisted)
+	if !slices.Equal(restored.options.UserPropertyList, wantList) {
+		t.Fatalf("restored UserPropertyList = %v, want %v", restored.options.UserPropertyList, wantList)
+	}
+
+	// Register a second subscription with the same key/values in reversed duplicate order;
+	// resubscribeAll must keep them in separate packets.
+	c.subscriptions["t/2"] = subscriptionEntry{
+		options: SubscribeOptions{
+			QoS:              1,
+			Persistence:      true,
+			UserProperties:   map[string]string{"dup": "first", "single": "val"},
+			UserPropertyList: []UserProperty{{Key: "dup", Value: "second"}, {Key: "single", Value: "val"}, {Key: "dup", Value: "first"}},
+		},
+	}
+	c.resubscribeAll(nil)
+
+	p1 := recvOutgoing().(*packets.SubscribePacket)
+	p2 := recvOutgoing().(*packets.SubscribePacket)
+	if len(p1.Topics) != 1 || len(p2.Topics) != 1 {
+		t.Fatalf("expected 2 separate resubscribe packets, got topic counts %d and %d", len(p1.Topics), len(p2.Topics))
+	}
+
+	// Verify Unsubscribe preserves order and duplicate keys.
+	_ = c.Unsubscribe(context.Background(), "t/1",
+		WithUnsubscribeUserProperty("dup", "first"),
+		WithUnsubscribeUserProperty("single", "val"),
+		WithUnsubscribeUserProperty("dup", "second"),
+	)
+	unsubPkt := recvOutgoing().(*packets.UnsubscribePacket)
+	if unsubPkt.Properties == nil || !slices.Equal(unsubPkt.Properties.UserProperties, wantWire) {
+		t.Fatalf("UNSUBSCRIBE UserProperties = %v, want %v", unsubPkt.Properties, wantWire)
 	}
 }

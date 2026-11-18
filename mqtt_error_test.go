@@ -2,6 +2,7 @@ package mq
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/gonzalop/mq/internal/packets"
@@ -162,6 +163,39 @@ func TestMqttError_v5_v3_Compatibility(t *testing.T) {
 		}
 		if !errors.Is(err, ErrConnectionRefused) {
 			t.Error("Should wrap ErrConnectionRefused")
+		}
+	})
+
+	t.Run("DisconnectError UserPropertyList", func(t *testing.T) {
+		c := setupClient(ProtocolV50)
+		c.handleDisconnectPacket(&packets.DisconnectPacket{
+			Version:    5,
+			ReasonCode: uint8(ReasonCodeServerMoved),
+			Properties: &packets.Properties{
+				ServerReference: "mqtt://other:1883",
+				Presence:        packets.PresServerReference,
+				UserProperties: []packets.UserProperty{
+					{Key: "route", Value: "a"},
+					{Key: "note", Value: "ok"},
+					{Key: "route", Value: "b"},
+				},
+			},
+		})
+
+		wantList := []UserProperty{
+			{Key: "route", Value: "a"},
+			{Key: "note", Value: "ok"},
+			{Key: "route", Value: "b"},
+		}
+		dErr, ok := c.lastDisconnectReason.(*DisconnectError)
+		if !ok {
+			t.Fatalf("expected *DisconnectError, got %T: %v", c.lastDisconnectReason, c.lastDisconnectReason)
+		}
+		if !slices.Equal(dErr.UserPropertyList, wantList) {
+			t.Fatalf("UserPropertyList = %v, want %v", dErr.UserPropertyList, wantList)
+		}
+		if dErr.UserProperties["route"] != "b" || dErr.UserProperties["note"] != "ok" {
+			t.Fatalf("UserProperties = %v, unexpected values", dErr.UserProperties)
 		}
 	})
 }

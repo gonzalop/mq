@@ -754,10 +754,7 @@ func (c *Client) handleDisconnectPacket(p *packets.DisconnectPacket) {
 			err.ServerReference = p.Properties.ServerReference
 		}
 		if len(p.Properties.UserProperties) > 0 {
-			err.UserProperties = make(map[string]string, len(p.Properties.UserProperties))
-			for _, up := range p.Properties.UserProperties {
-				err.UserProperties[up.Key] = up.Value
-			}
+			err.UserPropertyList, err.UserProperties = fromPacketUserProperties(p.Properties.UserProperties)
 		}
 	}
 

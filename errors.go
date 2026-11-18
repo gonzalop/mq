@@ -90,7 +90,8 @@ type DisconnectError struct {
 	ReasonString          string
 	SessionExpiryInterval uint32            // 0 if not set
 	ServerReference       string            // Empty if not set
-	UserProperties        map[string]string // Nil if not set
+	UserProperties        map[string]string // Nil if not set; holds last value per key
+	UserPropertyList      []UserProperty    // Nil if not set; wire order with duplicate keys
 }
 
 func (e *DisconnectError) Error() string {

@@ -249,10 +249,7 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 					subOpts.SubscriptionID = pkt.Properties.SubscriptionIdentifier[0]
 				}
 				if len(pkt.Properties.UserProperties) > 0 {
-					subOpts.UserProperties = make(map[string]string)
-					for _, up := range pkt.Properties.UserProperties {
-						subOpts.UserProperties[up.Key] = up.Value
-					}
+					subOpts.UserPropertyList, subOpts.UserProperties = fromPacketUserProperties(pkt.Properties.UserProperties)
 				}
 			}
 		}

@@ -481,13 +481,8 @@ func validateClientOptions(opts *clientOptions) error {
 	if len(opts.Password) > maxFieldLength {
 		return fmt.Errorf("password length %d exceeds maximum %d", len(opts.Password), maxFieldLength)
 	}
-	for k, v := range opts.ConnectUserProperties {
-		if len(k) > maxFieldLength {
-			return fmt.Errorf("connect user property key length %d exceeds maximum %d", len(k), maxFieldLength)
-		}
-		if len(v) > maxFieldLength {
-			return fmt.Errorf("connect user property value length %d exceeds maximum %d", len(v), maxFieldLength)
-		}
+	if err := validateUserProperties("connect", opts.ConnectUserPropertyList, opts.ConnectUserProperties); err != nil {
+		return err
 	}
 	if opts.will != nil {
 		if len(opts.will.Topic) > maxFieldLength {

@@ -61,11 +61,7 @@ func toPublicProperties(internal *packets.Properties) *Properties {
 
 	// Convert user properties
 	if len(internal.UserProperties) > 0 {
-		props.UserPropertyList = make([]UserProperty, len(internal.UserProperties))
-		for i, up := range internal.UserProperties {
-			props.UserPropertyList[i] = UserProperty{Key: up.Key, Value: up.Value}
-			props.UserProperties[up.Key] = up.Value
-		}
+		props.UserPropertyList, props.UserProperties = fromPacketUserProperties(internal.UserProperties)
 	}
 
 	return props
@@ -130,35 +126,62 @@ func toInternalProperties(public *Properties) *packets.Properties {
 	}
 
 	// Convert user properties
-	if len(public.UserPropertyList) > 0 {
-		props.UserProperties = make([]packets.UserProperty, 0, len(public.UserPropertyList)+len(public.UserProperties))
-		seen := make(map[string]struct{}, len(public.UserPropertyList))
-		for _, up := range public.UserPropertyList {
-			props.UserProperties = append(props.UserProperties, packets.UserProperty{
+	if ups := toPacketUserProperties(public.UserPropertyList, public.UserProperties); len(ups) > 0 {
+		props.UserProperties = ups
+	}
+
+	return props
+}
+
+// toPacketUserProperties converts UserPropertyList (and any remaining keys in m)
+// to packet wire format, preserving order and duplicate keys from list.
+func toPacketUserProperties(list []UserProperty, m map[string]string) []packets.UserProperty {
+	if len(list) > 0 {
+		res := make([]packets.UserProperty, 0, len(list)+len(m))
+		seen := make(map[string]struct{}, len(list))
+		for _, up := range list {
+			res = append(res, packets.UserProperty{
 				Key:   up.Key,
 				Value: up.Value,
 			})
 			seen[up.Key] = struct{}{}
 		}
-		for key, value := range public.UserProperties {
+		for key, value := range m {
 			if _, ok := seen[key]; !ok {
-				props.UserProperties = append(props.UserProperties, packets.UserProperty{
+				res = append(res, packets.UserProperty{
 					Key:   key,
 					Value: value,
 				})
 			}
 		}
-	} else if len(public.UserProperties) > 0 {
-		props.UserProperties = make([]packets.UserProperty, 0, len(public.UserProperties))
-		for key, value := range public.UserProperties {
-			props.UserProperties = append(props.UserProperties, packets.UserProperty{
+		return res
+	}
+	if len(m) > 0 {
+		res := make([]packets.UserProperty, 0, len(m))
+		for key, value := range m {
+			res = append(res, packets.UserProperty{
 				Key:   key,
 				Value: value,
 			})
 		}
+		return res
 	}
+	return nil
+}
 
-	return props
+// fromPacketUserProperties converts wire user properties to an ordered list
+// (preserving duplicates) and a map (holding the last value per key).
+func fromPacketUserProperties(ups []packets.UserProperty) ([]UserProperty, map[string]string) {
+	if len(ups) == 0 {
+		return nil, nil
+	}
+	list := make([]UserProperty, len(ups))
+	m := make(map[string]string, len(ups))
+	for i, up := range ups {
+		list[i] = UserProperty{Key: up.Key, Value: up.Value}
+		m[up.Key] = up.Value
+	}
+	return list, m
 }
 
 // isEmpty checks if internal properties are effectively empty.
