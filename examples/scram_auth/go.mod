@@ -5,6 +5,6 @@ go 1.27
 replace github.com/gonzalop/mq => ../../
 
 require (
-	github.com/gonzalop/mq v0.0.0-00010101000000-000000000000
-	golang.org/x/crypto v0.52.0
+	github.com/gonzalop/mq v0.11.0
+	golang.org/x/crypto v0.59.0
 )
