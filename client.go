@@ -479,12 +479,13 @@ func (w *countingWriter) Write(p []byte) (int, error) {
 }
 
 func validateClientOptions(opts *clientOptions) error {
-	if len(opts.ClientID) > maxFieldLength {
-		return fmt.Errorf("client ID length %d exceeds maximum %d", len(opts.ClientID), maxFieldLength)
+	if err := validateMQTTString("client ID", opts.ClientID); err != nil {
+		return err
 	}
-	if len(opts.Username) > maxFieldLength {
-		return fmt.Errorf("username length %d exceeds maximum %d", len(opts.Username), maxFieldLength)
+	if err := validateMQTTString("username", opts.Username); err != nil {
+		return err
 	}
+	// Password is MQTT Binary Data, not a UTF-8 string.
 	if len(opts.Password) > maxFieldLength {
 		return fmt.Errorf("password length %d exceeds maximum %d", len(opts.Password), maxFieldLength)
 	}
@@ -492,8 +493,8 @@ func validateClientOptions(opts *clientOptions) error {
 		return err
 	}
 	if opts.will != nil {
-		if len(opts.will.Topic) > maxFieldLength {
-			return fmt.Errorf("will topic length %d exceeds maximum %d", len(opts.will.Topic), maxFieldLength)
+		if err := validatePublishTopic(opts.will.Topic, opts); err != nil {
+			return fmt.Errorf("invalid will topic: %w", err)
 		}
 		if len(opts.will.Payload) > maxFieldLength {
 			return fmt.Errorf("will payload length %d exceeds maximum %d", len(opts.will.Payload), maxFieldLength)

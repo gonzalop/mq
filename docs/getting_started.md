@@ -85,7 +85,7 @@ client, err := mq.DialContext(ctx, server, options...)
 - `WithOutgoingQueueSize(size int)` - Set internal outgoing buffer size (default: 1000).
 - `WithLogger(logger)` - Set custom log/slog Logger.
 - `WithMaxHandlerConcurrency(concurrency int)` - Limit the number of simultaneous message handler goroutines (default: 100).
-- `WithMaxIncomingPacket(max int)` - Set maximum incoming packet size (default: 256MB).
+- `WithMaxIncomingPacket(max int)` - Set maximum incoming packet size (default: 1MB).
 - `WithMaxPacketSize(bytes int)` - Set maximum packet size sent in CONNECT properties (v5.0) and enforce limit locally.
 - `WithMaxPayloadSize(bytes int)` - Set maximum outgoing payload size (default: 256MB).
 - `WithMaxTopicLength(bytes int)` - Set maximum topic length (default: 65535).

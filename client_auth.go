@@ -161,11 +161,11 @@ func (c *Client) handleAuth(p *packets.AuthPacket) []packets.Packet {
 	return nil
 }
 
-// checkAuthFieldLengths rejects authenticator output that does not fit in an
-// MQTT length-prefixed field (65535 bytes).
+// checkAuthFieldLengths rejects authenticator output that is invalid UTF-8 or does
+// not fit in an MQTT length-prefixed field (65535 bytes).
 func checkAuthFieldLengths(method string, data []byte) error {
-	if len(method) > maxFieldLength {
-		return fmt.Errorf("authentication method length %d exceeds maximum %d", len(method), maxFieldLength)
+	if err := validateMQTTString("authentication method", method); err != nil {
+		return err
 	}
 	if len(data) > maxFieldLength {
 		return fmt.Errorf("authentication data length %d exceeds maximum %d", len(data), maxFieldLength)

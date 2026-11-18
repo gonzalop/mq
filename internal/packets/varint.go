@@ -6,6 +6,23 @@ import (
 	"io"
 )
 
+func varIntSize(v int) int {
+	switch {
+	case v < 128:
+		return 1
+	case v < 16384:
+		return 2
+	case v < 2097152:
+		return 3
+	default:
+		return 4
+	}
+}
+
+func fixedHeaderSize(remainingLen int) int {
+	return 1 + varIntSize(remainingLen)
+}
+
 // encodeVarInt encodes an integer as a Variable Byte Integer (1-4 bytes).
 // This is used for the Remaining Length field in the Fixed Header.
 // Algorithm from MQTT v3.1.1 spec section 2.2.3

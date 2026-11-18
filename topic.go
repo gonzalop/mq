@@ -118,7 +118,7 @@ func validatePublishTopic(topic string, opts *clientOptions) error {
 		return fmt.Errorf("topic cannot be empty")
 	}
 
-	maxLen := getLimit(opts.MaxTopicLength, DefaultMaxTopicLength)
+	maxLen := min(getLimit(opts.MaxTopicLength, DefaultMaxTopicLength), maxFieldLength)
 	if len(topic) > maxLen {
 		return fmt.Errorf("topic length %d exceeds maximum %d", len(topic), maxLen)
 	}
@@ -149,7 +149,7 @@ func validateSubscribeTopic(topic string, opts *clientOptions) error {
 		return fmt.Errorf("topic filter cannot be empty")
 	}
 
-	maxLen := getLimit(opts.MaxTopicLength, DefaultMaxTopicLength)
+	maxLen := min(getLimit(opts.MaxTopicLength, DefaultMaxTopicLength), maxFieldLength)
 	if len(topic) > maxLen {
 		return fmt.Errorf("topic filter length %d exceeds maximum %d", len(topic), maxLen)
 	}

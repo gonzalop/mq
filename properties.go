@@ -3,6 +3,8 @@ package mq
 import (
 	"fmt"
 	"slices"
+	"strings"
+	"unicode/utf8"
 )
 
 // PayloadFormat indicates the format of an MQTT v5.0 PUBLISH payload.
@@ -154,20 +156,38 @@ func (p *Properties) GetUserProperty(key string) string {
 // maxFieldLength is the maximum length of an MQTT 2-byte length-prefixed string or binary data (65,535 bytes).
 const maxFieldLength = 65535
 
+// validateMQTTString checks that s fits in an MQTT 2-byte length-prefixed UTF-8 string
+// and contains no null bytes or invalid UTF-8 ([MQTT-1.5.4-1], [MQTT-1.5.4-2]).
+func validateMQTTString(label, s string) error {
+	if len(s) > maxFieldLength {
+		return fmt.Errorf("%s length %d exceeds maximum %d", label, len(s), maxFieldLength)
+	}
+	if strings.Contains(s, "\x00") {
+		return fmt.Errorf("%s contains null byte which is not allowed", label)
+	}
+	if !utf8.ValidString(s) {
+		return fmt.Errorf("%s is not valid UTF-8", label)
+	}
+	return nil
+}
+
 // validatePropertiesFieldLengths verifies that length-prefixed string and binary fields
-// do not exceed the MQTT 16-bit length prefix maximum of 65,535 bytes.
+// conform to MQTT string rules and the 16-bit length prefix maximum of 65,535 bytes.
 func validatePropertiesFieldLengths(props *Properties) error {
 	if props == nil {
 		return nil
 	}
-	if len(props.ContentType) > maxFieldLength {
-		return fmt.Errorf("content type length %d exceeds maximum %d", len(props.ContentType), maxFieldLength)
+	if err := validateMQTTString("content type", props.ContentType); err != nil {
+		return err
 	}
-	if len(props.ResponseTopic) > maxFieldLength {
-		return fmt.Errorf("response topic length %d exceeds maximum %d", len(props.ResponseTopic), maxFieldLength)
+	if err := validateMQTTString("response topic", props.ResponseTopic); err != nil {
+		return err
 	}
-	if len(props.ReasonString) > maxFieldLength {
-		return fmt.Errorf("reason string length %d exceeds maximum %d", len(props.ReasonString), maxFieldLength)
+	if strings.ContainsAny(props.ResponseTopic, "+#") {
+		return fmt.Errorf("response topic must not contain wildcard characters")
+	}
+	if err := validateMQTTString("reason string", props.ReasonString); err != nil {
+		return err
 	}
 	if len(props.CorrelationData) > maxFieldLength {
 		return fmt.Errorf("correlation data length %d exceeds maximum %d", len(props.CorrelationData), maxFieldLength)
@@ -175,26 +195,26 @@ func validatePropertiesFieldLengths(props *Properties) error {
 	return validateUserProperties("", props.UserPropertyList, props.UserProperties)
 }
 
-// validateUserProperties checks that all user property keys and values fit in MQTT 2-byte length-prefixed strings.
+// validateUserProperties checks that all user property keys and values are valid MQTT UTF-8 strings.
 func validateUserProperties(prefix string, list []UserProperty, m map[string]string) error {
 	label := "user property"
 	if prefix != "" {
 		label = prefix + " user property"
 	}
 	for _, up := range list {
-		if len(up.Key) > maxFieldLength {
-			return fmt.Errorf("%s key length %d exceeds maximum %d", label, len(up.Key), maxFieldLength)
+		if err := validateMQTTString(label+" key", up.Key); err != nil {
+			return err
 		}
-		if len(up.Value) > maxFieldLength {
-			return fmt.Errorf("%s value length %d exceeds maximum %d", label, len(up.Value), maxFieldLength)
+		if err := validateMQTTString(label+" value", up.Value); err != nil {
+			return err
 		}
 	}
 	for k, v := range m {
-		if len(k) > maxFieldLength {
-			return fmt.Errorf("%s key length %d exceeds maximum %d", label, len(k), maxFieldLength)
+		if err := validateMQTTString(label+" key", k); err != nil {
+			return err
 		}
-		if len(v) > maxFieldLength {
-			return fmt.Errorf("%s value length %d exceeds maximum %d", label, len(v), maxFieldLength)
+		if err := validateMQTTString(label+" value", v); err != nil {
+			return err
 		}
 	}
 	return nil

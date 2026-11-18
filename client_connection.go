@@ -113,10 +113,8 @@ func (c *Client) buildConnectPacket() (*packets.ConnectPacket, error) {
 			pkt.Properties.Presence |= packets.PresReceiveMaximum
 		}
 
-		if c.opts.MaxIncomingPacket > 0 {
-			pkt.Properties.MaximumPacketSize = uint32(c.opts.MaxIncomingPacket)
-			pkt.Properties.Presence |= packets.PresMaximumPacketSize
-		}
+		pkt.Properties.MaximumPacketSize = uint32(packets.EffectiveMaxPacketSize(c.opts.MaxIncomingPacket))
+		pkt.Properties.Presence |= packets.PresMaximumPacketSize
 
 		if len(c.opts.ConnectUserProperties) > 0 || len(c.opts.ConnectUserPropertyList) > 0 {
 			pkt.Properties.UserProperties = append(

@@ -114,3 +114,25 @@ func TestMaxIncomingPacketSpecMaximum(t *testing.T) {
 		t.Error("expected error with default 1MB limit for 10MB packet, got nil")
 	}
 }
+
+func TestMaxIncomingPacketIncludesFixedHeader(t *testing.T) {
+	// Topic "t" (2+1 = 3 bytes) + 125 bytes payload = 128 bytes RemainingLength.
+	// RemainingLength 128 encodes as 2 varint bytes + 1 header byte = 3-byte fixed header,
+	// so total wire packet length is 131 bytes.
+	pkt := &PublishPacket{
+		Topic:   "t",
+		Payload: make([]byte, 125),
+		QoS:     0,
+	}
+	encoded := encodeToBytes(pkt)
+	if len(encoded) != 131 {
+		t.Fatalf("encoded length = %d, want 131", len(encoded))
+	}
+
+	if _, err := ReadPacket(bytes.NewReader(encoded), 4, 130); err == nil {
+		t.Error("expected error when maxIncomingPacket=130 is below total packet size 131")
+	}
+	if _, err := ReadPacket(bytes.NewReader(encoded), 4, 131); err != nil {
+		t.Errorf("unexpected error when maxIncomingPacket=131 equals total packet size 131: %v", err)
+	}
+}

@@ -27,7 +27,8 @@ func TestConnectPacketLimits(t *testing.T) {
 			name:                 "Defaults",
 			opts:                 []Option{WithProtocolVersion(ProtocolV50)},
 			wantReceiveMaxSet:    false,
-			wantMaxPacketSizeSet: false,
+			wantMaxPacketSize:    packets.DefaultMaxPacketSize,
+			wantMaxPacketSizeSet: true,
 		},
 		{
 			name: "With Receive Maximum",
@@ -37,7 +38,8 @@ func TestConnectPacketLimits(t *testing.T) {
 			},
 			wantReceiveMax:       100,
 			wantReceiveMaxSet:    true,
-			wantMaxPacketSizeSet: false,
+			wantMaxPacketSize:    packets.DefaultMaxPacketSize,
+			wantMaxPacketSizeSet: true,
 		},
 		{
 			name: "With Max Packet Size",
@@ -160,9 +162,9 @@ func TestConnectUserProperties(t *testing.T) {
 		t.Error("User property 'version' not found or incorrect")
 	}
 
-	// 4. Verify Presence bit is NOT set (it doesn't exist for UserProperties)
-	if pkt.Properties.Presence != 0 {
-		t.Errorf("Expected Presence to be 0, got 0x%x", pkt.Properties.Presence)
+	// 4. Verify Presence bit is NOT set for UserProperties (only MaximumPacketSize is set)
+	if pkt.Properties.Presence&^packets.PresMaximumPacketSize != 0 {
+		t.Errorf("Expected only MaximumPacketSize presence bit, got 0x%x", pkt.Properties.Presence)
 	}
 }
 

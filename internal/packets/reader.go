@@ -80,16 +80,29 @@ const (
 	// This is a conservative default to protect against memory exhaustion.
 	DefaultMaxPacketSize = 1048576
 
-	// MaxAllowedPacketSize is the absolute maximum packet size allowed by the MQTT spec (256MB).
-	MaxAllowedPacketSize = 268435455
+	// MaxAllowedPacketSize is the absolute maximum packet size allowed by the MQTT spec
+	// (5-byte fixed header + 268,435,455-byte remaining length).
+	MaxAllowedPacketSize = 1 + 4 + 268435455
 )
+
+// EffectiveMaxPacketSize returns the effective incoming packet size limit
+// in total packet bytes for the given configuration value.
+func EffectiveMaxPacketSize(maxIncomingPacket int) int {
+	if maxIncomingPacket <= 0 {
+		return DefaultMaxPacketSize
+	}
+	if maxIncomingPacket > MaxAllowedPacketSize {
+		return MaxAllowedPacketSize
+	}
+	return maxIncomingPacket
+}
 
 // ReadPacket reads a complete MQTT packet from the reader.
 // It accepts the protocol version to correctly decode version-specific fields (like Properties).
 //
 // The maxIncomingPacket parameter sets the maximum allowed packet size in bytes.
 //   - If 0: uses DefaultMaxPacketSize (1MB)
-//   - If > 0: uses the provided value, capped at MaxAllowedPacketSize (256MB)
+//   - If > 0: uses the provided value, capped at MaxAllowedPacketSize
 func ReadPacket(r io.Reader, version uint8, maxIncomingPacket int) (Packet, error) {
 	header, err := DecodeFixedHeader(r)
 	if err != nil {
@@ -100,16 +113,11 @@ func ReadPacket(r io.Reader, version uint8, maxIncomingPacket int) (Packet, erro
 		return nil, err
 	}
 
-	// Validate packet size
-	maxPacketSize := maxIncomingPacket
-	if maxPacketSize <= 0 {
-		maxPacketSize = DefaultMaxPacketSize
-	} else if maxPacketSize > MaxAllowedPacketSize {
-		maxPacketSize = MaxAllowedPacketSize
-	}
-
-	if header.RemainingLength > maxPacketSize {
-		return nil, &ProtocolError{Message: fmt.Sprintf("packet size %d exceeds maximum %d", header.RemainingLength, maxPacketSize)}
+	// Validate total packet size (fixed header + remaining length).
+	maxPacketSize := EffectiveMaxPacketSize(maxIncomingPacket)
+	totalSize := fixedHeaderSize(header.RemainingLength) + header.RemainingLength
+	if totalSize > maxPacketSize {
+		return nil, &ProtocolError{Message: fmt.Sprintf("packet size %d exceeds maximum %d", totalSize, maxPacketSize)}
 	}
 
 	var remaining []byte
