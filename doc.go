@@ -77,6 +77,7 @@
 //   - WithCleanSession(bool) - Set clean start/session flag
 //   - WithSessionExpiryInterval(secs) - Set session expiry (v5.0)
 //   - WithConnectUserProperties(map) - Set user properties for CONNECT (v5.0)
+//   - WithConnectUserProperty(key, value) - Add ordered/duplicate user property for CONNECT (v5.0)
 //   - WithAutoReconnect(bool) - Enable auto-reconnect (default: true)
 //   - WithReconnectBackoff(initial, max, jitter) - Set auto-reconnect initial backoff, max ceiling, and Full Jitter
 //   - WithTLS(config) - Enable TLS encryption
@@ -172,8 +173,8 @@
 // Supported properties include:
 //   - ContentType: Specifies the MIME type of the payload
 //   - MessageExpiry: How long the message should be kept by the server
-//   - UserProperties: Custom key-value pairs (metadata)
-//   - ConnectionUserProperties: Custom metadata received from the server on connect (v5.0)
+//   - UserProperties / UserPropertyList: Custom key-value metadata (preserving order and duplicate keys)
+//   - ConnectionUserProperties / ConnectionUserPropertyList: Custom metadata received from the server on connect (v5.0)
 //   - ResponseTopic & CorrelationData: For request/response patterns
 //
 // # Topic Aliases

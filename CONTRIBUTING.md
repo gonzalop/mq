@@ -9,7 +9,7 @@ We use `make` to manage the development lifecycle. See 'make help' for more info
 ### Prerequisites
 
 - Go 1.27+
-- `golangci-lint` (for linting)
+- `revive` and `staticcheck` (install with `make install-tools`)
 - `podman` or `docker` (for integration tests)
 
 ### Full Check

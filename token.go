@@ -13,14 +13,14 @@ import (
 //
 // Example (blocking wait):
 //
-//	token := client.Publish("topic", []byte("data"), mq.WithQoS(1))
+//	token := client.Publish(context.Background(), "topic", []byte("data"), mq.WithQoS(mq.AtLeastOnce))
 //	if err := token.Wait(context.Background()); err != nil {
 //	    log.Printf("Operation failed: %v", err)
 //	}
 //
 // Example (non-blocking with select):
 //
-//	token := client.Publish("topic", []byte("data"), mq.WithQoS(1))
+//	token := client.Publish(context.Background(), "topic", []byte("data"), mq.WithQoS(mq.AtLeastOnce))
 //	select {
 //	case <-token.Done():
 //	    if err := token.Error(); err != nil {
@@ -32,9 +32,9 @@ import (
 //
 // Example (with context timeout):
 //
-//	token := client.Subscribe("topic", 1, handler)
 //	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 //	defer cancel()
+//	token := client.Subscribe(ctx, "topic", mq.AtLeastOnce, handler)
 //	if err := token.Wait(ctx); err != nil {
 //	    log.Printf("Subscribe failed or timed out: %v", err)
 //	}

@@ -12,12 +12,12 @@ type QoS uint8
 // Example:
 //
 //	// More readable
-//	client.Subscribe("sensors/temp", mq.AtLeastOnce, handler)
-//	client.Publish("alert", data, mq.WithQoS(mq.ExactlyOnce))
+//	client.Subscribe(ctx, "sensors/temp", mq.AtLeastOnce, handler)
+//	client.Publish(ctx, "alert", data, mq.WithQoS(mq.ExactlyOnce))
 //
 //	// vs numeric literals
-//	client.Subscribe("sensors/temp", 1, handler)
-//	client.Publish("alert", data, mq.WithQoS(2))
+//	client.Subscribe(ctx, "sensors/temp", 1, handler)
+//	client.Publish(ctx, "alert", data, mq.WithQoS(2))
 const (
 	// AtMostOnce (QoS 0) - Fire and forget delivery.
 	// The message is delivered at most once, or it may not be delivered at all.

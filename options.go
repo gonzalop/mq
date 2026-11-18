@@ -379,11 +379,11 @@ func WithRequestResponseInformation(request bool) Option {
 //	    mq.WithTopicAliasMaximum(100))  // Accept up to 100 aliases from server
 //
 //	// Publishing with alias (uses server's limit from CONNACK)
-//	client.Publish("sensors/building-a/floor-3/room-42/temperature", data,
+//	client.Publish(ctx, "sensors/building-a/floor-3/room-42/temperature", data,
 //	    mq.WithAlias())
 //
 //	// Receiving with alias (uses our declared limit of 100)
-//	client.Subscribe("sensors/#", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+//	client.Subscribe(ctx, "sensors/#", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
 //	    // Topic is automatically resolved from alias
 //	    fmt.Printf("Topic: %s\n", msg.Topic)
 //	})

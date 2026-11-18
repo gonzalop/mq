@@ -96,7 +96,7 @@ client.Publish(context.Background(), topic, data,
 Indicates if payload is UTF-8 text:
 ```go
 client.Publish(context.Background(), topic, textData,
-    mq.WithPayloadFormat(1)) // 1 = UTF-8 text, 0 = binary
+    mq.WithPayloadFormat(mq.PayloadFormatUTF8))
 ```
 
 ### Request/Response Pattern

@@ -17,10 +17,10 @@ type Authenticator interface {
 
     // HandleChallenge processes an AUTH packet from the server and returns 
     // the data for the client's AUTH response.
-    HandleChallenge(data []byte, reason packets.ReasonCode) ([]byte, error)
+    HandleChallenge(challengeData []byte, reasonCode mq.ReasonCode) ([]byte, error)
 
-    // Success processes the final successful AUTH or CONNACK properties.
-    Success(data []byte) error
+    // Complete is called when authentication succeeds (CONNACK received).
+    Complete() error
 }
 ```
 

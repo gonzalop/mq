@@ -115,7 +115,7 @@ func WithRetainHandling(handling RetainHandling) SubscribeOption {
 //
 // Example:
 //
-//	client.Subscribe("sensors/+/temp", 1, tempHandler,
+//	client.Subscribe(ctx, "sensors/+/temp", mq.AtLeastOnce, tempHandler,
 //	    mq.WithSubscriptionIdentifier(100))
 func WithSubscriptionIdentifier(id int) SubscribeOption {
 	return func(o *subscribeOptions) {

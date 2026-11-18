@@ -406,7 +406,7 @@ if client.IsConnected() {
 ### Last Will & Testament (LWT)
 LWT is the standard way to detect when a device has gone offline ungracefully (crash, power loss, network cut). The server publishes this message automatically when the connection breaks.
 
-**Crucial Detail:** The LWT is **NOT** sent if you call `client.Disconnect()` gracefully. It is only sent on unexpected failures.
+**Crucial Detail:** The LWT is **NOT** sent if you call `client.Disconnect(ctx)` gracefully. It is only sent on unexpected failures.
 
 The broker only skips the LWT if it receives the DISCONNECT packet. `Disconnect` sends it after any packets already queued, and waits at most 1 second for it to be written when `ctx` has no deadline. If you disconnect right after a burst of publishes on a slow link, pass a `ctx` with a longer deadline so the DISCONNECT isn't cut off, or the broker will publish the LWT. See [Disconnecting](getting_started.md#disconnecting).
 

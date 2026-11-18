@@ -59,7 +59,7 @@ recoveryInterceptor := func(next mq.MessageHandler) mq.MessageHandler {
     return func(c *mq.Client, m mq.Message) {
         defer func() {
             if r := recover(); r != nil {
-                c.Options().Logger.Error("Recovered from panic in handler", 
+                slog.Error("Recovered from panic in handler",
                     "topic", m.Topic, "error", r)
             }
         }()
@@ -121,4 +121,4 @@ client, _ := mq.Dial(uri,
 
 *   **Don't Block**: Interceptors run within the internal client loops (for outbound) or in the handler goroutine (for inbound). Avoid long-running blocking operations.
 *   **Error Handling**: For outbound interceptors, you can return a failed token early without calling `next(...)`.
-*   **Immutability**: While you can modify the `mq.Message` or `PublishOptions`, be careful not to break protocol expectations (e.g., changing QoS in a way that violates server limits).
+*   **Immutability**: While you can modify the `mq.Message` copy or pass additional `mq.PublishOption` values, be careful not to break protocol expectations (e.g., changing QoS in a way that violates server limits).

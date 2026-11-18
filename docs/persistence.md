@@ -69,7 +69,7 @@ client, _ := mq.Dial("tcp://broker:1883",
 ```
 
 > [!NOTE]
-> **Automatic Lifecycle Management**: If the configured `SessionStore` implements `io.Closer` (like the built-in `AsyncStore`), the `Client` will automatically call its `Close()` method when `client.Disconnect()` is executed. This prevents background goroutine leaks without requiring manual store closing.
+> **Automatic Lifecycle Management**: If the configured `SessionStore` implements `io.Closer` (like the built-in `AsyncStore`), the `Client` will automatically call its `Close()` method when `client.Disconnect(ctx)` is executed. This prevents background goroutine leaks without requiring manual store closing.
 
 ## Built-in `FileStore`
 
@@ -82,7 +82,7 @@ data/
       1.json
       2.json
     subscriptions/  # Active subscriptions (file named by SHA-256 of the topic)
-      bXkvdG9waWM=.json
+      <sha256-hex>.json
     qos2/           # Received QoS 2 packet IDs
       1.json
 ```

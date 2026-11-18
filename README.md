@@ -30,9 +30,13 @@ For code demonstrations of these features, see the **[Examples Index](examples/R
 
 ## Installation
 
+Requires Go **1.27+** (standard library only, zero external dependencies).
+
 ```bash
 go get github.com/gonzalop/mq
 ```
+
+`mq` follows [Semantic Versioning](https://semver.org/): the `v1.x` public API is stable with no breaking changes prior to `v2.0.0`.
 
 ## Quick Start
 

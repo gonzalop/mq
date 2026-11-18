@@ -92,7 +92,7 @@ client, err := mq.DialContext(ctx, server, options...)
 - `WithMinStableConnectionDuration(duration time.Duration)` - Set minimum uptime before a connection is deemed stable (default: 5s). Drops earlier escalate backoff; pass negative duration to disable.
 - `WithOnConnect(func)` - Set callback for successful connection.
 - `WithOnConnectionLost(func)` - Set callback for connection loss.
-- `WithProtocolVersion(version uint8)` - Set MQTT protocol version (default: v5.0).
+- `WithProtocolVersion(version ProtocolVersion)` - Set MQTT protocol version (default: v5.0).
 - `WithQoS0LimitPolicy(policy)` - Set reliability policy for QoS 0 (default: Drop).
   - `mq.QoS0LimitPolicyDrop` - Drop messages if buffer is full (non-blocking).
   - `mq.QoS0LimitPolicyBlock` - Block until space is available (reliable).
@@ -140,9 +140,9 @@ loggingInterceptor := func(next mq.MessageHandler) mq.MessageHandler {
 
 // Publish Interceptor (Outgoing)
 tracingInterceptor := func(next mq.PublishFunc) mq.PublishFunc {
-    return func(topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
+    return func(ctx context.Context, topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
         // Add tracing headers or audit logging
-        return next(topic, payload, opts...)
+        return next(ctx, topic, payload, opts...)
     }
 }
 
@@ -159,7 +159,7 @@ token := client.Publish(ctx, topic, payload, options...)
 ```
 
 ### Options
-- `WithQoS(qos uint8)` - Set QoS level (0, 1, or 2). Default is 0.
+- `WithQoS(qos QoS)` - Set QoS level (`mq.AtMostOnce`, `mq.AtLeastOnce`, or `mq.ExactlyOnce`). Default is `mq.AtMostOnce`.
 - `WithRetain(bool)` - Set retain flag. Default is false.
 
 ### MQTT v5.0 Options
@@ -170,7 +170,7 @@ For details on advanced patterns using these options, see **[MQTT 5.0 Advanced P
 - `WithContentType(contentType string)` - Set MIME content type.
 - `WithCorrelationData(data []byte)` - Set correlation data for matching requests/responses.
 - `WithMessageExpiry(seconds uint32)` - Set message expiry interval.
-- `WithPayloadFormat(format uint8)` - Set payload format (0=bytes, 1=UTF-8).
+- `WithPayloadFormat(format PayloadFormat)` - Set payload format (`mq.PayloadFormatBytes` or `mq.PayloadFormatUTF8`).
 - `WithProperties(props *mq.Properties)` - Set multiple properties at once.
 - `WithResponseTopic(topic string)` - Set response topic for request/response pattern.
 - `WithUserProperty(key, value string)` - Add custom user property.
@@ -202,7 +202,7 @@ func(c *mq.Client, msg mq.Message) {
 - `WithPersistence(bool)` - Set persistence (default: true). If false, subscription is ephemeral.
 - `WithNoLocal(bool)` - Prevent receiving own messages (v5.0).
 - `WithRetainAsPublished(bool)` - Keep Retain flag when forwarding (v5.0).
-- `WithRetainHandling(uint8)` - Control when to receive retained messages (0=Always, 1=IfNew, 2=Never) (v5.0).
+- `WithRetainHandling(handling RetainHandling)` - Control when to receive retained messages (`mq.RetainHandlingSend`, `mq.RetainHandlingSendIfNew`, `mq.RetainHandlingDoNotSend`) (v5.0).
 - `WithSubscriptionIdentifier(id int)` - Set numeric identifier for this subscription (v5.0).
 - `WithSubscribeUserProperty(key, value string)` - Add user property (v5.0).
 

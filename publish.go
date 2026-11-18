@@ -51,7 +51,7 @@ func WithRetain(retain bool) PublishOption {
 //
 // Example:
 //
-//	client.Publish("data/json", payload, mq.WithContentType("application/json"))
+//	client.Publish(ctx, "data/json", payload, mq.WithContentType("application/json"))
 func WithContentType(contentType string) PublishOption {
 	return func(o *publishOptions) {
 		if o.Properties == nil {
@@ -67,7 +67,7 @@ func WithContentType(contentType string) PublishOption {
 //
 // Example:
 //
-//	client.Publish("requests/data", payload,
+//	client.Publish(ctx, "requests/data", payload,
 //	    mq.WithResponseTopic("responses/data"),
 //	    mq.WithCorrelationData([]byte("req-123")))
 func WithResponseTopic(topic string) PublishOption {
@@ -85,7 +85,7 @@ func WithResponseTopic(topic string) PublishOption {
 //
 // Example:
 //
-//	client.Publish("requests/data", payload,
+//	client.Publish(ctx, "requests/data", payload,
 //	    mq.WithResponseTopic("responses/data"),
 //	    mq.WithCorrelationData([]byte("req-123")))
 func WithCorrelationData(data []byte) PublishOption {
@@ -103,7 +103,7 @@ func WithCorrelationData(data []byte) PublishOption {
 //
 // Example:
 //
-//	client.Publish("sensors/temp", payload,
+//	client.Publish(ctx, "sensors/temp", payload,
 //	    mq.WithUserProperty("sensor-id", "temp-01"),
 //	    mq.WithUserProperty("location", "warehouse-a"))
 func WithUserProperty(key, value string) PublishOption {
@@ -121,7 +121,7 @@ func WithUserProperty(key, value string) PublishOption {
 //
 // Example:
 //
-//	client.Publish("events/temp", payload, mq.WithMessageExpiry(300)) // 5 minutes
+//	client.Publish(ctx, "events/temp", payload, mq.WithMessageExpiry(300)) // 5 minutes
 func WithMessageExpiry(seconds uint32) PublishOption {
 	return func(o *publishOptions) {
 		if o.Properties == nil {
@@ -144,7 +144,7 @@ func WithMessageExpiry(seconds uint32) PublishOption {
 //
 // Example:
 //
-//	client.Publish("data/text", []byte("hello"), mq.WithPayloadFormat(mq.PayloadFormatUTF8))
+//	client.Publish(ctx, "data/text", []byte("hello"), mq.WithPayloadFormat(mq.PayloadFormatUTF8))
 func WithPayloadFormat(format PayloadFormat) PublishOption {
 	return func(o *publishOptions) {
 		if o.Properties == nil {

@@ -10,8 +10,8 @@ This document outlines the support for MQTT 5.0 features in the `mq` library, ba
 | **Will Delay Interval** | 3.1.3.2.2 | ✅ Supported | `WithWillDelayInterval` or `WithWill` properties. Delays LWT publish on ungraceful disconnect. |
 | **Clean Start** | 3.1.2.4 | ✅ Supported | Mapped to `WithCleanSession` (false = CleanStart=0). |
 | **Reason Codes** | 3.2.2.2 | ✅ Supported | Full support for reason codes in all ACK packets and DISCONNECT. |
-| **Server Redirection** | 3.2.2.3 | ✅ Supported | `WithOnServerRedirect` or `Client.ServerReference()` (CONNACK). `DisconnectError.ServerReference` via `OnConnectionLost` (DISCONNECT). |
-| **User Properties** | 3.1.2.28 | ✅ Supported | `WithConnectUserProperties` (send), `ConnectionUserProperties()` (receive), and `DisconnectError.UserProperties` (on disconnect). |
+| **Server Redirection** | 3.2.2.3 | ✅ Supported | `WithOnServerRedirect`, `Client.ServerReference()`, and `MqttError.ServerReference` (CONNACK, including rejections). `DisconnectError.ServerReference` via `OnConnectionLost` (DISCONNECT). |
+| **User Properties** | 3.1.2.28 | ✅ Supported | `WithConnectUserProperties` / `WithConnectUserProperty` (send), `ConnectionUserProperties()` / `ConnectionUserPropertyList()` (receive), `MqttError` (rejected CONNACK), and `DisconnectError` (disconnect). |
 | **Assigned Client ID** | 3.1.3.1 | ✅ Supported | Updates internal ID if server assigns one. |
 | **Server Keep Alive** | 3.2.2.3 | ✅ Supported | Respects server's override of Keep Alive interval. |
 | **Capabilities** | 3.2.2.3 | ✅ Supported | Extracts `ReceiveMaximum`, `MaximumPacketSize`, etc. |
