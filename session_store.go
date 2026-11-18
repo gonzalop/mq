@@ -124,6 +124,7 @@ type AsyncStore struct {
 // NewAsyncStore creates a new AsyncStore wrapping the provided store.
 // bufferSize determines the initial capacity of the internal unbounded queue.
 func NewAsyncStore(store SessionStore, bufferSize int) *AsyncStore {
+	bufferSize = max(bufferSize, 0)
 	as := &AsyncStore{
 		store: store,
 		queue: make([]func() error, 0, bufferSize),

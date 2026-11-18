@@ -171,7 +171,8 @@ type pendingOp struct {
 	sending atomic.Bool
 	// resubscribe marks a SUBSCRIBE sent by resubscribeAll.
 	resubscribe bool
-	seq         uint64 // Creation order, to resend in the original order
+	seq         uint64                       // Creation order, to resend in the original order
+	removed     map[string]subscriptionEntry // Subscriptions removed by an in-flight UNSUBSCRIBE
 }
 
 // MessageHandler is called when a message is received on a subscribed topic.

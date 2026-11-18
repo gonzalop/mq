@@ -615,39 +615,78 @@ func (c *Client) handleSuback(p *packets.SubackPacket) []packets.Packet {
 	return toSend
 }
 
+// canRestoreSubscriptionLocked reports whether rolling back or rejecting an
+// unsubscribe at seq may put topic back without overwriting a later change.
+// Assumes sessionLock is HELD.
+func (c *Client) canRestoreSubscriptionLocked(topic string, seq uint64) bool {
+	if _, ok := c.subscriptions[topic]; ok {
+		return false
+	}
+	for _, other := range c.pending {
+		if other.seq <= seq {
+			continue
+		}
+		switch pkt := other.packet.(type) {
+		case *packets.SubscribePacket:
+			if slices.Contains(pkt.Topics, topic) {
+				return false
+			}
+		case *packets.UnsubscribePacket:
+			if slices.Contains(pkt.Topics, topic) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // handleUnsuback processes an UNSUBACK packet.
 func (c *Client) handleUnsuback(p *packets.UnsubackPacket) []packets.Packet {
 	c.sessionLock.Lock()
-	defer c.sessionLock.Unlock()
-
-	if op, ok := c.pending[p.PacketID]; ok {
-		var err error
-		if c.opts.ProtocolVersion >= ProtocolV50 {
-			// Set reason code from the first reason code (Unsubscribe operates on a single topic)
-			if len(p.ReasonCodes) > 0 {
-				op.token.reasonCode = ReasonCode(p.ReasonCodes[0])
-			}
-			for _, code := range p.ReasonCodes {
-				if code >= 0x80 {
-					err = &MqttError{
-						ReasonCode: ReasonCode(code),
-					}
-					break
-				}
-			}
-		}
-		op.token.complete(err)
-		c.removePending(p.PacketID)
-
-		// Delete subscriptions from store, unless the server rejected the unsubscribe
-		if unsubPkt, ok := op.packet.(*packets.UnsubscribePacket); ok && err == nil {
-			for _, topic := range unsubPkt.Topics {
-				c.deleteSubscriptionLocked(topic)
-			}
-		}
-		return c.processPublishQueueLocked()
+	op, ok := c.pending[p.PacketID]
+	if !ok {
+		c.sessionLock.Unlock()
+		return nil
 	}
-	return nil
+
+	var err error
+	if c.opts.ProtocolVersion >= ProtocolV50 {
+		// Set reason code from the first reason code (Unsubscribe operates on a single topic)
+		if len(p.ReasonCodes) > 0 {
+			op.token.reasonCode = ReasonCode(p.ReasonCodes[0])
+		}
+		for _, code := range p.ReasonCodes {
+			if code >= 0x80 {
+				err = &MqttError{
+					ReasonCode: ReasonCode(code),
+				}
+				break
+			}
+		}
+	}
+
+	if unsubPkt, isUnsub := op.packet.(*packets.UnsubscribePacket); isUnsub {
+		if c.opts.ProtocolVersion >= ProtocolV50 && len(p.ReasonCodes) != len(unsubPkt.Topics) && err == nil {
+			err = fmt.Errorf("unsuback reason codes count mismatch (expected %d, got %d)",
+				len(unsubPkt.Topics), len(p.ReasonCodes))
+		}
+		for i, topic := range unsubPkt.Topics {
+			succeeded := c.opts.ProtocolVersion < ProtocolV50 || (i < len(p.ReasonCodes) && p.ReasonCodes[i] < 0x80)
+			if succeeded {
+				c.deleteSubscriptionLocked(topic)
+			} else if prev, hadPrev := op.removed[topic]; hadPrev && c.canRestoreSubscriptionLocked(topic, op.seq) {
+				c.addSubscriptionLocked(topic, prev)
+			}
+		}
+	}
+
+	c.removePending(p.PacketID)
+	toSend := c.processPublishQueueLocked()
+	c.sessionLock.Unlock()
+	c.flushStore()
+
+	op.token.complete(err)
+	return toSend
 }
 
 // takeResendLocked returns what a new connection must send first: every
@@ -675,6 +714,7 @@ func (c *Client) takeResendLocked(resubscribing bool) []packets.Packet {
 		return cmp.Compare(a.seq, b.seq)
 	})
 
+	ver := uint8(c.opts.ProtocolVersion)
 	toSend := make([]packets.Packet, 0, len(ops))
 	for _, op := range ops {
 		if op.sending.Load() {
@@ -682,6 +722,11 @@ func (c *Client) takeResendLocked(resubscribing bool) []packets.Packet {
 		}
 		tracked[op.packet] = struct{}{}
 		if pub, ok := op.packet.(*packets.PublishPacket); ok {
+			pub.Version = ver
+			if ver < 5 {
+				pub.Properties = nil
+				pub.UseAlias = false
+			}
 			dup := *pub
 			dup.Dup = true
 			toSend = append(toSend, &dup)

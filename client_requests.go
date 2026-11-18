@@ -328,9 +328,21 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 		return
 	}
 
+	var removed map[string]subscriptionEntry
+	for _, topic := range req.topics {
+		if prev, ok := c.subscriptions[topic]; ok {
+			if removed == nil {
+				removed = make(map[string]subscriptionEntry, len(req.topics))
+			}
+			removed[topic] = prev
+			c.removeSubscriptionLocked(topic)
+		}
+	}
+
 	op := &pendingOp{
-		packet: pkt,
-		token:  req.token,
+		packet:  pkt,
+		token:   req.token,
+		removed: removed,
 	}
 	op.sending.Store(true)
 	c.addPendingLocked(pkt.PacketID, op)
@@ -338,24 +350,25 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 	c.sessionLock.Unlock()
 	c.opts.Logger.Debug("unsubscribing", "packet_id", pkt.PacketID, "topics", req.topics)
 
+	rollback := func(err error) {
+		c.sessionLock.Lock()
+		c.removePending(pkt.PacketID)
+		for topic, prev := range removed {
+			if c.canRestoreSubscriptionLocked(topic, op.seq) {
+				c.addSubscriptionLocked(topic, prev)
+			}
+		}
+		c.sessionLock.Unlock()
+		req.token.complete(err)
+	}
+
 	select {
 	case c.outgoing <- pkt:
 		op.sending.Store(false)
-		c.sessionLock.Lock()
-		for _, topic := range req.topics {
-			c.removeSubscriptionLocked(topic)
-		}
-		c.sessionLock.Unlock()
 	case <-req.ctx.Done():
-		c.sessionLock.Lock()
-		c.removePending(pkt.PacketID)
-		c.sessionLock.Unlock()
-		req.token.complete(req.ctx.Err())
+		rollback(req.ctx.Err())
 	case <-c.stop:
-		c.sessionLock.Lock()
-		c.removePending(pkt.PacketID)
-		c.sessionLock.Unlock()
-		req.token.complete(ErrClientDisconnected)
+		rollback(ErrClientDisconnected)
 	}
 }
 

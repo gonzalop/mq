@@ -149,6 +149,159 @@ func TestHandleUnsuback_FailureKeepsPersistedSubscription(t *testing.T) {
 	}
 }
 
+func TestHandleUnsuback_FailureRestoresSubscriptionAndRouting(t *testing.T) {
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.ProtocolVersion = ProtocolV50
+	c := newTestClient(opts)
+	store := newMockSubscriptionStore()
+	store.storedSubs["t"] = &PersistedSubscription{QoS: AtLeastOnce}
+	c.opts.SessionStore = store
+
+	c.sessionLock.Lock()
+	c.addSubscriptionLocked("t", subscriptionEntry{
+		handler: func(*Client, Message) {},
+		options: subscribeOptions{QoS: AtLeastOnce, Persistence: true},
+	})
+	c.sessionLock.Unlock()
+
+	tok := c.Unsubscribe(context.Background(), "t")
+	var unsubPkt *packets.UnsubscribePacket
+	select {
+	case p := <-c.outgoing:
+		unsubPkt = p.(*packets.UnsubscribePacket)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for UNSUBSCRIBE packet")
+	}
+
+	c.handleUnsuback(&packets.UnsubackPacket{
+		PacketID:    unsubPkt.PacketID,
+		ReasonCodes: []uint8{uint8(ReasonCodeNotAuthorized)},
+		Version:     5,
+	})
+
+	if !errors.Is(tok.Error(), ReasonCodeNotAuthorized) {
+		t.Fatalf("token error = %v, want ReasonCodeNotAuthorized", tok.Error())
+	}
+	c.sessionLock.Lock()
+	_, inMap := c.subscriptions["t"]
+	matches := len(c.trie.Match("t"))
+	c.sessionLock.Unlock()
+	if !inMap || matches != 1 {
+		t.Errorf("restored subscription state: inMap=%v, trie matches=%d; want true, 1", inMap, matches)
+	}
+	if _, ok := store.storedSubs["t"]; !ok {
+		t.Error("subscription deleted from store although unsubscribe failed")
+	}
+}
+
+func TestHandleUnsuback_FailureDoesNotOverwriteNewerSubscribe(t *testing.T) {
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.ProtocolVersion = ProtocolV50
+	c := newTestClient(opts)
+
+	c.sessionLock.Lock()
+	c.addSubscriptionLocked("t", subscriptionEntry{
+		handler: func(*Client, Message) {},
+		options: subscribeOptions{QoS: AtLeastOnce},
+	})
+	c.sessionLock.Unlock()
+
+	_ = c.Unsubscribe(context.Background(), "t")
+	unsubPkt := (<-c.outgoing).(*packets.UnsubscribePacket)
+
+	// A newer Subscribe arrives while UNSUBSCRIBE is still awaiting UNSUBACK.
+	_ = c.Subscribe(context.Background(), "t", ExactlyOnce, func(*Client, Message) {})
+	<-c.outgoing
+
+	c.handleUnsuback(&packets.UnsubackPacket{
+		PacketID:    unsubPkt.PacketID,
+		ReasonCodes: []uint8{uint8(ReasonCodeNotAuthorized)},
+		Version:     5,
+	})
+
+	c.sessionLock.Lock()
+	entry, ok := c.subscriptions["t"]
+	c.sessionLock.Unlock()
+	if !ok || entry.options.QoS != ExactlyOnce {
+		t.Errorf("subscription = (%v, QoS %d), want newer QoS %d kept", ok, entry.options.QoS, ExactlyOnce)
+	}
+}
+
+func TestHandleUnsuback_PendingUnsubscribePreventsRestore(t *testing.T) {
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.ProtocolVersion = ProtocolV50
+	c := newTestClient(opts)
+
+	c.sessionLock.Lock()
+	c.addSubscriptionLocked("t", subscriptionEntry{
+		handler: func(*Client, Message) {},
+		options: subscribeOptions{QoS: AtLeastOnce},
+	})
+	c.sessionLock.Unlock()
+
+	_ = c.Unsubscribe(context.Background(), "t")
+	unsubPkt1 := (<-c.outgoing).(*packets.UnsubscribePacket)
+
+	_ = c.Subscribe(context.Background(), "t", ExactlyOnce, func(*Client, Message) {})
+	<-c.outgoing
+
+	// A second unsubscribe removes "t" from c.subscriptions while pending.
+	_ = c.Unsubscribe(context.Background(), "t")
+	<-c.outgoing
+
+	c.handleUnsuback(&packets.UnsubackPacket{
+		PacketID:    unsubPkt1.PacketID,
+		ReasonCodes: []uint8{uint8(ReasonCodeNotAuthorized)},
+		Version:     5,
+	})
+
+	c.sessionLock.Lock()
+	_, inMap := c.subscriptions["t"]
+	matches := len(c.trie.Match("t"))
+	c.sessionLock.Unlock()
+	if inMap || matches != 0 {
+		t.Errorf("first UNSUBACK restored subscription despite pending newer UNSUBSCRIBE: inMap=%v, matches=%d", inMap, matches)
+	}
+}
+
+func TestHandleUnsuback_MissingReasonCodeRestoresSubscription(t *testing.T) {
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.ProtocolVersion = ProtocolV50
+	c := newTestClient(opts)
+	store := newMockSubscriptionStore()
+	store.storedSubs["t"] = &PersistedSubscription{QoS: AtLeastOnce}
+	c.opts.SessionStore = store
+
+	c.sessionLock.Lock()
+	c.addSubscriptionLocked("t", subscriptionEntry{
+		handler: func(*Client, Message) {},
+		options: subscribeOptions{QoS: AtLeastOnce, Persistence: true},
+	})
+	c.sessionLock.Unlock()
+
+	tok := c.Unsubscribe(context.Background(), "t")
+	unsubPkt := (<-c.outgoing).(*packets.UnsubscribePacket)
+
+	c.handleUnsuback(&packets.UnsubackPacket{
+		PacketID: unsubPkt.PacketID,
+		Version:  5,
+	})
+
+	if tok.Error() == nil {
+		t.Fatal("expected error for UNSUBACK with missing reason code")
+	}
+	c.sessionLock.Lock()
+	_, inMap := c.subscriptions["t"]
+	matches := len(c.trie.Match("t"))
+	c.sessionLock.Unlock()
+	if !inMap || matches != 1 {
+		t.Errorf("subscription not restored on missing reason code: inMap=%v, matches=%d", inMap, matches)
+	}
+	if _, ok := store.storedSubs["t"]; !ok {
+		t.Error("subscription deleted from store despite missing UNSUBACK reason code")
+	}
+}
+
 func TestProcessPublishQueue_SkipsExpired(t *testing.T) {
 	c := newTestClient(nil)
 

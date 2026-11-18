@@ -298,3 +298,13 @@ func TestAsyncStore_QueuePopsClearBackingReference(t *testing.T) {
 		}
 	}
 }
+
+func TestNewAsyncStore_NegativeBufferSize(t *testing.T) {
+	asyncStore := NewAsyncStore(&dummySessionStore{}, -5)
+	if err := asyncStore.SavePendingPublish(1, &PersistedPublish{Topic: "test"}); err != nil {
+		t.Fatalf("SavePendingPublish: %v", err)
+	}
+	if err := asyncStore.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}

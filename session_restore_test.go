@@ -376,3 +376,101 @@ func TestQoS2IDStoredBeforeHandlerRuns(t *testing.T) {
 		t.Fatal("handler never ran")
 	}
 }
+
+func TestDialContext_V311FallbackNormalizesPersistedPublish(t *testing.T) {
+	store := &MockSessionStoreForRestore{
+		pendingPublishes: map[uint16]*PersistedPublish{
+			7: {
+				Topic:   "sensors/temp",
+				QoS:     1,
+				Payload: []byte("hello"),
+				Properties: &PublishProperties{
+					ContentType: "text/plain",
+				},
+			},
+		},
+	}
+
+	attempt := 0
+	resentCh := make(chan *packets.PublishPacket, 1)
+	errCh := make(chan error, 1)
+
+	dialer := DialFunc(func(_ context.Context, _, _ string) (net.Conn, error) {
+		attempt++
+		cur := attempt
+		cli, srv := net.Pipe()
+		go func() {
+			defer srv.Close()
+			if cur == 1 {
+				_, err := packets.ReadPacket(srv, uint8(ProtocolV50), 0)
+				if err != nil {
+					return
+				}
+				_, _ = (&packets.ConnackPacket{
+					ReturnCode: uint8(packets.ConnRefusedUnacceptableProtocol),
+				}).WriteTo(srv)
+				return
+			}
+
+			_, err := packets.ReadPacket(srv, uint8(ProtocolV311), 0)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			_, _ = (&packets.ConnackPacket{
+				ReturnCode:     uint8(packets.ConnAccepted),
+				SessionPresent: true,
+			}).WriteTo(srv)
+
+			pkt, err := packets.ReadPacket(srv, uint8(ProtocolV311), 0)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			pub, ok := pkt.(*packets.PublishPacket)
+			if !ok {
+				errCh <- context.DeadlineExceeded
+				return
+			}
+			resentCh <- pub
+			_, _ = (&packets.PubackPacket{PacketID: pub.PacketID, Version: 4}).WriteTo(srv)
+		}()
+		return cli, nil
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	client, err := DialContext(ctx, "tcp://127.0.0.1:1883",
+		WithClientID("fallback-restore"),
+		WithCleanSession(false),
+		WithAutoProtocolVersion(true),
+		WithSessionStore(store),
+		WithDialer(dialer),
+		WithAutoReconnect(false),
+	)
+	if err != nil {
+		t.Fatalf("DialContext failed: %v", err)
+	}
+	defer func() { _ = client.Disconnect(context.Background()) }()
+
+	select {
+	case err := <-errCh:
+		t.Fatalf("server read error: %v", err)
+	case pub := <-resentCh:
+		if pub.Topic != "sensors/temp" {
+			t.Errorf("Topic = %q, want sensors/temp", pub.Topic)
+		}
+		if string(pub.Payload) != "hello" {
+			t.Errorf("Payload = %q, want %q (v5 bytes leaked onto v3.1.1 stream)", pub.Payload, "hello")
+		}
+		if !pub.Dup {
+			t.Error("expected Dup=true on resent publish")
+		}
+		if pub.Properties != nil {
+			t.Errorf("expected nil Properties on v3.1.1 packet, got %+v", pub.Properties)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for resent publish")
+	}
+}
