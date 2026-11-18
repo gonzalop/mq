@@ -18,7 +18,7 @@ func (c *Client) IsConnected() bool {
 // ProtocolVersion returns the active MQTT protocol version in use by the client
 // (ProtocolV50 or ProtocolV311). When automatic protocol version negotiation is
 // enabled (the default), this reflects the version negotiated during Dial.
-func (c *Client) ProtocolVersion() uint8 {
+func (c *Client) ProtocolVersion() ProtocolVersion {
 	if c == nil || c.opts == nil {
 		return 0
 	}
@@ -90,7 +90,7 @@ func (c *Client) disconnectWithReason(ctx context.Context, reasonCode uint8, pro
 	// there is nothing to send, but the loops below must still be stopped.
 	if c.connected.Swap(false) {
 		disconnectPkt := &packets.DisconnectPacket{
-			Version:    c.opts.ProtocolVersion,
+			Version:    uint8(c.opts.ProtocolVersion),
 			ReasonCode: reasonCode,
 			Properties: toInternalProperties(props),
 		}

@@ -140,7 +140,7 @@ func TestTopicAliasesPrepareKeepsProperties(t *testing.T) {
 func TestOutgoingAliasLimit(t *testing.T) {
 	tests := []struct {
 		name        string
-		version     uint8
+		version     ProtocolVersion
 		clientLimit uint16
 		serverLimit uint16
 		want        uint16

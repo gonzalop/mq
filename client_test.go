@@ -655,7 +655,7 @@ func TestDialDefaultPorts(t *testing.T) {
 func TestClientIDValidation(t *testing.T) {
 	tests := []struct {
 		name         string
-		proto        uint8
+		proto        ProtocolVersion
 		clientID     string
 		cleanSession bool
 		wantErr      bool
@@ -699,7 +699,7 @@ func TestClientIDValidation(t *testing.T) {
 func TestValidateConnack(t *testing.T) {
 	tests := []struct {
 		name       string
-		version    uint8
+		version    ProtocolVersion
 		returnCode uint8
 		reasonStr  string
 		wantErr    error

@@ -37,7 +37,7 @@ func toPublicProperties(internal *packets.Properties) *Properties {
 		props.MessageExpiry = &val
 	}
 	if internal.Presence&packets.PresPayloadFormatIndicator != 0 {
-		val := internal.PayloadFormatIndicator
+		val := PayloadFormat(internal.PayloadFormatIndicator)
 		props.PayloadFormat = &val
 	}
 	if internal.Presence&packets.PresWillDelayInterval != 0 {
@@ -117,7 +117,7 @@ func toInternalProperties(public *Properties) *packets.Properties {
 		props.Presence |= packets.PresMessageExpiryInterval
 	}
 	if public.PayloadFormat != nil {
-		props.PayloadFormatIndicator = *public.PayloadFormat
+		props.PayloadFormatIndicator = uint8(*public.PayloadFormat)
 		props.Presence |= packets.PresPayloadFormatIndicator
 	}
 	if public.WillDelayInterval != nil {

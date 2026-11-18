@@ -40,7 +40,7 @@ func TestReconnectBackoff_ShortLivedConnectionEscalates(t *testing.T) {
 				mu.Unlock()
 
 				// Read CONNECT packet
-				pkt, err := packets.ReadPacket(c, ProtocolV50, 0)
+				pkt, err := packets.ReadPacket(c, uint8(ProtocolV50), 0)
 				if err != nil {
 					return
 				}
@@ -142,7 +142,7 @@ func TestReconnectBackoff_StableConnectionResetsBackoff(t *testing.T) {
 				mu.Unlock()
 
 				// Read CONNECT packet
-				pkt, err := packets.ReadPacket(c, ProtocolV50, 0)
+				pkt, err := packets.ReadPacket(c, uint8(ProtocolV50), 0)
 				if err != nil {
 					return
 				}
@@ -246,7 +246,7 @@ func TestReconnectBackoff_DisabledEscalation(t *testing.T) {
 				count := len(connTimes)
 				mu.Unlock()
 
-				pkt, err := packets.ReadPacket(c, ProtocolV50, 0)
+				pkt, err := packets.ReadPacket(c, uint8(ProtocolV50), 0)
 				if err != nil {
 					return
 				}
@@ -329,7 +329,7 @@ func TestClient_ConnectedAtAndUptime(t *testing.T) {
 		}
 		defer conn.Close()
 
-		_, _ = packets.ReadPacket(conn, ProtocolV50, 0)
+		_, _ = packets.ReadPacket(conn, uint8(ProtocolV50), 0)
 		connack := &packets.ConnackPacket{
 			ReturnCode: uint8(packets.ConnAccepted),
 		}
@@ -393,7 +393,7 @@ func TestReconnect_NoStaleWriteLoop(t *testing.T) {
 			n := connN.Add(1)
 			go func(c net.Conn, n int32) {
 				defer c.Close()
-				if _, err := packets.ReadPacket(c, ProtocolV50, 0); err != nil {
+				if _, err := packets.ReadPacket(c, uint8(ProtocolV50), 0); err != nil {
 					return
 				}
 				_, _ = (&packets.ConnackPacket{}).WriteTo(c)
@@ -401,7 +401,7 @@ func TestReconnect_NoStaleWriteLoop(t *testing.T) {
 					return // drop the first connection
 				}
 				for {
-					p, err := packets.ReadPacket(c, ProtocolV50, 0)
+					p, err := packets.ReadPacket(c, uint8(ProtocolV50), 0)
 					if err != nil {
 						close(conn2Closed)
 						return

@@ -37,7 +37,7 @@ func TestMqttError(t *testing.T) {
 }
 
 func TestMqttError_v5_v3_Compatibility(t *testing.T) {
-	setupClient := func(version uint8) *Client {
+	setupClient := func(version ProtocolVersion) *Client {
 		return &Client{trie: newTopicTrie(),
 			opts: &clientOptions{
 				ProtocolVersion: version,

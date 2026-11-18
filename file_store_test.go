@@ -547,7 +547,7 @@ func TestFileStore_LegacySubscriptionFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	subsDir := filepath.Join(dir, "legacy", "subscriptions")
-	writeLegacy := func(topic string, qos uint8) {
+	writeLegacy := func(topic string, qos QoS) {
 		t.Helper()
 		data, _ := json.Marshal(&PersistedSubscription{QoS: qos})
 		name := base64.URLEncoding.EncodeToString([]byte(topic)) + ".json"

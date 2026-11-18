@@ -9,7 +9,7 @@ import (
 
 // PublishOptions holds configuration for a publish operation.
 type PublishOptions struct {
-	QoS        uint8
+	QoS        QoS
 	Retain     bool
 	Properties *Properties
 	UseAlias   bool
@@ -28,7 +28,7 @@ type PublishOption func(*PublishOptions)
 // Default is QoS 0.
 func WithQoS(qos QoS) PublishOption {
 	return func(o *PublishOptions) {
-		o.QoS = uint8(qos)
+		o.QoS = qos
 	}
 }
 
@@ -145,7 +145,7 @@ func WithMessageExpiry(seconds uint32) PublishOption {
 // Example:
 //
 //	client.Publish("data/text", []byte("hello"), mq.WithPayloadFormat(mq.PayloadFormatUTF8))
-func WithPayloadFormat(format uint8) PublishOption {
+func WithPayloadFormat(format PayloadFormat) PublishOption {
 	return func(o *PublishOptions) {
 		if o.Properties == nil {
 			o.Properties = &Properties{}
@@ -257,9 +257,9 @@ func (c *Client) basePublish(ctx context.Context, topic string, payload []byte, 
 	pkt := &packets.PublishPacket{
 		Topic:      topic,
 		Payload:    payload,
-		QoS:        pubOpts.QoS,
+		QoS:        uint8(pubOpts.QoS),
 		Retain:     pubOpts.Retain,
-		Version:    c.opts.ProtocolVersion,
+		Version:    uint8(c.opts.ProtocolVersion),
 		Properties: toPublishProperties(pubOpts.Properties),
 		UseAlias:   pubOpts.UseAlias,
 	}

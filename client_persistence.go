@@ -119,22 +119,21 @@ func (c *Client) convertToPersistedPublish(req *publishRequest) *PersistedPublis
 	p := &PersistedPublish{
 		Topic:   req.packet.Topic,
 		Payload: req.packet.Payload,
-		QoS:     req.packet.QoS,
+		QoS:     QoS(req.packet.QoS),
 		Retain:  req.packet.Retain,
 	}
 
 	if req.packet.Properties != nil {
 		p.Properties = &PublishProperties{
-			PayloadFormat:   &req.packet.Properties.PayloadFormatIndicator,
 			MessageExpiry:   &req.packet.Properties.MessageExpiryInterval,
 			ResponseTopic:   req.packet.Properties.ResponseTopic,
 			CorrelationData: req.packet.Properties.CorrelationData,
 			ContentType:     req.packet.Properties.ContentType,
 		}
 
-		// Handle optional uint8/uint32 more carefully if they are zero-value but not present
-		if req.packet.Properties.Presence&packets.PresPayloadFormatIndicator == 0 {
-			p.Properties.PayloadFormat = nil
+		if req.packet.Properties.Presence&packets.PresPayloadFormatIndicator != 0 {
+			pf := PayloadFormat(req.packet.Properties.PayloadFormatIndicator)
+			p.Properties.PayloadFormat = &pf
 		}
 		if req.packet.Properties.Presence&packets.PresMessageExpiryInterval == 0 {
 			p.Properties.MessageExpiry = nil
@@ -158,10 +157,10 @@ func (c *Client) convertFromPersistedPublish(p *PersistedPublish) *pendingOp {
 	pkt := &packets.PublishPacket{
 		Topic:    p.Topic,
 		Payload:  p.Payload,
-		QoS:      p.QoS,
+		QoS:      uint8(p.QoS),
 		Retain:   p.Retain,
 		PacketID: 0, // Will be set by caller
-		Version:  c.opts.ProtocolVersion,
+		Version:  uint8(c.opts.ProtocolVersion),
 	}
 
 	if p.Properties != nil {
@@ -172,7 +171,7 @@ func (c *Client) convertFromPersistedPublish(p *PersistedPublish) *pendingOp {
 		}
 
 		if p.Properties.PayloadFormat != nil {
-			pkt.Properties.PayloadFormatIndicator = *p.Properties.PayloadFormat
+			pkt.Properties.PayloadFormatIndicator = uint8(*p.Properties.PayloadFormat)
 			pkt.Properties.Presence |= packets.PresPayloadFormatIndicator
 		}
 		if p.Properties.MessageExpiry != nil {
@@ -207,7 +206,7 @@ func (c *Client) convertFromPersistedPublish(p *PersistedPublish) *pendingOp {
 	return &pendingOp{
 		packet: pkt,
 		token:  newToken(),
-		qos:    p.QoS,
+		qos:    uint8(p.QoS),
 	}
 }
 
@@ -225,14 +224,14 @@ func (c *Client) convertToPersistedSubscription(entry subscriptionEntry) *Persis
 	}
 
 	return &PersistedSubscription{
-		QoS:     uint8(entry.options.QoS),
+		QoS:     entry.options.QoS,
 		Options: opts,
 	}
 }
 
 func (c *Client) convertFromPersistedSubscription(sub *PersistedSubscription) subscriptionEntry {
 	opts := SubscribeOptions{
-		QoS:         QoS(sub.QoS),
+		QoS:         sub.QoS,
 		Persistence: true,
 	}
 	if sub.Options != nil {

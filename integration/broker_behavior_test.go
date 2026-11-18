@@ -23,7 +23,7 @@ import (
 type tapProxy struct {
 	listener net.Listener
 	target   string
-	version  uint8 // protocol version used to decode client packets
+	version  mq.ProtocolVersion // protocol version used to decode client packets
 
 	gate sync.Mutex // held while paused; the client->broker copy waits on it
 
@@ -37,7 +37,7 @@ type tapProxy struct {
 	subscribes [][]string // SUBSCRIBE topics sent on each connection, in accept order
 }
 
-func newTapProxy(t *testing.T, server string, version uint8) *tapProxy {
+func newTapProxy(t *testing.T, server string, version mq.ProtocolVersion) *tapProxy {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -120,7 +120,7 @@ func (p *tapProxy) handle(client net.Conn) {
 
 func (p *tapProxy) sniff(idx int, r io.Reader) {
 	for {
-		pkt, err := packets.ReadPacket(r, p.version, 0)
+		pkt, err := packets.ReadPacket(r, uint8(p.version), 0)
 		if err != nil {
 			_, _ = io.Copy(io.Discard, r)
 			return
@@ -198,7 +198,7 @@ func TestRejectedSubscription_NotResubscribed(t *testing.T) {
 
 	for _, tc := range []struct {
 		name    string
-		version uint8
+		version mq.ProtocolVersion
 	}{{"v5.0", mq.ProtocolV50}, {"v3.1.1", mq.ProtocolV311}} {
 		version := tc.version
 		t.Run(tc.name, func(t *testing.T) {

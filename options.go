@@ -82,7 +82,7 @@ type clientOptions struct {
 	InitialSubscriptions map[string]subscriptionEntry
 
 	// Protocol Version (4 = v3.1.1, 5 = v5.0)
-	ProtocolVersion uint8
+	ProtocolVersion ProtocolVersion
 
 	// AutoProtocolVersion enables automatic protocol version negotiation.
 	// If true, the client will first try v5.0 and fall back to v3.1.1 if refused.
@@ -179,11 +179,14 @@ func (o *clientOptions) LogValue() slog.Value {
 	)
 }
 
+// ProtocolVersion represents the MQTT protocol version.
+type ProtocolVersion uint8
+
 const (
 	// ProtocolV311 is MQTT version 3.1.1
-	ProtocolV311 uint8 = 4
+	ProtocolV311 ProtocolVersion = 4
 	// ProtocolV50 is MQTT version 5.0 (default)
-	ProtocolV50 uint8 = 5
+	ProtocolV50 ProtocolVersion = 5
 )
 
 // Option is a functional option for configuring the client.
@@ -274,7 +277,7 @@ func WithMinStableConnectionDuration(duration time.Duration) Option {
 // Example for v3.1.1 server:
 //
 //	client, _ := mq.Dial("tcp://localhost:1883", mq.WithProtocolVersion(mq.ProtocolV311))
-func WithProtocolVersion(version uint8) Option {
+func WithProtocolVersion(version ProtocolVersion) Option {
 	return func(o *clientOptions) {
 		o.ProtocolVersion = version
 	}

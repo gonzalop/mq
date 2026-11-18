@@ -292,7 +292,7 @@ func (as *AsyncStore) Clear() error {
 type PersistedPublish struct {
 	Topic      string
 	Payload    []byte
-	QoS        uint8
+	QoS        QoS
 	Retain     bool
 	Properties *PublishProperties
 }
@@ -300,13 +300,13 @@ type PersistedPublish struct {
 // PersistedSubscription represents a subscription for persistence.
 // This contains the data needed to restore a subscription after reconnection.
 type PersistedSubscription struct {
-	QoS     uint8
+	QoS     QoS
 	Options *PersistedSubscriptionOptions
 }
 
 // PublishProperties represents MQTT v5.0 publish properties for persistence.
 type PublishProperties struct {
-	PayloadFormat          *uint8
+	PayloadFormat          *PayloadFormat
 	MessageExpiry          *uint32
 	TopicAlias             *uint16
 	ResponseTopic          string
@@ -321,7 +321,7 @@ type PublishProperties struct {
 type PersistedSubscriptionOptions struct {
 	NoLocal           bool
 	RetainAsPublished bool
-	RetainHandling    uint8
+	RetainHandling    RetainHandling
 	SubscriptionID    *uint32
 	UserProperties    map[string]string
 }

@@ -37,7 +37,7 @@ MQTT_USERNAME=myuser MQTT_PASSWORD=mypass ./scram_auth
 The core logic resides in `HandleChallenge`:
 
 ```go
-func (s *ScramAuthenticator) HandleChallenge(data []byte, reasonCode uint8) ([]byte, error) {
+func (s *ScramAuthenticator) HandleChallenge(data []byte, reasonCode mq.ReasonCode) ([]byte, error) {
     // 1. Parse server challenge (nonce, salt, iterations)
     // 2. Derive key using PBKDF2
     // 3. Calculate ClientProof

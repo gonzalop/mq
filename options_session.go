@@ -4,7 +4,7 @@ package mq
 type willMessage struct {
 	Topic      string
 	Payload    []byte
-	QoS        uint8
+	QoS        QoS
 	Retained   bool
 	Properties *Properties
 }
@@ -179,7 +179,7 @@ func WithSubscription(topic string, handler MessageHandler, opts ...SubscribeOpt
 // Other clients can subscribe to "devices/+/status" to monitor device connectivity.
 // WithWill sets the Last Will and Testament message.
 // The properties argument is optional and can be used to set Will Properties (MQTT v5.0).
-func WithWill(topic string, payload []byte, qos uint8, retained bool, properties ...*Properties) Option {
+func WithWill(topic string, payload []byte, qos QoS, retained bool, properties ...*Properties) Option {
 	return func(o *clientOptions) {
 		o.will = &willMessage{
 			Topic:    topic,

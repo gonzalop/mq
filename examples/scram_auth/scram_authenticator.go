@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gonzalop/mq"
 	"golang.org/x/crypto/pbkdf2"
 )
 
@@ -44,7 +45,7 @@ func (s *ScramAuthenticator) InitialData() ([]byte, error) {
 }
 
 // HandleChallenge processes the server-first-message and returns client-final-message
-func (s *ScramAuthenticator) HandleChallenge(data []byte, _ uint8) ([]byte, error) {
+func (s *ScramAuthenticator) HandleChallenge(data []byte, _ mq.ReasonCode) ([]byte, error) {
 	// Parse server-first-message: r=nonce,s=salt,i=iter
 	parts := parseSCRAMMessage(string(data))
 

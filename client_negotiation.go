@@ -25,7 +25,7 @@ type serverCapabilities struct {
 
 	// MaximumQoS is the maximum QoS level the server supports.
 	// Can be 0, 1, or 2.
-	MaximumQoS uint8
+	MaximumQoS QoS
 
 	// RetainAvailable indicates if the server supports retained messages.
 	RetainAvailable bool
@@ -81,7 +81,7 @@ type ServerCapabilities struct {
 	TopicAliasMaximum uint16
 
 	// MaximumQoS is the maximum QoS level the server supports (0, 1, or 2).
-	MaximumQoS uint8
+	MaximumQoS QoS
 
 	// RetainAvailable indicates if the server supports retained messages.
 	RetainAvailable bool
@@ -151,7 +151,7 @@ func extractServerCapabilities(props *packets.Properties) serverCapabilities {
 	}
 
 	if props.Presence&packets.PresMaximumQoS != 0 {
-		caps.MaximumQoS = props.MaximumQoS
+		caps.MaximumQoS = QoS(props.MaximumQoS)
 	}
 
 	if props.Presence&packets.PresRetainAvailable != 0 {

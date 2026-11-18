@@ -507,7 +507,7 @@ func (c *Client) handlePubrec(p *packets.PubrecPacket) []packets.Packet {
 			}
 		}
 
-		pubrel := &packets.PubrelPacket{PacketID: p.PacketID, Version: c.opts.ProtocolVersion}
+		pubrel := &packets.PubrelPacket{PacketID: p.PacketID, Version: uint8(c.opts.ProtocolVersion)}
 		// Update pending operation to track PUBREL for retransmission
 		op.packet = pubrel
 		return []packets.Packet{pubrel}

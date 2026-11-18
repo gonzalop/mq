@@ -71,7 +71,7 @@ func (c *Client) Reauthenticate(ctx context.Context) error {
 			AuthenticationData:   initialData,
 			Presence:             packets.PresAuthenticationMethod,
 		},
-		Version: c.opts.ProtocolVersion,
+		Version: uint8(c.opts.ProtocolVersion),
 	}
 
 	c.authExchangeCount.Store(0)
@@ -131,7 +131,7 @@ func (c *Client) handleAuth(p *packets.AuthPacket) []packets.Packet {
 	}
 
 	go func() {
-		responseData, err := c.opts.Authenticator.HandleChallenge(challengeData, p.ReasonCode)
+		responseData, err := c.opts.Authenticator.HandleChallenge(challengeData, ReasonCode(p.ReasonCode))
 		if err == nil {
 			err = checkAuthFieldLengths(c.opts.Authenticator.Method(), responseData)
 		}
@@ -149,7 +149,7 @@ func (c *Client) handleAuth(p *packets.AuthPacket) []packets.Packet {
 				AuthenticationData:   responseData,
 				Presence:             packets.PresAuthenticationMethod,
 			},
-			Version: c.opts.ProtocolVersion,
+			Version: uint8(c.opts.ProtocolVersion),
 		}
 
 		select {

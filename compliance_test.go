@@ -346,7 +346,7 @@ func TestCompliance_Disconnect_ReasonCode(t *testing.T) {
 	// or the internal helper if we could, but let's check the packet creation.
 
 	pkt := &packets.DisconnectPacket{
-		Version:    ProtocolV50,
+		Version:    uint8(ProtocolV50),
 		ReasonCode: uint8(ReasonCodeDisconnectWithWill),
 	}
 

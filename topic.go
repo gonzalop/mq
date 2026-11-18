@@ -261,9 +261,9 @@ func (c *Client) validateSubscribeCaps(topic string, qos QoS) error {
 	}
 
 	// MaximumQoS: server may only support QoS 0 or 1.
-	if caps.MaximumQoS < uint8(qos) {
+	if caps.MaximumQoS < qos {
 		return fmt.Errorf("%w: requested QoS %d, server maximum is %d",
-			ErrQoSExceedsServerMax, uint8(qos), caps.MaximumQoS)
+			ErrQoSExceedsServerMax, qos, caps.MaximumQoS)
 	}
 
 	return nil

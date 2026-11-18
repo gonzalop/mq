@@ -34,7 +34,7 @@ func TestInitialSubscriptionsSentOnFirstConnect(t *testing.T) {
 		}
 		defer conn.Close()
 
-		if _, err := packets.ReadPacket(conn, ProtocolV311, 0); err != nil {
+		if _, err := packets.ReadPacket(conn, uint8(ProtocolV311), 0); err != nil {
 			serverErr <- err
 			return
 		}
@@ -44,7 +44,7 @@ func TestInitialSubscriptionsSentOnFirstConnect(t *testing.T) {
 			return
 		}
 
-		pkt, err := packets.ReadPacket(conn, ProtocolV311, 0)
+		pkt, err := packets.ReadPacket(conn, uint8(ProtocolV311), 0)
 		if err != nil {
 			serverErr <- err
 			return
@@ -108,7 +108,7 @@ func TestInitialSubscriptionsWithOptions(t *testing.T) {
 		}
 		defer conn.Close()
 
-		if _, err := packets.ReadPacket(conn, ProtocolV50, 0); err != nil {
+		if _, err := packets.ReadPacket(conn, uint8(ProtocolV50), 0); err != nil {
 			serverErr <- err
 			return
 		}
@@ -121,7 +121,7 @@ func TestInitialSubscriptionsWithOptions(t *testing.T) {
 			return
 		}
 
-		pkt, err := packets.ReadPacket(conn, ProtocolV50, 0)
+		pkt, err := packets.ReadPacket(conn, uint8(ProtocolV50), 0)
 		if err != nil {
 			serverErr <- err
 			return

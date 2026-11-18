@@ -196,7 +196,7 @@ func TestInternalSubscribe(t *testing.T) {
 	pkt := &packets.SubscribePacket{
 		Topics:  []string{topic},
 		QoS:     []uint8{1},
-		Version: ProtocolV50,
+		Version: uint8(ProtocolV50),
 	}
 
 	token := newToken()

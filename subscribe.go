@@ -9,12 +9,24 @@ import (
 	"github.com/gonzalop/mq/internal/packets"
 )
 
+// RetainHandling controls when retained messages are sent on subscribe (MQTT v5.0).
+type RetainHandling uint8
+
+const (
+	// RetainHandlingSend sends retained messages at the time of subscribe (default).
+	RetainHandlingSend RetainHandling = 0
+	// RetainHandlingSendIfNew sends retained messages at subscribe only if the subscription does not exist.
+	RetainHandlingSendIfNew RetainHandling = 1
+	// RetainHandlingDoNotSend does not send retained messages at the time of subscribe.
+	RetainHandlingDoNotSend RetainHandling = 2
+)
+
 // SubscribeOptions holds configuration for a subscription.
 type SubscribeOptions struct {
 	QoS               QoS
 	NoLocal           bool
 	RetainAsPublished bool
-	RetainHandling    uint8
+	RetainHandling    RetainHandling
 	Persistence       bool              // Persistence enabled by default (must be manually set to true by default logic)
 	SubscriptionID    int               // MQTT v5.0: Subscription identifier (1-268435455, 0 = none).
 	UserProperties    map[string]string // MQTT v5.0: User properties
@@ -74,13 +86,13 @@ func WithRetainAsPublished(retain bool) SubscribeOption {
 	}
 }
 
-// WithRetainHandling (MQTT v5.0) specifies when retained messages are sent.
-// 0 = Send retained messages at time of subscribe (default)
-// 1 = Send retained messages at subscribe only if subscription doesn't exist
-// 2 = Do not send retained messages at time of subscribe
+// WithRetainHandling (MQTT v5.0) specifies when retained messages are sent:
+//   - RetainHandlingSend (0): Send retained messages at time of subscribe (default)
+//   - RetainHandlingSendIfNew (1): Send retained messages at subscribe only if subscription doesn't exist
+//   - RetainHandlingDoNotSend (2): Do not send retained messages at time of subscribe
 //
 // This option is ignored when using MQTT v3.1.1.
-func WithRetainHandling(handling uint8) SubscribeOption {
+func WithRetainHandling(handling RetainHandling) SubscribeOption {
 	return func(o *SubscribeOptions) {
 		o.RetainHandling = handling
 	}
@@ -205,8 +217,8 @@ func (c *Client) Subscribe(ctx context.Context, topic string, qos QoS, handler M
 		QoS:               []uint8{uint8(qos)},
 		NoLocal:           []bool{subOpts.NoLocal},
 		RetainAsPublished: []bool{subOpts.RetainAsPublished},
-		RetainHandling:    []uint8{subOpts.RetainHandling},
-		Version:           c.opts.ProtocolVersion,
+		RetainHandling:    []uint8{uint8(subOpts.RetainHandling)},
+		Version:           uint8(c.opts.ProtocolVersion),
 	}
 
 	if c.opts.ProtocolVersion >= ProtocolV50 {
@@ -293,7 +305,7 @@ func (c *Client) Unsubscribe(ctx context.Context, topic string, opts ...Unsubscr
 
 	pkt := &packets.UnsubscribePacket{
 		Topics:  []string{topic},
-		Version: c.opts.ProtocolVersion,
+		Version: uint8(c.opts.ProtocolVersion),
 	}
 
 	if c.opts.ProtocolVersion >= ProtocolV50 {
@@ -427,7 +439,7 @@ func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 			if c.opts.ProtocolVersion >= ProtocolV50 {
 				g.noLocal = append(g.noLocal, entry.options.NoLocal)
 				g.retainAsPublished = append(g.retainAsPublished, entry.options.RetainAsPublished)
-				g.retainHandling = append(g.retainHandling, entry.options.RetainHandling)
+				g.retainHandling = append(g.retainHandling, uint8(entry.options.RetainHandling))
 			}
 			groups[key] = g
 		}
@@ -452,7 +464,7 @@ func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 				NoLocal:           g.noLocal,
 				RetainAsPublished: g.retainAsPublished,
 				RetainHandling:    g.retainHandling,
-				Version:           c.opts.ProtocolVersion,
+				Version:           uint8(c.opts.ProtocolVersion),
 			}
 
 			if c.opts.ProtocolVersion >= ProtocolV50 {

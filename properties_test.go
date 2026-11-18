@@ -53,7 +53,7 @@ func TestPropertiesConversion(t *testing.T) {
 			name: "payload format",
 			public: func() *Properties {
 				p := &Properties{}
-				format := uint8(1)
+				format := PayloadFormatUTF8
 				p.PayloadFormat = &format
 				return p
 			}(),
@@ -80,7 +80,7 @@ func TestPropertiesConversion(t *testing.T) {
 					},
 				}
 				expiry := uint32(600)
-				format := uint8(1)
+				format := PayloadFormatUTF8
 				delay := uint32(120)
 				p.MessageExpiry = &expiry
 				p.PayloadFormat = &format

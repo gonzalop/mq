@@ -28,7 +28,7 @@ func (t *tokenAuthenticator) InitialData() ([]byte, error) {
 	return []byte(t.token), nil
 }
 
-func (t *tokenAuthenticator) HandleChallenge(_ []byte, _ uint8) ([]byte, error) {
+func (t *tokenAuthenticator) HandleChallenge(_ []byte, _ ReasonCode) ([]byte, error) {
 	t.mu.Lock()
 	t.challengeCount++
 	t.mu.Unlock()
@@ -166,7 +166,7 @@ func TestReauthenticate(t *testing.T) {
 func TestReauthenticateErrors(t *testing.T) {
 	tests := []struct {
 		name        string
-		version     uint8
+		version     ProtocolVersion
 		auth        Authenticator
 		connected   bool
 		expectError string
@@ -231,7 +231,7 @@ func (a *PingPongAuthenticator) InitialData() ([]byte, error) {
 	return nil, nil
 }
 
-func (a *PingPongAuthenticator) HandleChallenge(data []byte, _ uint8) ([]byte, error) {
+func (a *PingPongAuthenticator) HandleChallenge(data []byte, _ ReasonCode) ([]byte, error) {
 	if string(data) == "PING" {
 		return []byte("PONG"), nil
 	}
@@ -546,7 +546,7 @@ type blockingAuth struct{ block chan struct{} }
 func (a *blockingAuth) Method() string               { return "TEST" }
 func (a *blockingAuth) InitialData() ([]byte, error) { return nil, nil }
 func (a *blockingAuth) Complete() error              { return nil }
-func (a *blockingAuth) HandleChallenge(_ []byte, _ uint8) ([]byte, error) {
+func (a *blockingAuth) HandleChallenge(_ []byte, _ ReasonCode) ([]byte, error) {
 	if a.block != nil {
 		<-a.block
 	}
@@ -582,7 +582,7 @@ type failingAuth struct {
 func (f *failingAuth) Method() string               { return f.method }
 func (f *failingAuth) InitialData() ([]byte, error) { return nil, nil }
 func (f *failingAuth) Complete() error              { return nil }
-func (f *failingAuth) HandleChallenge(_ []byte, _ uint8) ([]byte, error) {
+func (f *failingAuth) HandleChallenge(_ []byte, _ ReasonCode) ([]byte, error) {
 	return nil, f.err
 }
 

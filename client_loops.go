@@ -29,7 +29,7 @@ func (c *Client) runReadLoop(conn net.Conn, readDone chan struct{}) {
 	br := bufio.NewReader(cr)
 
 	for {
-		pkt, err := packets.ReadPacket(br, c.opts.ProtocolVersion, c.opts.MaxIncomingPacket)
+		pkt, err := packets.ReadPacket(br, uint8(c.opts.ProtocolVersion), c.opts.MaxIncomingPacket)
 		if err != nil {
 			if _, ok := errors.AsType[*packets.ProtocolError](err); ok {
 				c.opts.Logger.Error("protocol error, disconnecting", "error", err)
@@ -361,7 +361,7 @@ func (c *Client) dropConnection(reasonCode ReasonCode) {
 	if c.opts.ProtocolVersion >= ProtocolV50 {
 		pkt := &abortPacket{
 			DisconnectPacket: &packets.DisconnectPacket{
-				Version:    c.opts.ProtocolVersion,
+				Version:    uint8(c.opts.ProtocolVersion),
 				ReasonCode: uint8(reasonCode),
 			},
 			conn: conn,

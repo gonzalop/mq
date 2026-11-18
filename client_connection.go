@@ -78,7 +78,7 @@ func (c *Client) buildConnectPacket() *packets.ConnectPacket {
 
 	pkt := &packets.ConnectPacket{
 		ProtocolName:  "MQTT",
-		ProtocolLevel: c.opts.ProtocolVersion,
+		ProtocolLevel: uint8(c.opts.ProtocolVersion),
 		CleanSession:  c.opts.CleanSession,
 		KeepAlive:     uint16(keepalive.Seconds()),
 		ClientID:      c.opts.ClientID,
@@ -154,7 +154,7 @@ func (c *Client) buildConnectPacket() *packets.ConnectPacket {
 		pkt.WillFlag = true
 		pkt.WillTopic = c.opts.will.Topic
 		pkt.WillMessage = c.opts.will.Payload
-		pkt.WillQoS = c.opts.will.QoS
+		pkt.WillQoS = uint8(c.opts.will.QoS)
 		pkt.WillRetain = c.opts.will.Retained
 
 		if c.opts.will.Properties != nil {
@@ -349,7 +349,7 @@ func (c *Client) performHandshake(ctx context.Context, conn net.Conn, r io.Reade
 	c.authExchangeCount.Store(0)
 
 	for {
-		pkt, err := packets.ReadPacket(r, c.opts.ProtocolVersion, c.opts.MaxIncomingPacket)
+		pkt, err := packets.ReadPacket(r, uint8(c.opts.ProtocolVersion), c.opts.MaxIncomingPacket)
 		if err != nil {
 			conn.Close()
 			return nil, fmt.Errorf("failed to read packet: %w", err)
@@ -380,7 +380,7 @@ func (c *Client) performHandshake(ctx context.Context, conn net.Conn, r io.Reade
 			if p.Properties != nil {
 				challengeData = p.Properties.AuthenticationData
 			}
-			respData, err := c.opts.Authenticator.HandleChallenge(challengeData, p.ReasonCode)
+			respData, err := c.opts.Authenticator.HandleChallenge(challengeData, ReasonCode(p.ReasonCode))
 			if err == nil {
 				err = checkAuthFieldLengths(c.opts.Authenticator.Method(), respData)
 			}
@@ -391,7 +391,7 @@ func (c *Client) performHandshake(ctx context.Context, conn net.Conn, r io.Reade
 
 			// Send AUTH response
 			authResp := &packets.AuthPacket{
-				Version:    ProtocolV50,
+				Version:    uint8(ProtocolV50),
 				ReasonCode: packets.AuthReasonContinue, // 0x18
 				Properties: &packets.Properties{
 					AuthenticationMethod: c.opts.Authenticator.Method(),

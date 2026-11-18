@@ -472,7 +472,7 @@ func TestInitialSubscriptionsSentOnFirstConnect_CleanSession(t *testing.T) {
 	server, cleanup := startMosquitto(t, "")
 	defer cleanup()
 
-	for _, version := range []uint8{mq.ProtocolV311, mq.ProtocolV50} {
+	for _, version := range []mq.ProtocolVersion{mq.ProtocolV311, mq.ProtocolV50} {
 		versionName := "v3.1.1"
 		if version == mq.ProtocolV50 {
 			versionName = "v5.0"

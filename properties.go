@@ -5,10 +5,13 @@ import (
 	"slices"
 )
 
+// PayloadFormat indicates the format of an MQTT v5.0 PUBLISH payload.
+type PayloadFormat uint8
+
 // Payload format indicators
 const (
-	PayloadFormatBytes uint8 = 0
-	PayloadFormatUTF8  uint8 = 1
+	PayloadFormatBytes PayloadFormat = 0
+	PayloadFormatUTF8  PayloadFormat = 1
 )
 
 // UserProperty represents a single MQTT v5.0 User Property key-value pair.
@@ -48,7 +51,7 @@ type Properties struct {
 	// PayloadFormat indicates the format of the payload.
 	// 0 = unspecified bytes (default)
 	// 1 = UTF-8 encoded character data
-	PayloadFormat *uint8
+	PayloadFormat *PayloadFormat
 
 	// SubscriptionIdentifier contains the subscription identifier(s) that matched
 	// this message. Only present in received messages when the server supports

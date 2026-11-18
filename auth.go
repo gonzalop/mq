@@ -25,7 +25,7 @@ package mq
 //	    return []byte(t.token), nil
 //	}
 //
-//	func (t *TokenAuth) HandleChallenge(data []byte, code uint8) ([]byte, error) {
+//	func (t *TokenAuth) HandleChallenge(data []byte, code mq.ReasonCode) ([]byte, error) {
 //	    return nil, fmt.Errorf("unexpected challenge")
 //	}
 //
@@ -67,7 +67,7 @@ type Authenticator interface {
 	// processing of PUBLISH, PUBACK, and other packets; the response is sent when it
 	// returns. Because it runs on a goroutine owned by the client, any state it shares
 	// with the rest of your code must be safe for concurrent use.
-	HandleChallenge(challengeData []byte, reasonCode uint8) ([]byte, error)
+	HandleChallenge(challengeData []byte, reasonCode ReasonCode) ([]byte, error)
 
 	// Complete is called when authentication succeeds (CONNACK received).
 	//

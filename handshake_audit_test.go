@@ -32,7 +32,7 @@ func TestPerformHandshake_AuthWithoutProperties(t *testing.T) {
 		if _, err := srv.Write([]byte{0xF0, 0x00}); err != nil {
 			return
 		}
-		if _, err := packets.ReadPacket(srv, ProtocolV50, 0); err != nil {
+		if _, err := packets.ReadPacket(srv, uint8(ProtocolV50), 0); err != nil {
 			return
 		}
 		connack := &packets.ConnackPacket{ReturnCode: packets.ConnAccepted, Properties: &packets.Properties{}}

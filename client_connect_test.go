@@ -282,12 +282,12 @@ func TestProtocolNegotiation(t *testing.T) {
 		defer conn1.Close()
 
 		// Read CONNECT
-		pkt, err := packets.ReadPacket(conn1, ProtocolV50, 0)
+		pkt, err := packets.ReadPacket(conn1, uint8(ProtocolV50), 0)
 		if err != nil {
 			return
 		}
 		cpkt, ok := pkt.(*packets.ConnectPacket)
-		if !ok || cpkt.ProtocolLevel != ProtocolV50 {
+		if !ok || cpkt.ProtocolLevel != uint8(ProtocolV50) {
 			return
 		}
 
@@ -305,12 +305,12 @@ func TestProtocolNegotiation(t *testing.T) {
 		}
 		defer conn2.Close()
 
-		pkt, err = packets.ReadPacket(conn2, ProtocolV311, 0)
+		pkt, err = packets.ReadPacket(conn2, uint8(ProtocolV311), 0)
 		if err != nil {
 			return
 		}
 		cpkt, ok = pkt.(*packets.ConnectPacket)
-		if !ok || cpkt.ProtocolLevel != ProtocolV311 {
+		if !ok || cpkt.ProtocolLevel != uint8(ProtocolV311) {
 			fmt.Printf("Expected v3.1.1, got %d\n", cpkt.ProtocolLevel)
 			return
 		}
@@ -322,7 +322,7 @@ func TestProtocolNegotiation(t *testing.T) {
 		_, _ = connack2.WriteTo(conn2)
 	}()
 
-	onConnectVersion := make(chan uint8, 1)
+	onConnectVersion := make(chan ProtocolVersion, 1)
 	client, err := Dial("tcp://"+addr,
 		WithClientID("negotiator"),
 		WithConnectTimeout(2*time.Second),

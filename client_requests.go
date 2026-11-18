@@ -51,7 +51,7 @@ func (c *Client) internalPublish(req *publishRequest) {
 	}
 
 	// Enforce MaximumQoS validation (fail-fast)
-	if pkt.QoS > caps.MaximumQoS {
+	if QoS(pkt.QoS) > caps.MaximumQoS {
 		req.token.complete(fmt.Errorf("%w: requested QoS %d, server maximum is %d",
 			ErrQoSExceedsServerMax, pkt.QoS, caps.MaximumQoS))
 		c.sessionLock.Unlock()
@@ -241,7 +241,7 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 				subOpts.RetainAsPublished = pkt.RetainAsPublished[i]
 			}
 			if i < len(pkt.RetainHandling) {
-				subOpts.RetainHandling = pkt.RetainHandling[i]
+				subOpts.RetainHandling = RetainHandling(pkt.RetainHandling[i])
 			}
 
 			if pkt.Properties != nil {
