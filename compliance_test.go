@@ -302,7 +302,7 @@ func TestCompliance_Resubscribe_Options_Persistence(t *testing.T) {
 	// Subscribe with special options
 	topic := "sensors/+/data"
 	handler := func(_ *Client, _ Message) {}
-	opts := SubscribeOptions{
+	opts := subscribeOptions{
 		QoS:               AtLeastOnce,
 		NoLocal:           true,
 		RetainAsPublished: true,

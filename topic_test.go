@@ -381,7 +381,7 @@ func TestValidatePublishCaps(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := &PublishOptions{QoS: tt.qos, Retain: tt.retain}
+			opts := &publishOptions{QoS: tt.qos, Retain: tt.retain}
 			err := c.validatePublishCaps(opts)
 			if tt.wantErr == nil {
 				if err != nil {

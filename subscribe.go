@@ -21,8 +21,8 @@ const (
 	RetainHandlingDoNotSend RetainHandling = 2
 )
 
-// SubscribeOptions holds configuration for a subscription.
-type SubscribeOptions struct {
+// subscribeOptions holds configuration for a subscription.
+type subscribeOptions struct {
 	QoS               QoS
 	NoLocal           bool
 	RetainAsPublished bool
@@ -34,12 +34,12 @@ type SubscribeOptions struct {
 }
 
 // SubscribeOption is a functional option for configuring a subscription.
-type SubscribeOption func(*SubscribeOptions)
+type SubscribeOption func(*subscribeOptions)
 
 // WithSubscriptionQoS sets the Quality of Service level for a subscription.
 // Primarily used with WithSubscription; defaults to AtMostOnce (QoS 0).
 func WithSubscriptionQoS(qos QoS) SubscribeOption {
-	return func(o *SubscribeOptions) {
+	return func(o *subscribeOptions) {
 		o.QoS = qos
 	}
 }
@@ -49,7 +49,7 @@ func WithSubscriptionQoS(qos QoS) SubscribeOption {
 //
 // This option is ignored when using MQTT v3.1.1.
 func WithSubscribeUserProperty(key, value string) SubscribeOption {
-	return func(o *SubscribeOptions) {
+	return func(o *subscribeOptions) {
 		appendUserProperty(&o.UserPropertyList, &o.UserProperties, key, value)
 	}
 }
@@ -59,7 +59,7 @@ func WithSubscribeUserProperty(key, value string) SubscribeOption {
 // If false, the subscription is ephemeral and lost on client restart.
 // This is independent of the MQTT CleanSession/CleanStart flag which controls server-side persistence.
 func WithPersistence(persistence bool) SubscribeOption {
-	return func(o *SubscribeOptions) {
+	return func(o *subscribeOptions) {
 		o.Persistence = persistence
 	}
 }
@@ -69,7 +69,7 @@ func WithPersistence(persistence bool) SubscribeOption {
 //
 // This option is ignored when using MQTT v3.1.1.
 func WithNoLocal(noLocal bool) SubscribeOption {
-	return func(o *SubscribeOptions) {
+	return func(o *subscribeOptions) {
 		o.NoLocal = noLocal
 	}
 }
@@ -79,7 +79,7 @@ func WithNoLocal(noLocal bool) SubscribeOption {
 //
 // This option is ignored when using MQTT v3.1.1.
 func WithRetainAsPublished(retain bool) SubscribeOption {
-	return func(o *SubscribeOptions) {
+	return func(o *subscribeOptions) {
 		o.RetainAsPublished = retain
 	}
 }
@@ -91,7 +91,7 @@ func WithRetainAsPublished(retain bool) SubscribeOption {
 //
 // This option is ignored when using MQTT v3.1.1.
 func WithRetainHandling(handling RetainHandling) SubscribeOption {
-	return func(o *SubscribeOptions) {
+	return func(o *subscribeOptions) {
 		o.RetainHandling = handling
 	}
 }
@@ -118,26 +118,26 @@ func WithRetainHandling(handling RetainHandling) SubscribeOption {
 //	client.Subscribe("sensors/+/temp", 1, tempHandler,
 //	    mq.WithSubscriptionIdentifier(100))
 func WithSubscriptionIdentifier(id int) SubscribeOption {
-	return func(o *SubscribeOptions) {
+	return func(o *subscribeOptions) {
 		o.SubscriptionID = id
 	}
 }
 
-// UnsubscribeOptions holds configuration for an unsubscription.
-type UnsubscribeOptions struct {
+// unsubscribeOptions holds configuration for an unsubscription.
+type unsubscribeOptions struct {
 	UserProperties   map[string]string // MQTT v5.0: User properties (last value per key if duplicate)
 	UserPropertyList []UserProperty    // MQTT v5.0: User properties in order, preserving duplicate keys; preferred when set.
 }
 
 // UnsubscribeOption is a functional option for configuring an unsubscription.
-type UnsubscribeOption func(*UnsubscribeOptions)
+type UnsubscribeOption func(*unsubscribeOptions)
 
 // WithUnsubscribeUserProperty (MQTT v5.0) adds a user property to the unsubscribe packet.
 // Can be called multiple times; call order and duplicate keys are preserved.
 //
 // This option is ignored when using MQTT v3.1.1.
 func WithUnsubscribeUserProperty(key, value string) UnsubscribeOption {
-	return func(o *UnsubscribeOptions) {
+	return func(o *unsubscribeOptions) {
 		appendUserProperty(&o.UserPropertyList, &o.UserProperties, key, value)
 	}
 }
@@ -180,7 +180,7 @@ func WithUnsubscribeUserProperty(key, value string) UnsubscribeOption {
 func (c *Client) Subscribe(ctx context.Context, topic string, qos QoS, handler MessageHandler, opts ...SubscribeOption) Token {
 	c.opts.Logger.Debug("subscribing to topic", "topic", topic, "qos", qos)
 
-	subOpts := &SubscribeOptions{
+	subOpts := &subscribeOptions{
 		QoS:         qos,
 		Persistence: true,
 	}
@@ -276,7 +276,7 @@ func (c *Client) Unsubscribe(ctx context.Context, topic string, opts ...Unsubscr
 		return tok
 	}
 
-	unsubOpts := &UnsubscribeOptions{}
+	unsubOpts := &unsubscribeOptions{}
 	for _, opt := range opts {
 		opt(unsubOpts)
 	}
@@ -533,7 +533,7 @@ func subGroupKey(id int, list []UserProperty, props map[string]string) string {
 	return sb.String()
 }
 
-func validateSubscribeOptions(topic string, subOpts *SubscribeOptions, opts *clientOptions) error {
+func validateSubscribeOptions(topic string, subOpts *subscribeOptions, opts *clientOptions) error {
 	if err := validateSubscribeTopic(topic, opts); err != nil {
 		return fmt.Errorf("invalid topic filter: %w", err)
 	}
@@ -558,7 +558,7 @@ func validateSubscribeOptions(topic string, subOpts *SubscribeOptions, opts *cli
 
 type subscriptionEntry struct {
 	handler MessageHandler
-	options SubscribeOptions
+	options subscribeOptions
 
 	// owner is the Subscribe request that registered this entry (nil for
 	// restored entries). A cancelled request rolls back only entries it

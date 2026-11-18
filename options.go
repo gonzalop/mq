@@ -629,14 +629,14 @@ func WithOnServerRedirect(onServerRedirect func(serverURI string)) Option {
 	}
 }
 
-// DisconnectOptions holds configuration for a disconnection.
-type DisconnectOptions struct {
+// disconnectOptions holds configuration for a disconnection.
+type disconnectOptions struct {
 	ReasonCode ReasonCode
 	Properties *Properties
 }
 
 // DisconnectOption is a functional option for configuring a disconnection.
-type DisconnectOption func(*DisconnectOptions)
+type DisconnectOption func(*disconnectOptions)
 
 // WithReason sets the reason code for the DISCONNECT packet (MQTT v5.0).
 // Common codes include:
@@ -645,7 +645,7 @@ type DisconnectOption func(*DisconnectOptions)
 //
 // This option is ignored when using MQTT v3.1.1.
 func WithReason(code ReasonCode) DisconnectOption {
-	return func(o *DisconnectOptions) {
+	return func(o *disconnectOptions) {
 		o.ReasonCode = code
 	}
 }
@@ -659,7 +659,7 @@ func WithReason(code ReasonCode) DisconnectOption {
 //
 // This option is ignored when using MQTT v3.1.1.
 func WithDisconnectProperties(props *Properties) DisconnectOption {
-	return func(o *DisconnectOptions) {
+	return func(o *disconnectOptions) {
 		o.Properties = props
 	}
 }
@@ -671,7 +671,7 @@ func WithDisconnectProperties(props *Properties) DisconnectOption {
 //
 // This option is ignored when using MQTT v3.1.1.
 func WithDisconnectSessionExpiry(interval uint32) DisconnectOption {
-	return func(o *DisconnectOptions) {
+	return func(o *disconnectOptions) {
 		if o.Properties == nil {
 			o.Properties = &Properties{}
 		}

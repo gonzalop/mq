@@ -230,7 +230,7 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 			replaced[topic] = prev
 		}
 
-		var subOpts SubscribeOptions
+		var subOpts subscribeOptions
 		subOpts.Persistence = req.persistence
 
 		if pkt.Version >= 5 {

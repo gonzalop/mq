@@ -237,12 +237,12 @@ func TestPublishOptionsWithProperties(t *testing.T) {
 	tests := []struct {
 		name string
 		opts []PublishOption
-		want func(*PublishOptions) bool
+		want func(*publishOptions) bool
 	}{
 		{
 			name: "WithContentType",
 			opts: []PublishOption{WithContentType("application/json")},
-			want: func(o *PublishOptions) bool {
+			want: func(o *publishOptions) bool {
 				return o.Properties != nil &&
 					o.Properties.ContentType == "application/json"
 			},
@@ -250,7 +250,7 @@ func TestPublishOptionsWithProperties(t *testing.T) {
 		{
 			name: "WithResponseTopic",
 			opts: []PublishOption{WithResponseTopic("responses/test")},
-			want: func(o *PublishOptions) bool {
+			want: func(o *publishOptions) bool {
 				return o.Properties != nil &&
 					o.Properties.ResponseTopic == "responses/test"
 			},
@@ -258,7 +258,7 @@ func TestPublishOptionsWithProperties(t *testing.T) {
 		{
 			name: "WithCorrelationData",
 			opts: []PublishOption{WithCorrelationData([]byte("req-123"))},
-			want: func(o *PublishOptions) bool {
+			want: func(o *publishOptions) bool {
 				return o.Properties != nil &&
 					string(o.Properties.CorrelationData) == "req-123"
 			},
@@ -269,7 +269,7 @@ func TestPublishOptionsWithProperties(t *testing.T) {
 				WithUserProperty("key1", "value1"),
 				WithUserProperty("key2", "value2"),
 			},
-			want: func(o *PublishOptions) bool {
+			want: func(o *publishOptions) bool {
 				if o.Properties == nil || len(o.Properties.UserProperties) != 2 {
 					return false
 				}
@@ -281,7 +281,7 @@ func TestPublishOptionsWithProperties(t *testing.T) {
 		{
 			name: "WithMessageExpiry",
 			opts: []PublishOption{WithMessageExpiry(300)},
-			want: func(o *PublishOptions) bool {
+			want: func(o *publishOptions) bool {
 				return o.Properties != nil &&
 					o.Properties.MessageExpiry != nil &&
 					*o.Properties.MessageExpiry == 300
@@ -290,7 +290,7 @@ func TestPublishOptionsWithProperties(t *testing.T) {
 		{
 			name: "WithPayloadFormat",
 			opts: []PublishOption{WithPayloadFormat(1)},
-			want: func(o *PublishOptions) bool {
+			want: func(o *publishOptions) bool {
 				return o.Properties != nil &&
 					o.Properties.PayloadFormat != nil &&
 					*o.Properties.PayloadFormat == 1
@@ -304,7 +304,7 @@ func TestPublishOptionsWithProperties(t *testing.T) {
 					ResponseTopic: "responses/test",
 				}),
 			},
-			want: func(o *PublishOptions) bool {
+			want: func(o *publishOptions) bool {
 				return o.Properties != nil &&
 					o.Properties.ContentType == "text/plain" &&
 					o.Properties.ResponseTopic == "responses/test"
@@ -317,7 +317,7 @@ func TestPublishOptionsWithProperties(t *testing.T) {
 				WithUserProperty("version", "1.0"),
 				WithMessageExpiry(600),
 			},
-			want: func(o *PublishOptions) bool {
+			want: func(o *publishOptions) bool {
 				if o.Properties == nil {
 					return false
 				}
@@ -337,7 +337,7 @@ func TestPublishOptionsWithProperties(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := &PublishOptions{}
+			opts := &publishOptions{}
 
 			for _, opt := range tt.opts {
 				opt(opts)

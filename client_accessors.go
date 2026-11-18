@@ -61,7 +61,7 @@ var disconnectFlushTimeout = time.Second
 //	// Disconnect with reason (v5.0 only)
 //	client.Disconnect(context.Background(), mq.WithReason(mq.ReasonCodeDisconnectWithWill))
 func (c *Client) Disconnect(ctx context.Context, opts ...DisconnectOption) error {
-	options := &DisconnectOptions{
+	options := &disconnectOptions{
 		ReasonCode: ReasonCodeNormalDisconnect,
 	}
 	for _, opt := range opts {

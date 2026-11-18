@@ -29,7 +29,7 @@ import "github.com/gonzalop/mq/internal/packets"
 //	client.Publish(context.Background(), "sensors/building-a/floor-3/room-42/temperature", data,
 //	    mq.WithAlias())
 func WithAlias() PublishOption {
-	return func(o *PublishOptions) {
+	return func(o *publishOptions) {
 		o.UseAlias = true
 	}
 }

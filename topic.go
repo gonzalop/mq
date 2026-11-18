@@ -214,7 +214,7 @@ func validatePayloadFormat(payload []byte, props *Properties) error {
 // Called only for MQTT v5.0 connections. The serverCaps zero-value is
 // permissive (all features allowed, QoS 2 max), so calls before the first
 // CONNACK are safe.
-func (c *Client) validatePublishCaps(opts *PublishOptions) error {
+func (c *Client) validatePublishCaps(opts *publishOptions) error {
 	state := c.connState.Load()
 	if state == nil {
 		return nil

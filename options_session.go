@@ -133,7 +133,7 @@ func WithSubscription(topic string, handler MessageHandler, opts ...SubscribeOpt
 		if o.InitialSubscriptions == nil {
 			o.InitialSubscriptions = make(map[string]subscriptionEntry)
 		}
-		subOpts := SubscribeOptions{
+		subOpts := subscribeOptions{
 			QoS:         AtMostOnce,
 			Persistence: true,
 		}

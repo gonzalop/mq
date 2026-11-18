@@ -306,15 +306,14 @@ type PersistedSubscription struct {
 
 // PublishProperties represents MQTT v5.0 publish properties for persistence.
 type PublishProperties struct {
-	PayloadFormat          *PayloadFormat
-	MessageExpiry          *uint32
-	TopicAlias             *uint16
-	ResponseTopic          string
-	CorrelationData        []byte
-	UserProperties         map[string]string
-	UserPropertyList       []UserProperty // Wire order with duplicate keys; preferred over UserProperties when set.
-	SubscriptionIdentifier *uint32
-	ContentType            string
+	PayloadFormat    *PayloadFormat
+	MessageExpiry    *uint32
+	TopicAlias       *uint16
+	ResponseTopic    string
+	CorrelationData  []byte
+	UserProperties   map[string]string
+	UserPropertyList []UserProperty // Wire order with duplicate keys; preferred over UserProperties when set.
+	ContentType      string
 }
 
 // PersistedSubscriptionOptions represents MQTT v5.0 subscription options for persistence.

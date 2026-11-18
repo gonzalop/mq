@@ -64,8 +64,8 @@ func TestHandleSuback_RejectedTopicRemoved(t *testing.T) {
 	c.opts.SessionStore = store
 
 	h := func(*Client, Message) {}
-	c.addSubscriptionLocked("ok/#", subscriptionEntry{handler: h, options: SubscribeOptions{Persistence: true}})
-	c.addSubscriptionLocked("denied/#", subscriptionEntry{handler: h, options: SubscribeOptions{Persistence: true}})
+	c.addSubscriptionLocked("ok/#", subscriptionEntry{handler: h, options: subscribeOptions{Persistence: true}})
+	c.addSubscriptionLocked("denied/#", subscriptionEntry{handler: h, options: subscribeOptions{Persistence: true}})
 
 	tok := newToken()
 	c.pending[1] = &pendingOp{
@@ -98,8 +98,8 @@ func TestHandleSuback_FewerReturnCodesRemovesUnacknowledgedTopics(t *testing.T) 
 	c.opts.SessionStore = store
 
 	h := func(*Client, Message) {}
-	c.addSubscriptionLocked("first/#", subscriptionEntry{handler: h, options: SubscribeOptions{Persistence: true}})
-	c.addSubscriptionLocked("trailing/#", subscriptionEntry{handler: h, options: SubscribeOptions{Persistence: true}})
+	c.addSubscriptionLocked("first/#", subscriptionEntry{handler: h, options: subscribeOptions{Persistence: true}})
+	c.addSubscriptionLocked("trailing/#", subscriptionEntry{handler: h, options: subscribeOptions{Persistence: true}})
 
 	tok := newToken()
 	c.pending[1] = &pendingOp{

@@ -86,7 +86,7 @@ func TestInitialSubscriptionsSentOnFirstConnect(t *testing.T) {
 	}
 }
 
-// TestInitialSubscriptionsWithOptions verifies that SubscribeOptions passed to
+// TestInitialSubscriptionsWithOptions verifies that subscribeOptions passed to
 // WithSubscription (including WithSubscriptionQoS and v5 options like
 // WithRetainAsPublished) are sent in the initial SUBSCRIBE packet.
 func TestInitialSubscriptionsWithOptions(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"github.com/gonzalop/mq/internal/packets"
 )
 
-// PublishOptions holds configuration for a publish operation.
-type PublishOptions struct {
+// publishOptions holds configuration for a publish operation.
+type publishOptions struct {
 	QoS        QoS
 	Retain     bool
 	Properties *Properties
@@ -16,7 +16,7 @@ type PublishOptions struct {
 }
 
 // PublishOption is a functional option for configuring a PUBLISH packet.
-type PublishOption func(*PublishOptions)
+type PublishOption func(*publishOptions)
 
 // WithQoS sets the Quality of Service level for the publish.
 //
@@ -27,7 +27,7 @@ type PublishOption func(*PublishOptions)
 //
 // Default is QoS 0.
 func WithQoS(qos QoS) PublishOption {
-	return func(o *PublishOptions) {
+	return func(o *publishOptions) {
 		o.QoS = qos
 	}
 }
@@ -40,7 +40,7 @@ func WithQoS(qos QoS) PublishOption {
 //
 // Default is false.
 func WithRetain(retain bool) PublishOption {
-	return func(o *PublishOptions) {
+	return func(o *publishOptions) {
 		o.Retain = retain
 	}
 }
@@ -53,7 +53,7 @@ func WithRetain(retain bool) PublishOption {
 //
 //	client.Publish("data/json", payload, mq.WithContentType("application/json"))
 func WithContentType(contentType string) PublishOption {
-	return func(o *PublishOptions) {
+	return func(o *publishOptions) {
 		if o.Properties == nil {
 			o.Properties = &Properties{}
 		}
@@ -71,7 +71,7 @@ func WithContentType(contentType string) PublishOption {
 //	    mq.WithResponseTopic("responses/data"),
 //	    mq.WithCorrelationData([]byte("req-123")))
 func WithResponseTopic(topic string) PublishOption {
-	return func(o *PublishOptions) {
+	return func(o *publishOptions) {
 		if o.Properties == nil {
 			o.Properties = &Properties{}
 		}
@@ -89,7 +89,7 @@ func WithResponseTopic(topic string) PublishOption {
 //	    mq.WithResponseTopic("responses/data"),
 //	    mq.WithCorrelationData([]byte("req-123")))
 func WithCorrelationData(data []byte) PublishOption {
-	return func(o *PublishOptions) {
+	return func(o *publishOptions) {
 		if o.Properties == nil {
 			o.Properties = &Properties{}
 		}
@@ -107,7 +107,7 @@ func WithCorrelationData(data []byte) PublishOption {
 //	    mq.WithUserProperty("sensor-id", "temp-01"),
 //	    mq.WithUserProperty("location", "warehouse-a"))
 func WithUserProperty(key, value string) PublishOption {
-	return func(o *PublishOptions) {
+	return func(o *publishOptions) {
 		if o.Properties == nil {
 			o.Properties = &Properties{}
 		}
@@ -123,7 +123,7 @@ func WithUserProperty(key, value string) PublishOption {
 //
 //	client.Publish("events/temp", payload, mq.WithMessageExpiry(300)) // 5 minutes
 func WithMessageExpiry(seconds uint32) PublishOption {
-	return func(o *PublishOptions) {
+	return func(o *publishOptions) {
 		if o.Properties == nil {
 			o.Properties = &Properties{}
 		}
@@ -146,7 +146,7 @@ func WithMessageExpiry(seconds uint32) PublishOption {
 //
 //	client.Publish("data/text", []byte("hello"), mq.WithPayloadFormat(mq.PayloadFormatUTF8))
 func WithPayloadFormat(format PayloadFormat) PublishOption {
-	return func(o *PublishOptions) {
+	return func(o *publishOptions) {
 		if o.Properties == nil {
 			o.Properties = &Properties{}
 		}
@@ -165,7 +165,7 @@ func WithPayloadFormat(format PayloadFormat) PublishOption {
 //	props.SetUserProperty("version", "1.0")
 //	client.Publish(context.Background(), "data/json", payload, mq.WithProperties(props))
 func WithProperties(props *Properties) PublishOption {
-	return func(o *PublishOptions) {
+	return func(o *publishOptions) {
 		o.Properties = props
 	}
 }
@@ -224,7 +224,7 @@ func (c *Client) basePublish(ctx context.Context, topic string, payload []byte, 
 		return tok
 	}
 
-	pubOpts := &PublishOptions{}
+	pubOpts := &publishOptions{}
 	for _, opt := range opts {
 		opt(pubOpts)
 	}

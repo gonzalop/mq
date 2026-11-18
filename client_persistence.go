@@ -219,7 +219,7 @@ func (c *Client) convertToPersistedSubscription(entry subscriptionEntry) *Persis
 }
 
 func (c *Client) convertFromPersistedSubscription(sub *PersistedSubscription) subscriptionEntry {
-	opts := SubscribeOptions{
+	opts := subscribeOptions{
 		QoS:         sub.QoS,
 		Persistence: true,
 	}
