@@ -58,13 +58,11 @@ On every new connection, `finalizeConnection` takes the in-flight packets (in th
 
 ### Publishing (`Publish`)
 
-1.  The `Publish` method acquires `sessionLock`.
-2.  It validates the request and checks flow control limits (`inFlightCount` vs `ReceiveMaximum`).
+1.  The `Publish` method checks server capabilities and packet size lock-free via `connState` (and dispatches QoS 0 messages directly to `outgoing` without acquiring `sessionLock`).
+2.  For QoS 1/2, it acquires `sessionLock` and checks flow control limits (`inFlightCount` vs `ReceiveMaximum`).
 3.  If window is available:
-    -   It assigns a PacketID (if QoS > 0).
-    -   It adds the operation to `pending`.
-    -   It releases `sessionLock`.
-    -   It sends the packet to the `outgoing` channel.
+    -   It assigns a PacketID, adds the operation to `pending`, and queues persistence.
+    -   It releases `sessionLock`, flushes persistence, and sends the packet to the `outgoing` channel.
 4.  If window is full:
     -   It appends the request to `publishQueue`.
     -   It releases `sessionLock`.

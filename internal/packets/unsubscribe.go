@@ -23,6 +23,18 @@ func (p *UnsubscribePacket) Type() uint8 {
 
 // Encode serializes the UNSUBSCRIBE packet to bytes.
 
+// EncodedSize returns the exact serialized packet size in bytes without allocating.
+func (p *UnsubscribePacket) EncodedSize() int {
+	rem := 2
+	if p.Version >= 5 {
+		rem += p.Properties.encodedSize()
+	}
+	for _, topic := range p.Topics {
+		rem += 2 + len(topic)
+	}
+	return fixedHeaderSize(rem) + rem
+}
+
 // WriteTo writes the UNSUBSCRIBE packet to the writer.
 func (p *UnsubscribePacket) WriteTo(w io.Writer) (int64, error) {
 	var total int64

@@ -489,3 +489,98 @@ func (p *Properties) appendSpecial(dst []byte) []byte {
 	}
 	return dst
 }
+
+// encodedSize returns the exact wire length of p in bytes without allocating.
+func (p *Properties) encodedSize() int {
+	if p == nil {
+		return 1
+	}
+
+	var n int
+	if p.Presence&PresPayloadFormatIndicator != 0 {
+		n += 2
+	}
+	if p.Presence&PresMessageExpiryInterval != 0 {
+		n += 5
+	}
+	if p.Presence&PresSessionExpiryInterval != 0 {
+		n += 5
+	}
+	if p.Presence&PresServerKeepAlive != 0 {
+		n += 3
+	}
+	if p.Presence&PresRequestProblemInformation != 0 {
+		n += 2
+	}
+	if p.Presence&PresWillDelayInterval != 0 {
+		n += 5
+	}
+	if p.Presence&PresRequestResponseInformation != 0 {
+		n += 2
+	}
+	if p.Presence&PresReceiveMaximum != 0 {
+		n += 3
+	}
+	if p.Presence&PresTopicAliasMaximum != 0 {
+		n += 3
+	}
+	if p.Presence&PresTopicAlias != 0 {
+		n += 3
+	}
+	if p.Presence&PresMaximumQoS != 0 {
+		n += 2
+	}
+	if p.Presence&PresMaximumPacketSize != 0 {
+		n += 5
+	}
+
+	if p.Presence&PresRetainAvailable != 0 {
+		n += 2
+	}
+	if p.Presence&PresWildcardSubscriptionAvailable != 0 {
+		n += 2
+	}
+	if p.Presence&PresSubscriptionIdentifierAvailable != 0 {
+		n += 2
+	}
+	if p.Presence&PresSharedSubscriptionAvailable != 0 {
+		n += 2
+	}
+
+	if p.Presence&PresContentType != 0 {
+		n += 3 + len(p.ContentType)
+	}
+	if p.Presence&PresResponseTopic != 0 {
+		n += 3 + len(p.ResponseTopic)
+	}
+	if len(p.CorrelationData) > 0 {
+		n += 3 + len(p.CorrelationData)
+	}
+	if p.Presence&PresAssignedClientIdentifier != 0 {
+		n += 3 + len(p.AssignedClientIdentifier)
+	}
+	if p.Presence&PresAuthenticationMethod != 0 {
+		n += 3 + len(p.AuthenticationMethod)
+	}
+	if len(p.AuthenticationData) > 0 {
+		n += 3 + len(p.AuthenticationData)
+	}
+	if p.Presence&PresResponseInformation != 0 {
+		n += 3 + len(p.ResponseInformation)
+	}
+	if p.Presence&PresServerReference != 0 {
+		n += 3 + len(p.ServerReference)
+	}
+	if p.Presence&PresReasonString != 0 {
+		n += 3 + len(p.ReasonString)
+	}
+
+	for _, id := range p.SubscriptionIdentifier {
+		n += 1 + varIntSize(id)
+	}
+	for _, up := range p.UserProperties {
+		n += 1 + 2 + len(up.Key) + 2 + len(up.Value)
+	}
+
+	return varIntSize(n) + n
+}

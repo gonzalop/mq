@@ -29,7 +29,17 @@ func (p *SubscribePacket) Type() uint8 {
 	return SUBSCRIBE
 }
 
-// Encode serializes the SUBSCRIBE packet to bytes.
+// EncodedSize returns the exact serialized packet size in bytes without allocating.
+func (p *SubscribePacket) EncodedSize() int {
+	rem := 2
+	if p.Version >= 5 {
+		rem += p.Properties.encodedSize()
+	}
+	for _, topic := range p.Topics {
+		rem += 2 + len(topic) + 1
+	}
+	return fixedHeaderSize(rem) + rem
+}
 
 // WriteTo writes the SUBSCRIBE packet to the writer.
 func (p *SubscribePacket) WriteTo(w io.Writer) (int64, error) {

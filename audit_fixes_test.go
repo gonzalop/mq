@@ -395,3 +395,53 @@ func TestDispatch_HandlerTimeoutCancelsContext(t *testing.T) {
 		t.Fatalf("handler context error = %v, want DeadlineExceeded", err)
 	}
 }
+
+func TestDispatch_SingleHandlerQoS1ReleasesSemBeforeAck(t *testing.T) {
+	opts := defaultOptions("tcp://x")
+	c := newTestClient(opts)
+	c.handlerSem = make(chan struct{}, 1)
+	c.outgoing = make(chan packets.Packet, 1)
+	c.outgoing <- &packets.PingreqPacket{} // full so sendAck blocks on PUBACK
+
+	h1Done := make(chan struct{})
+	h2Done := make(chan struct{})
+
+	p1 := &packets.PublishPacket{Topic: "t/1", QoS: 1, PacketID: 11}
+	c.dispatchAndAcknowledge(p1, Message{Topic: p1.Topic}, []MessageHandler{
+		func(*Client, Message) { close(h1Done) },
+	})
+
+	select {
+	case <-h1Done:
+	case <-time.After(time.Second):
+		t.Fatal("first handler never ran")
+	}
+
+	// Second handler requires c.handlerSem while PUBACK is blocked on outgoing.
+	p2 := &packets.PublishPacket{Topic: "t/2", QoS: 0}
+	c.dispatchAndAcknowledge(p2, Message{Topic: p2.Topic}, []MessageHandler{
+		func(*Client, Message) { close(h2Done) },
+	})
+
+	select {
+	case <-h2Done:
+	case <-time.After(time.Second):
+		t.Fatal("second handler starved: handlerSem was still held while sendAck blocked")
+	}
+
+	// Drain PingreqPacket and verify the queued PUBACK now arrives.
+	<-c.outgoing
+	select {
+	case pkt := <-c.outgoing:
+		if wrapped, ok := pkt.(*inboundAck); ok {
+			pkt = wrapped.Packet
+		}
+		ack, ok := pkt.(*packets.PubackPacket)
+		if !ok || ack.PacketID != 11 {
+			t.Fatalf("ack = %T (%+v), want PubackPacket ID 11", pkt, pkt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("PUBACK was never sent")
+	}
+	close(c.stop)
+}

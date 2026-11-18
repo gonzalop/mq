@@ -2,7 +2,6 @@ package mq
 
 import (
 	"fmt"
-	"io"
 
 	"github.com/gonzalop/mq/internal/packets"
 )
@@ -16,8 +15,6 @@ func (c *Client) internalPublish(req *publishRequest) {
 
 	pkt := req.packet
 
-	c.sessionLock.Lock()
-
 	state := c.connState.Load()
 	var caps serverCapabilities
 	if state != nil {
@@ -26,10 +23,9 @@ func (c *Client) internalPublish(req *publishRequest) {
 		caps = extractServerCapabilities(nil)
 	}
 
-	// Validate packet size against server's maximum (fail-fast)
+	// Validate packet size against server's maximum (fail-fast, lock-free)
 	if caps.MaximumPacketSize > 0 {
-		n, _ := pkt.WriteTo(io.Discard)
-		packetSize := uint32(n)
+		packetSize := uint32(pkt.EncodedSize())
 		if pkt.UseAlias {
 			// Room for the Topic Alias property the write loop may add.
 			packetSize += 4
@@ -38,7 +34,6 @@ func (c *Client) internalPublish(req *publishRequest) {
 		if packetSize > caps.MaximumPacketSize {
 			req.token.complete(fmt.Errorf("%w: packet size %d bytes exceeds server maximum %d bytes",
 				ErrPacketExceedsServerMax, packetSize, caps.MaximumPacketSize))
-			c.sessionLock.Unlock()
 			return
 		}
 	}
@@ -46,7 +41,6 @@ func (c *Client) internalPublish(req *publishRequest) {
 	// Enforce RetainAvailable validation (fail-fast)
 	if pkt.Retain && !caps.RetainAvailable {
 		req.token.complete(ErrServerNoRetain)
-		c.sessionLock.Unlock()
 		return
 	}
 
@@ -54,12 +48,10 @@ func (c *Client) internalPublish(req *publishRequest) {
 	if QoS(pkt.QoS) > caps.MaximumQoS {
 		req.token.complete(fmt.Errorf("%w: requested QoS %d, server maximum is %d",
 			ErrQoSExceedsServerMax, pkt.QoS, caps.MaximumQoS))
-		c.sessionLock.Unlock()
 		return
 	}
 
 	if pkt.QoS == 0 {
-		c.sessionLock.Unlock()
 		if c.opts.QoS0Policy == QoS0LimitPolicyBlock {
 			select {
 			case c.outgoing <- pkt:
@@ -88,6 +80,13 @@ func (c *Client) internalPublish(req *publishRequest) {
 		return
 	}
 
+	c.sessionLock.Lock()
+	if c.stopped() {
+		c.sessionLock.Unlock()
+		req.token.complete(ErrClientDisconnected)
+		return
+	}
+
 	// Flow control for QoS > 0
 	if state != nil && state.caps.ReceiveMaximum > 0 {
 		if c.inFlightCount >= int(state.caps.ReceiveMaximum) {
@@ -97,61 +96,42 @@ func (c *Client) internalPublish(req *publishRequest) {
 		}
 	}
 
-	pkt.PacketID = c.nextID()
-	if pkt.PacketID == 0 {
+	op, ok := c.queuePendingPublishLocked(req, true)
+	if !ok {
 		c.sessionLock.Unlock()
-		req.token.complete(ErrNoPacketIDsAvailable)
 		return
 	}
-
-	op := &pendingOp{
-		packet: pkt,
-		token:  req.token,
-		qos:    pkt.QoS,
-	}
-	op.sending.Store(true)
-	c.addPendingLocked(pkt.PacketID, op)
-
-	if pkt.QoS > 0 {
-		c.inFlightCount++
-	}
-
-	c.savePendingPublishLocked(req)
 
 	c.sessionLock.Unlock()
 	// The publish is on disk before it can reach the network.
 	c.flushStore()
+
+	rollback := func(err error) {
+		c.sessionLock.Lock()
+		c.removePending(pkt.PacketID)
+		if pkt.QoS > 0 {
+			c.inFlightCount--
+		}
+		c.deletePendingPublishLocked(pkt.PacketID)
+		c.sessionLock.Unlock()
+		c.flushStore()
+		req.token.complete(err)
+	}
+
 	select {
 	case c.outgoing <- pkt:
 		op.sending.Store(false)
 	case <-req.ctx.Done():
-		c.sessionLock.Lock()
-		c.removePending(pkt.PacketID)
-		if pkt.QoS > 0 {
-			c.inFlightCount--
-		}
-		c.deletePendingPublishLocked(pkt.PacketID)
-		c.sessionLock.Unlock()
-		c.flushStore()
-		req.token.complete(req.ctx.Err())
+		rollback(req.ctx.Err())
 	case <-c.stop:
-		c.sessionLock.Lock()
-		c.removePending(pkt.PacketID)
-		if pkt.QoS > 0 {
-			c.inFlightCount--
-		}
-		c.deletePendingPublishLocked(pkt.PacketID)
-		c.sessionLock.Unlock()
-		c.flushStore()
-		req.token.complete(ErrClientDisconnected)
+		rollback(ErrClientDisconnected)
 	}
 }
 
-// preparePublishLocked prepares a publish packet for sending while holding the lock.
-// It assigns a packet ID, updates pending state, and performs persistence.
-// Returns the prepared packet and true if successful, or nil/false if failed.
+// queuePendingPublishLocked allocates a packet ID, registers the pending operation,
+// updates in-flight accounting, and queues persistence for a QoS 1/2 publish.
 // Assumes sessionLock is HELD.
-func (c *Client) preparePublishLocked(req *publishRequest) (*packets.PublishPacket, bool) {
+func (c *Client) queuePendingPublishLocked(req *publishRequest, sending bool) (*pendingOp, bool) {
 	pkt := req.packet
 
 	pkt.PacketID = c.nextID()
@@ -160,19 +140,33 @@ func (c *Client) preparePublishLocked(req *publishRequest) (*packets.PublishPack
 		return nil, false
 	}
 
-	c.addPendingLocked(pkt.PacketID, &pendingOp{
+	op := &pendingOp{
 		packet: pkt,
 		token:  req.token,
 		qos:    pkt.QoS,
-	})
+	}
+	if sending {
+		op.sending.Store(true)
+	}
+	c.addPendingLocked(pkt.PacketID, op)
 
 	if pkt.QoS > 0 {
 		c.inFlightCount++
 	}
 
 	c.savePendingPublishLocked(req)
+	return op, true
+}
 
-	return pkt, true
+// preparePublishLocked prepares a publish packet for sending while holding the lock.
+// It assigns a packet ID, updates pending state, and performs persistence.
+// Returns the prepared packet and true if successful, or nil/false if failed.
+// Assumes sessionLock is HELD.
+func (c *Client) preparePublishLocked(req *publishRequest) (*packets.PublishPacket, bool) {
+	if _, ok := c.queuePendingPublishLocked(req, false); !ok {
+		return nil, false
+	}
+	return req.packet, true
 }
 
 // internalSubscribe processes a subscribe request synchronously with locking.
@@ -184,20 +178,23 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 
 	pkt := req.packet
 
-	c.sessionLock.Lock()
-
 	// Capability checks for QoS, wildcards, etc. are handled in Subscribe() pre-flight.
 	// We still check packet size here because it depends on the final serialized form.
 	state := c.connState.Load()
 	if state != nil && state.caps.MaximumPacketSize > 0 {
-		n, _ := pkt.WriteTo(io.Discard)
-		packetSize := uint32(n)
+		packetSize := uint32(pkt.EncodedSize())
 		if packetSize > state.caps.MaximumPacketSize {
 			req.token.complete(fmt.Errorf("%w: packet size %d bytes exceeds server maximum %d bytes",
 				ErrPacketExceedsServerMax, packetSize, state.caps.MaximumPacketSize))
-			c.sessionLock.Unlock()
 			return
 		}
+	}
+
+	c.sessionLock.Lock()
+	if c.stopped() {
+		c.sessionLock.Unlock()
+		req.token.complete(ErrClientDisconnected)
+		return
 	}
 
 	pkt.PacketID = c.nextID()
@@ -267,7 +264,7 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 
 	c.sessionLock.Unlock()
 
-	rollback := func() {
+	rollback := func(err error) {
 		c.sessionLock.Lock()
 		c.removePending(pkt.PacketID)
 		for _, topic := range pkt.Topics {
@@ -283,17 +280,16 @@ func (c *Client) internalSubscribe(req *subscribeRequest) {
 			}
 		}
 		c.sessionLock.Unlock()
+		req.token.complete(err)
 	}
 
 	select {
 	case c.outgoing <- pkt:
 		op.sending.Store(false)
 	case <-req.ctx.Done():
-		rollback()
-		req.token.complete(req.ctx.Err())
+		rollback(req.ctx.Err())
 	case <-c.stop:
-		rollback()
-		req.token.complete(ErrClientDisconnected)
+		rollback(ErrClientDisconnected)
 	}
 }
 
@@ -306,19 +302,22 @@ func (c *Client) internalUnsubscribe(req *unsubscribeRequest) {
 
 	pkt := req.packet
 
-	c.sessionLock.Lock()
-
 	// Validate packet size against server's maximum
 	state := c.connState.Load()
 	if state != nil && state.caps.MaximumPacketSize > 0 {
-		n, _ := pkt.WriteTo(io.Discard)
-		packetSize := uint32(n)
+		packetSize := uint32(pkt.EncodedSize())
 		if packetSize > state.caps.MaximumPacketSize {
 			req.token.complete(fmt.Errorf("%w: packet size %d bytes exceeds server maximum %d bytes",
 				ErrPacketExceedsServerMax, packetSize, state.caps.MaximumPacketSize))
-			c.sessionLock.Unlock()
 			return
 		}
+	}
+
+	c.sessionLock.Lock()
+	if c.stopped() {
+		c.sessionLock.Unlock()
+		req.token.complete(ErrClientDisconnected)
+		return
 	}
 
 	pkt.PacketID = c.nextID()

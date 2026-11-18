@@ -35,7 +35,17 @@ func (p *PublishPacket) Type() uint8 {
 	return PUBLISH
 }
 
-// Encode serializes the PUBLISH packet to bytes.
+// EncodedSize returns the exact serialized packet size in bytes without allocating.
+func (p *PublishPacket) EncodedSize() int {
+	rem := 2 + len(p.Topic) + len(p.Payload)
+	if p.QoS > 0 {
+		rem += 2
+	}
+	if p.Version >= 5 {
+		rem += p.Properties.encodedSize()
+	}
+	return fixedHeaderSize(rem) + rem
+}
 
 // WriteTo writes the PUBLISH packet to the writer.
 func (p *PublishPacket) WriteTo(w io.Writer) (int64, error) {

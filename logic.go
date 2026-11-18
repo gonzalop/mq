@@ -342,6 +342,30 @@ func (c *Client) matchHandlers(topic string) []MessageHandler {
 // dispatchAndAcknowledge calls the handlers and sends the appropriate MQTT acknowledgment.
 // Returns a slice containing the acknowledgment packet if it should be sent immediately
 // (i.e. no handlers), or nil if handlers are processing the message asynchronously.
+func (c *Client) runHandler(h MessageHandler, msg Message) bool {
+	if c.handlerSem != nil {
+		select {
+		case c.handlerSem <- struct{}{}:
+			defer func() { <-c.handlerSem }()
+		case <-c.stop:
+			return false
+		}
+	}
+
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if c.opts.HandlerTimeout > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), c.opts.HandlerTimeout)
+	} else {
+		ctx, cancel = context.WithCancel(context.Background())
+	}
+	defer cancel()
+
+	msg.Context = ctx
+	h(c, msg)
+	return true
+}
+
 func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, handlers []MessageHandler) []packets.Packet {
 	if len(handlers) == 0 {
 		ack := c.buildAckPacket(p)
@@ -357,47 +381,39 @@ func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, h
 		return []packets.Packet{ack}
 	}
 
+	if p.QoS == 0 {
+		for _, h := range handlers {
+			go c.runHandler(h, msg)
+		}
+		return nil
+	}
+
+	// Capture the epoch at arrival so acks are dropped if the session resets before handlers finish.
+	epoch := c.sessionEpoch.Load()
+	if len(handlers) == 1 {
+		h := handlers[0]
+		go func() {
+			if c.runHandler(h, msg) {
+				c.sendAck(p, epoch)
+			}
+		}()
+		return nil
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(len(handlers))
-
-	// Call handlers in separate goroutines
-	for _, handler := range handlers {
-		h := handler // Capture for goroutine
-
+	for _, h := range handlers {
 		go func() {
 			defer wg.Done()
-			// Acquire semaphore if configured
-			if c.handlerSem != nil {
-				select {
-				case c.handlerSem <- struct{}{}:
-					defer func() { <-c.handlerSem }()
-				case <-c.stop:
-					return
-				}
-			}
-
-			// Create a context for the handler
-			var ctx context.Context
-			var cancel context.CancelFunc
-			if c.opts.HandlerTimeout > 0 {
-				ctx, cancel = context.WithTimeout(context.Background(), c.opts.HandlerTimeout)
-			} else {
-				ctx, cancel = context.WithCancel(context.Background())
-			}
-			defer cancel()
-
-			m := msg // each handler gets its own copy and context
-			m.Context = ctx
-			h(c, m)
+			c.runHandler(h, msg)
 		}()
 	}
 
-	// Wait for all handlers and then acknowledge. The session may be gone by
-	// then, so the ack keeps the epoch the message arrived in.
-	epoch := c.sessionEpoch.Load()
 	go func() {
 		wg.Wait()
-		c.sendAck(p, epoch)
+		if !c.stopped() {
+			c.sendAck(p, epoch)
+		}
 	}()
 
 	return nil

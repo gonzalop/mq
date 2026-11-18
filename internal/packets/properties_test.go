@@ -2,7 +2,9 @@ package packets
 
 import (
 	"fmt"
+	"io"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -102,6 +104,9 @@ func TestProperties(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Encode
 			encoded := encodeProperties(tt.props)
+			if got, want := tt.props.encodedSize(), len(encoded); got != want {
+				t.Errorf("encodedSize() = %d, want %d", got, want)
+			}
 
 			// Decode
 			// Handle nil/empty case: encode returns nil or empty slice, decode should handle it
@@ -243,6 +248,71 @@ func TestDecodeUnsupportedPropertyIDs(t *testing.T) {
 			_, _, err := decodeProperties(buf)
 			if err == nil {
 				t.Fatalf("expected error for unsupported property ID 0x%02x, got nil", id)
+			}
+		})
+	}
+}
+
+func TestPacketEncodedSize(t *testing.T) {
+	largeProps := &Properties{
+		ContentType: "application/octet-stream",
+		UserProperties: []UserProperty{
+			{Key: "long-key", Value: strings.Repeat("x", 200)},
+		},
+		SubscriptionIdentifier: []int{16384},
+		Presence:               PresContentType,
+	}
+	if got, want := largeProps.encodedSize(), len(encodeProperties(largeProps)); got != want {
+		t.Fatalf("largeProps.encodedSize() = %d, want %d", got, want)
+	}
+
+	pkts := []struct {
+		name string
+		pkt  Packet
+	}{
+		{
+			name: "PUBLISH v3 QoS 0",
+			pkt:  &PublishPacket{Topic: "sensors/temp", Payload: []byte("21.5"), QoS: 0, Version: 4},
+		},
+		{
+			name: "PUBLISH v5 QoS 1 with large properties",
+			pkt:  &PublishPacket{Topic: "sensors/temp", Payload: make([]byte, 200), QoS: 1, PacketID: 7, Version: 5, Properties: largeProps},
+		},
+		{
+			name: "SUBSCRIBE v3",
+			pkt:  &SubscribePacket{PacketID: 1, Topics: []string{"a/b", "c/#"}, QoS: []uint8{0, 1}, Version: 4},
+		},
+		{
+			name: "SUBSCRIBE v5 with properties",
+			pkt:  &SubscribePacket{PacketID: 2, Topics: []string{"a/b"}, QoS: []uint8{2}, Version: 5, Properties: largeProps},
+		},
+		{
+			name: "UNSUBSCRIBE v3",
+			pkt:  &UnsubscribePacket{PacketID: 3, Topics: []string{"a/b", "c/d"}, Version: 4},
+		},
+		{
+			name: "UNSUBSCRIBE v5 with properties",
+			pkt:  &UnsubscribePacket{PacketID: 4, Topics: []string{"a/b"}, Version: 5, Properties: largeProps},
+		},
+	}
+
+	for _, tc := range pkts {
+		t.Run(tc.name, func(t *testing.T) {
+			written, err := tc.pkt.WriteTo(io.Discard)
+			if err != nil {
+				t.Fatalf("WriteTo: %v", err)
+			}
+			var got int
+			switch p := tc.pkt.(type) {
+			case *PublishPacket:
+				got = p.EncodedSize()
+			case *SubscribePacket:
+				got = p.EncodedSize()
+			case *UnsubscribePacket:
+				got = p.EncodedSize()
+			}
+			if int64(got) != written {
+				t.Errorf("EncodedSize() = %d, WriteTo = %d", got, written)
 			}
 		})
 	}
