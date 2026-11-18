@@ -76,7 +76,10 @@ func TestConnectPacketLimits(t *testing.T) {
 				requestedKeepAlive: options.KeepAlive,
 			}
 
-			pkt := c.buildConnectPacket()
+			pkt, err := c.buildConnectPacket()
+			if err != nil {
+				t.Fatalf("buildConnectPacket: %v", err)
+			}
 
 			if pkt.Properties == nil {
 				if tt.wantReceiveMaxSet || tt.wantMaxPacketSizeSet {
@@ -123,7 +126,10 @@ func TestConnectUserProperties(t *testing.T) {
 	c.requestedKeepAlive = 60 * time.Second
 
 	// 2. Build the CONNECT packet
-	pkt := c.buildConnectPacket()
+	pkt, err := c.buildConnectPacket()
+	if err != nil {
+		t.Fatalf("buildConnectPacket: %v", err)
+	}
 
 	// 3. Verify Properties
 	if pkt.Properties == nil {
@@ -175,7 +181,10 @@ func TestConnectUserProperties_V311(t *testing.T) {
 	}
 	c.requestedKeepAlive = 60 * time.Second
 
-	pkt := c.buildConnectPacket()
+	pkt, err := c.buildConnectPacket()
+	if err != nil {
+		t.Fatalf("buildConnectPacket: %v", err)
+	}
 
 	if pkt.Properties != nil {
 		t.Error("Connect packet properties should be nil for v3.1.1")
@@ -364,7 +373,10 @@ func TestWithWillDelayInterval(t *testing.T) {
 		requestedKeepAlive: options.KeepAlive,
 	}
 
-	pkt := c.buildConnectPacket()
+	pkt, err := c.buildConnectPacket()
+	if err != nil {
+		t.Fatalf("buildConnectPacket: %v", err)
+	}
 	if pkt.WillProperties == nil {
 		t.Fatal("expected WillProperties to be non-nil")
 	}
@@ -413,7 +425,10 @@ func TestKeepAliveZeroPreservedAcrossServerOverride(t *testing.T) {
 	}
 
 	// 1. Initial connect packet requests 0s keepalive
-	pkt := c.buildConnectPacket()
+	pkt, err := c.buildConnectPacket()
+	if err != nil {
+		t.Fatalf("buildConnectPacket: %v", err)
+	}
 	if pkt.KeepAlive != 0 {
 		t.Fatalf("initial Connect packet KeepAlive = %d, want 0", pkt.KeepAlive)
 	}
@@ -435,7 +450,10 @@ func TestKeepAliveZeroPreservedAcrossServerOverride(t *testing.T) {
 	c.prepareConnectionState()
 
 	// 4. On reconnect, the CONNECT packet must still request 0s, not 30s!
-	pkt2 := c.buildConnectPacket()
+	pkt2, err := c.buildConnectPacket()
+	if err != nil {
+		t.Fatalf("buildConnectPacket: %v", err)
+	}
 	if pkt2.KeepAlive != 0 {
 		t.Errorf("reconnect Connect packet KeepAlive = %d, want 0 (user setting was overwritten)", pkt2.KeepAlive)
 	}
@@ -453,7 +471,10 @@ func TestConnectAndConnackUserPropertyList(t *testing.T) {
 		opts: opts,
 	}
 
-	pkt := c.buildConnectPacket()
+	pkt, err := c.buildConnectPacket()
+	if err != nil {
+		t.Fatalf("buildConnectPacket: %v", err)
+	}
 	if pkt.Properties == nil {
 		t.Fatal("Connect packet properties should not be nil")
 	}
@@ -468,7 +489,9 @@ func TestConnectAndConnackUserPropertyList(t *testing.T) {
 
 	// Verify v3.1.1 ignores WithConnectUserProperty
 	c.opts.ProtocolVersion = ProtocolV311
-	if pktV3 := c.buildConnectPacket(); pktV3.Properties != nil {
+	if pktV3, err := c.buildConnectPacket(); err != nil {
+		t.Fatalf("buildConnectPacket: %v", err)
+	} else if pktV3.Properties != nil {
 		t.Fatalf("expected nil properties for v3.1.1, got %+v", pktV3.Properties)
 	}
 
@@ -502,7 +525,10 @@ func TestConnectAndConnackUserPropertyList(t *testing.T) {
 	combinedOpts.ProtocolVersion = ProtocolV50
 	WithConnectUserProperties(map[string]string{"env": "prod"})(combinedOpts)
 	WithConnectUserProperty("env", "canary")(combinedOpts)
-	combinedPkt := (&Client{trie: newTopicTrie(), opts: combinedOpts}).buildConnectPacket()
+	combinedPkt, err := (&Client{trie: newTopicTrie(), opts: combinedOpts}).buildConnectPacket()
+	if err != nil {
+		t.Fatalf("buildConnectPacket: %v", err)
+	}
 	wantCombined := []packets.UserProperty{
 		{Key: "env", Value: "prod"},
 		{Key: "env", Value: "canary"},

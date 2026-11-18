@@ -33,7 +33,7 @@ The `sessionLock` MUST be held when accessing or modifying the following fields:
 
 ### Lifecycle Tracking
 
-The client uses an atomic counter, `activeLoops`, to track the number of long-running background goroutines (`logicLoop`, `reconnectLoop`, `readLoop`, `writeLoop`). 
+The client uses an atomic counter, `activeLoops`, to track the number of long-running background goroutines (`logicLoop`, `reconnectLoop`, `readLoop`, `writeLoop`, `resubscribeAll`). 
 
 This is used by the public `Disconnect()` method to wait for a clean shutdown without leaking helper goroutines.
 

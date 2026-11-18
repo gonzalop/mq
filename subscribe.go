@@ -326,7 +326,7 @@ func (c *Client) Unsubscribe(ctx context.Context, topic string, opts ...Unsubscr
 func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 	c.sessionLock.Lock()
 
-	if len(c.subscriptions) == 0 {
+	if c.stopped() || len(c.subscriptions) == 0 {
 		c.sessionLock.Unlock()
 		return
 	}
@@ -483,6 +483,13 @@ func (c *Client) resubscribeAll(connDone <-chan struct{}) {
 	logDeferred()
 
 	for _, pkt := range packetsToSend {
+		select {
+		case <-connDone:
+			return
+		case <-c.stop:
+			return
+		default:
+		}
 		select {
 		case c.outgoing <- pkt:
 		case <-connDone:

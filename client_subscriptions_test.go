@@ -1271,3 +1271,105 @@ func TestSubscribeAndUnsubscribeUserPropertyList(t *testing.T) {
 		t.Fatalf("UNSUBSCRIBE UserProperties = %v, want %v", unsubPkt.Properties, wantWire)
 	}
 }
+
+type blockingResubscribeLogHandler struct {
+	entered     chan struct{}
+	release     chan struct{}
+	enteredOnce atomic.Bool
+}
+
+func (h *blockingResubscribeLogHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h *blockingResubscribeLogHandler) WithAttrs([]slog.Attr) slog.Handler       { return h }
+func (h *blockingResubscribeLogHandler) WithGroup(string) slog.Handler            { return h }
+func (h *blockingResubscribeLogHandler) Handle(_ context.Context, r slog.Record) error {
+	if r.Message == "resubscribing to topics" && h.enteredOnce.CompareAndSwap(false, true) {
+		close(h.entered)
+		<-h.release
+	}
+	return nil
+}
+
+func TestFinalizeConnection_DisconnectWaitsForResubscribeAll(t *testing.T) {
+	lh := &blockingResubscribeLogHandler{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	opts := defaultOptions("tcp://localhost:1883")
+	opts.Logger = slog.New(lh)
+	c := newTestClient(opts)
+	c.addSubscriptionLocked("a/b", subscriptionEntry{handler: func(*Client, Message) {}, options: subscribeOptions{QoS: AtLeastOnce}})
+
+	cli, srv := net.Pipe()
+	defer srv.Close()
+	go func() { _, _ = io.Copy(io.Discard, srv) }()
+
+	c.connLock.Lock()
+	c.conn = cli
+	c.connLock.Unlock()
+
+	if err := c.finalizeConnection(&packets.ConnackPacket{ReturnCode: packets.ConnAccepted}); err != nil {
+		t.Fatalf("finalizeConnection: %v", err)
+	}
+
+	select {
+	case <-lh.entered:
+	case <-time.After(time.Second):
+		t.Fatal("resubscribeAll never started")
+	}
+
+	discErrCh := make(chan error, 1)
+	go func() {
+		discErrCh <- c.Disconnect(context.Background())
+	}()
+
+	select {
+	case err := <-discErrCh:
+		t.Fatalf("Disconnect returned early while resubscribeAll was still running (err=%v)", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	close(lh.release)
+
+	select {
+	case err := <-discErrCh:
+		if err != nil {
+			t.Fatalf("Disconnect: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Disconnect timed out waiting for resubscribeAll")
+	}
+
+	if got := c.activeLoops.Load(); got != 0 {
+		t.Errorf("activeLoops = %d after Disconnect, want 0", got)
+	}
+}
+
+func TestResubscribeAll_ExitsEarlyWhenStopped(t *testing.T) {
+	c := newTestClient(defaultOptions("tcp://localhost:1883"))
+	c.addSubscriptionLocked("a/b", subscriptionEntry{handler: func(*Client, Message) {}, options: subscribeOptions{QoS: AtLeastOnce}})
+	close(c.stop)
+
+	c.resubscribeAll(make(chan struct{}))
+
+	if len(c.pending) != 0 {
+		t.Errorf("pending = %d, want 0 when client is already stopped", len(c.pending))
+	}
+	if len(c.outgoing) != 0 {
+		t.Errorf("outgoing = %d, want 0 when client is already stopped", len(c.outgoing))
+	}
+}
+
+func TestResubscribeAll_DoesNotSendWhenConnDoneEvenIfOutgoingHasRoom(t *testing.T) {
+	for range 50 {
+		c := newTestClient(defaultOptions("tcp://localhost:1883"))
+		c.addSubscriptionLocked("a/b", subscriptionEntry{handler: func(*Client, Message) {}, options: subscribeOptions{QoS: AtLeastOnce}})
+		connDone := make(chan struct{})
+		close(connDone)
+
+		c.resubscribeAll(connDone)
+
+		if len(c.outgoing) != 0 {
+			t.Fatalf("outgoing = %d, want 0 when connDone is already closed", len(c.outgoing))
+		}
+	}
+}

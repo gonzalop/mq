@@ -546,3 +546,91 @@ func TestResendSkipsRequestsStillSending(t *testing.T) {
 		}
 	}
 }
+
+func TestServerDisconnect_RaceWithEOFAndLinger(t *testing.T) {
+	runCase := func(t *testing.T, closeServer bool, expectedCode ReasonCode, expectedRef string) {
+		t.Helper()
+		lostCh := make(chan error, 1)
+		opts := defaultOptions("tcp://localhost:1883")
+		opts.ProtocolVersion = ProtocolV50
+		opts.IncomingQueueSize = 1
+		opts.OnConnectionLost = func(_ *Client, err error) {
+			lostCh <- err
+		}
+
+		c := newTestClient(opts)
+		c.connState.Store(&connectionState{caps: extractServerCapabilities(nil)})
+
+		// Occupy incoming so any queued DISCONNECT behind it could not be delivered
+		// before runReadLoop observes EOF and runs defer handleDisconnect.
+		c.incoming <- &packets.PublishPacket{Topic: "t", Payload: []byte("x")}
+
+		cli, srv := net.Pipe()
+		defer cli.Close()
+		defer srv.Close()
+
+		c.connLock.Lock()
+		c.conn = cli
+		c.connDone = make(chan struct{})
+		c.connected.Store(true)
+		c.connLock.Unlock()
+
+		readDone := make(chan struct{})
+		c.wg.Add(1)
+		c.activeLoops.Add(1)
+		go c.runReadLoop(cli, readDone)
+
+		disc := &packets.DisconnectPacket{
+			Version:    5,
+			ReasonCode: uint8(expectedCode),
+		}
+		if expectedRef != "" {
+			disc.Properties = &packets.Properties{
+				ServerReference: expectedRef,
+				Presence:        packets.PresServerReference,
+			}
+		}
+
+		go func() {
+			_, _ = disc.WriteTo(srv)
+			if closeServer {
+				srv.Close()
+			}
+		}()
+
+		select {
+		case <-readDone:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for runReadLoop to exit")
+		}
+
+		select {
+		case err := <-lostCh:
+			var dErr *DisconnectError
+			if !errors.As(err, &dErr) {
+				t.Fatalf("OnConnectionLost err = %T (%v), want *DisconnectError", err, err)
+			}
+			if dErr.ReasonCode != expectedCode {
+				t.Errorf("ReasonCode = 0x%02x, want 0x%02x", dErr.ReasonCode, expectedCode)
+			}
+			if dErr.ServerReference != expectedRef {
+				t.Errorf("ServerReference = %q, want %q", dErr.ServerReference, expectedRef)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for OnConnectionLost")
+		}
+
+		if c.IsConnected() {
+			t.Error("client still reports connected after server DISCONNECT")
+		}
+		c.wg.Wait()
+	}
+
+	t.Run("EOF while incoming is backed up", func(t *testing.T) {
+		runCase(t, true, ReasonCodeServerMoved, "mqtt://other:1883")
+	})
+
+	t.Run("broker lingers without closing TCP", func(t *testing.T) {
+		runCase(t, false, ReasonCodeAdministrativeAction, "")
+	})
+}

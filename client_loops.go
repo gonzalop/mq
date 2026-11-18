@@ -44,6 +44,11 @@ func (c *Client) runReadLoop(conn net.Conn, readDone chan struct{}) {
 
 		c.opts.Logger.Debug("received packet", "type", packets.PacketNames[pkt.Type()])
 
+		if p, ok := pkt.(*packets.DisconnectPacket); ok {
+			c.handleDisconnectPacket(p)
+			return
+		}
+
 		select {
 		case c.packetReceived <- struct{}{}:
 		default:
@@ -74,13 +79,13 @@ type incomingBarrier struct {
 // taking packets from it.
 func (c *Client) drainPreviousConnection(ctx context.Context) error {
 	c.connLock.RLock()
-	readDone, writeDone := c.readDone, c.writeDone
+	readDone, writeDone, resubDone := c.readDone, c.writeDone, c.resubDone
 	c.connLock.RUnlock()
-	if readDone == nil {
+	if readDone == nil && writeDone == nil && resubDone == nil {
 		return nil // first connection
 	}
 
-	for _, done := range []chan struct{}{readDone, writeDone} {
+	for _, done := range []chan struct{}{readDone, writeDone, resubDone} {
 		if done == nil {
 			continue
 		}

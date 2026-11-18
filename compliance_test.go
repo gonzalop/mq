@@ -277,7 +277,10 @@ func TestCompliance_AssignedClientID_Persistence(t *testing.T) {
 	}
 
 	// Verify buildConnectPacket uses the updated ID
-	pkt := c.buildConnectPacket()
+	pkt, err := c.buildConnectPacket()
+	if err != nil {
+		t.Fatalf("buildConnectPacket: %v", err)
+	}
 	if pkt.ClientID != assignedID {
 		t.Errorf("Expected CONNECT packet to use assigned ID %q, got %q", assignedID, pkt.ClientID)
 	}

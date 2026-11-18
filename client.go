@@ -32,6 +32,7 @@ type Client struct {
 	connDone  chan struct{} // Closed when conn is disconnected
 	readDone  chan struct{} // Closed when conn's read loop has exited
 	writeDone chan struct{} // Closed when conn's write loop has exited
+	resubDone chan struct{} // Closed when conn's resubscribeAll has exited
 
 	// sessionEpoch is bumped whenever the broker has no session for us. Acks
 	// for messages from an earlier epoch are not sent (see inboundAck).
@@ -408,6 +409,11 @@ func (c *Client) connect(ctx context.Context) error {
 	// 1. Send CONNECT
 	if err := c.sendConnectPacket(cw); err != nil {
 		stopClose()
+		c.connLock.Lock()
+		if c.conn == conn {
+			c.conn = nil
+		}
+		c.connLock.Unlock()
 		conn.Close()
 		return err
 	}

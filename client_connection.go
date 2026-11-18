@@ -72,7 +72,7 @@ func (c *Client) dialServer(ctx context.Context) (net.Conn, error) {
 }
 
 // buildConnectPacket creates a CONNECT packet with the client's configuration.
-func (c *Client) buildConnectPacket() *packets.ConnectPacket {
+func (c *Client) buildConnectPacket() (*packets.ConnectPacket, error) {
 	// Use the original requested keepalive, not the potentially server-overridden value
 	keepalive := c.requestedKeepAlive
 
@@ -131,8 +131,9 @@ func (c *Client) buildConnectPacket() *packets.ConnectPacket {
 
 			initialData, err := c.opts.Authenticator.InitialData()
 			if err != nil {
-				c.opts.Logger.Error("failed to get initial auth data", "error", err)
-			} else if len(initialData) > 0 {
+				return nil, fmt.Errorf("failed to get initial auth data: %w", err)
+			}
+			if len(initialData) > 0 {
 				pkt.Properties.AuthenticationData = initialData
 			}
 		}
@@ -159,12 +160,15 @@ func (c *Client) buildConnectPacket() *packets.ConnectPacket {
 		}
 	}
 
-	return pkt
+	return pkt, nil
 }
 
 // sendConnectPacket builds and sends the CONNECT packet.
 func (c *Client) sendConnectPacket(w io.Writer) error {
-	connectPkt := c.buildConnectPacket()
+	connectPkt, err := c.buildConnectPacket()
+	if err != nil {
+		return fmt.Errorf("failed to send CONNECT: %w", err)
+	}
 	if p := connectPkt.Properties; p != nil {
 		if err := checkAuthFieldLengths(p.AuthenticationMethod, p.AuthenticationData); err != nil {
 			return fmt.Errorf("failed to send CONNECT: %w", err)
@@ -288,9 +292,20 @@ func (c *Client) finalizeConnection(connack *packets.ConnackPacket) error {
 	c.readDone = readDone
 	writeDone := make(chan struct{})
 	c.writeDone = writeDone
+	var resubDone chan struct{}
+	loops := 2
+	if resubscribe {
+		resubDone = make(chan struct{})
+		loops = 3
+	}
+	c.resubDone = resubDone
 	conn := c.conn
 	c.connected.Store(true)
 	c.connectedAt.Store(time.Now().UnixNano())
+	// Register loop counts before releasing connLock so a concurrent Disconnect
+	// cannot call wg.Wait before wg.Add runs.
+	c.wg.Add(loops)
+	c.activeLoops.Add(int32(loops))
 	c.connLock.Unlock()
 
 	c.opts.Logger.Debug("connection established", "server", c.opts.Server)
@@ -307,8 +322,6 @@ func (c *Client) finalizeConnection(connack *packets.ConnackPacket) error {
 		}()
 	}
 
-	c.wg.Add(2)
-	c.activeLoops.Add(2)
 	go c.runReadLoop(conn, readDone)
 	go func() {
 		defer close(writeDone)
@@ -327,7 +340,12 @@ resendLoop:
 	}
 
 	if resubscribe {
-		go c.resubscribeAll(connDone)
+		go func() {
+			defer c.wg.Done()
+			defer c.activeLoops.Add(-1)
+			defer close(resubDone)
+			c.resubscribeAll(connDone)
+		}()
 	}
 
 	c.opts.Logger.Debug("client started", "client_id", c.opts.ClientID)

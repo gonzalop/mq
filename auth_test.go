@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -56,7 +57,10 @@ func TestAuthenticatorInCONNECT(t *testing.T) {
 		},
 	}
 
-	pkt := client.buildConnectPacket()
+	pkt, err := client.buildConnectPacket()
+	if err != nil {
+		t.Fatalf("buildConnectPacket: %v", err)
+	}
 
 	// Verify authentication method is set
 	if pkt.Properties == nil {
@@ -575,13 +579,19 @@ func TestAuth_ChallengeDoesNotBlockLogicLoop(t *testing.T) {
 }
 
 type failingAuth struct {
-	method string
-	err    error
+	method  string
+	err     error
+	initErr error
 }
 
-func (f *failingAuth) Method() string               { return f.method }
-func (f *failingAuth) InitialData() ([]byte, error) { return nil, nil }
-func (f *failingAuth) Complete() error              { return nil }
+func (f *failingAuth) Method() string { return f.method }
+func (f *failingAuth) InitialData() ([]byte, error) {
+	if f.initErr != nil {
+		return nil, f.initErr
+	}
+	return nil, nil
+}
+func (f *failingAuth) Complete() error { return nil }
 func (f *failingAuth) HandleChallenge(_ []byte, _ ReasonCode) ([]byte, error) {
 	return nil, f.err
 }
@@ -661,5 +671,40 @@ func TestAuth_ChallengeErrorDropsConnection(t *testing.T) {
 		}
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("timed out waiting for dropConnection on challenge error")
+	}
+}
+
+func TestDial_InitialAuthDataErrorAbortsBeforeWrite(t *testing.T) {
+	wantErr := fmt.Errorf("credential store unavailable")
+	var wrote atomic.Bool
+	dialer := DialFunc(func(_ context.Context, _, _ string) (net.Conn, error) {
+		cli, srv := net.Pipe()
+		go func() {
+			defer srv.Close()
+			buf := make([]byte, 1)
+			if n, _ := srv.Read(buf); n > 0 {
+				wrote.Store(true)
+			}
+		}()
+		return cli, nil
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := DialContext(ctx, "tcp://127.0.0.1:1883",
+		WithProtocolVersion(ProtocolV50),
+		WithDialer(dialer),
+		WithAutoReconnect(false),
+		WithAuthenticator(&failingAuth{method: "SCRAM", initErr: wantErr}),
+	)
+	if err == nil {
+		t.Fatal("expected DialContext error when InitialData fails, got nil")
+	}
+	if !strings.Contains(err.Error(), wantErr.Error()) {
+		t.Errorf("error = %v, want %q", err, wantErr.Error())
+	}
+	if wrote.Load() {
+		t.Error("client wrote bytes to socket despite InitialData error")
 	}
 }

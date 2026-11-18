@@ -608,17 +608,29 @@ func TestDrainPreviousConnection(t *testing.T) {
 		name      string
 		readDone  chan struct{}
 		writeDone chan struct{}
+		resubDone chan struct{}
 		wantErr   bool
 	}{
-		{"first connection", nil, nil, false},
-		{"old read loop never exits", make(chan struct{}), closed, true},
-		{"old write loop never exits", closed, make(chan struct{}), true},
+		{"first connection", nil, nil, nil, false},
+		{"old read loop never exits", make(chan struct{}), closed, nil, true},
+		{"old write loop never exits", closed, make(chan struct{}), nil, true},
+		{"old resubscribe never exits", closed, closed, make(chan struct{}), true},
+		{"all loops exited", closed, closed, closed, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := newTestClient(nil)
 			c.readDone = tt.readDone
 			c.writeDone = tt.writeDone
+			c.resubDone = tt.resubDone
+			if !tt.wantErr && (tt.readDone != nil || tt.writeDone != nil || tt.resubDone != nil) {
+				c.wg.Add(1)
+				go c.logicLoop()
+				defer func() {
+					close(c.stop)
+					c.wg.Wait()
+				}()
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 			defer cancel()
 			if err := c.drainPreviousConnection(ctx); (err != nil) != tt.wantErr {
