@@ -191,6 +191,17 @@ func extractServerCapabilities(props *packets.Properties) serverCapabilities {
 	return caps
 }
 
+// notifyServerRedirect logs the server reference and invokes OnServerRedirect
+// asynchronously when configured.
+func (c *Client) notifyServerRedirect(ref string) {
+	c.opts.Logger.Debug("server provided redirect reference", "server_reference", ref)
+	if c.opts.OnServerRedirect != nil {
+		go func() {
+			c.opts.OnServerRedirect(ref)
+		}()
+	}
+}
+
 func (c *Client) processConnackProperties(connack *packets.ConnackPacket) {
 	if c.opts.ProtocolVersion >= ProtocolV50 && connack.Properties != nil {
 		var oldAssignedID string
@@ -222,14 +233,7 @@ func (c *Client) processConnackProperties(connack *packets.ConnackPacket) {
 
 		if connack.Properties.Presence&packets.PresServerReference != 0 {
 			newState.serverReference = connack.Properties.ServerReference
-			c.opts.Logger.Debug("server provided redirect reference", "server_reference", newState.serverReference)
-
-			if c.opts.OnServerRedirect != nil {
-				go func() {
-					c.opts.OnServerRedirect(connack.Properties.ServerReference)
-				}()
-			}
-
+			c.notifyServerRedirect(connack.Properties.ServerReference)
 		}
 
 		if connack.Properties.Presence&packets.PresServerKeepAlive != 0 {

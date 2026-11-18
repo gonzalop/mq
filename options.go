@@ -608,7 +608,8 @@ func WithOnConnectionLost(onConnectionLost func(*Client, error)) Option {
 // the redirect and manually reconnect if desired.
 //
 // The handler is invoked asynchronously in a separate goroutine to prevent
-// blocking the processing of the CONNACK packet.
+// blocking the processing of the CONNACK packet (including rejected CONNACK
+// redirects such as ReasonCodeUseAnotherServer or ReasonCodeServerMoved).
 //
 // The server reference is also available via the ServerReference() method for
 // polling/checking later.

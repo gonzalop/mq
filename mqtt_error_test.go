@@ -1,9 +1,12 @@
 package mq
 
 import (
+	"context"
 	"errors"
+	"net"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/gonzalop/mq/internal/packets"
 )
@@ -196,6 +199,200 @@ func TestMqttError_v5_v3_Compatibility(t *testing.T) {
 		}
 		if dErr.UserProperties["route"] != "b" || dErr.UserProperties["note"] != "ok" {
 			t.Fatalf("UserProperties = %v, unexpected values", dErr.UserProperties)
+		}
+	})
+}
+
+type pipeDialer struct {
+	conn net.Conn
+}
+
+func (d pipeDialer) DialContext(_ context.Context, _, _ string) (net.Conn, error) {
+	return d.conn, nil
+}
+
+func TestRejectedConnackProperties(t *testing.T) {
+	t.Run("validateConnack preserves ServerReference, UserProperties, and calls OnServerRedirect", func(t *testing.T) {
+		redirected := make(chan string, 1)
+		opts := defaultOptions("tcp://localhost:1883")
+		opts.ProtocolVersion = ProtocolV50
+		opts.OnServerRedirect = func(serverURI string) {
+			redirected <- serverURI
+		}
+
+		c := &Client{trie: newTopicTrie(), opts: opts}
+		clientConn, serverConn := net.Pipe()
+		defer serverConn.Close()
+
+		connack := &packets.ConnackPacket{
+			ReturnCode: uint8(ReasonCodeUseAnotherServer),
+			Properties: &packets.Properties{
+				Presence:        packets.PresReasonString | packets.PresServerReference,
+				ReasonString:    "use regional broker",
+				ServerReference: "mqtts://eu-west.example.com:8883",
+				UserProperties: []packets.UserProperty{
+					{Key: "region", Value: "eu-west"},
+					{Key: "region", Value: "eu-central"},
+					{Key: "hint", Value: "tls"},
+				},
+			},
+		}
+
+		err := c.validateConnack(clientConn, connack)
+		var mErr *MqttError
+		if !errors.As(err, &mErr) {
+			t.Fatalf("expected *MqttError, got %T: %v", err, err)
+		}
+		if !errors.Is(err, ReasonCodeUseAnotherServer) {
+			t.Errorf("errors.Is(err, ReasonCodeUseAnotherServer) = false, err = %v", err)
+		}
+		if !errors.Is(err, ErrConnectionRefused) {
+			t.Errorf("errors.Is(err, ErrConnectionRefused) = false, err = %v", err)
+		}
+		if mErr.Message != "use regional broker" {
+			t.Errorf("Message = %q, want %q", mErr.Message, "use regional broker")
+		}
+		if mErr.ServerReference != "mqtts://eu-west.example.com:8883" {
+			t.Errorf("ServerReference = %q, want %q", mErr.ServerReference, "mqtts://eu-west.example.com:8883")
+		}
+		if c.ServerReference() != "mqtts://eu-west.example.com:8883" {
+			t.Errorf("client.ServerReference() = %q, want %q", c.ServerReference(), "mqtts://eu-west.example.com:8883")
+		}
+
+		wantList := []UserProperty{
+			{Key: "region", Value: "eu-west"},
+			{Key: "region", Value: "eu-central"},
+			{Key: "hint", Value: "tls"},
+		}
+		if !slices.Equal(mErr.UserPropertyList, wantList) {
+			t.Errorf("UserPropertyList = %v, want %v", mErr.UserPropertyList, wantList)
+		}
+		if mErr.UserProperties["region"] != "eu-central" || mErr.UserProperties["hint"] != "tls" {
+			t.Errorf("UserProperties = %v, unexpected map contents", mErr.UserProperties)
+		}
+
+		select {
+		case gotURI := <-redirected:
+			if gotURI != "mqtts://eu-west.example.com:8883" {
+				t.Errorf("OnServerRedirect got %q, want %q", gotURI, "mqtts://eu-west.example.com:8883")
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for OnServerRedirect callback")
+		}
+	})
+
+	t.Run("validateConnack leaves properties empty when absent", func(t *testing.T) {
+		opts := defaultOptions("tcp://localhost:1883")
+		opts.ProtocolVersion = ProtocolV50
+		called := make(chan string, 1)
+		opts.OnServerRedirect = func(serverURI string) {
+			called <- serverURI
+		}
+
+		c := &Client{trie: newTopicTrie(), opts: opts}
+		clientConn, serverConn := net.Pipe()
+		defer serverConn.Close()
+
+		err := c.validateConnack(clientConn, &packets.ConnackPacket{
+			ReturnCode: uint8(ReasonCodeNotAuthorized),
+		})
+		var mErr *MqttError
+		if !errors.As(err, &mErr) {
+			t.Fatalf("expected *MqttError, got %T: %v", err, err)
+		}
+		if mErr.ServerReference != "" {
+			t.Errorf("ServerReference = %q, want empty", mErr.ServerReference)
+		}
+		if mErr.UserProperties != nil || mErr.UserPropertyList != nil {
+			t.Errorf("expected nil UserProperties/UserPropertyList, got %v / %v", mErr.UserProperties, mErr.UserPropertyList)
+		}
+		select {
+		case uri := <-called:
+			t.Errorf("unexpected OnServerRedirect call with %q", uri)
+		case <-time.After(20 * time.Millisecond):
+		}
+	})
+
+	t.Run("DialContext returns ServerReference and UserProperties on ServerMoved CONNACK", func(t *testing.T) {
+		clientConn, serverConn := net.Pipe()
+		defer serverConn.Close()
+
+		serverErr := make(chan error, 1)
+		go func() {
+			pkt, err := packets.ReadPacket(serverConn, 5, 0)
+			if err != nil {
+				serverErr <- err
+				return
+			}
+			if _, ok := pkt.(*packets.ConnectPacket); !ok {
+				serverErr <- errors.New("expected CONNECT packet")
+				return
+			}
+			connack := &packets.ConnackPacket{
+				ReturnCode: uint8(ReasonCodeServerMoved),
+				Properties: &packets.Properties{
+					Presence:        packets.PresReasonString | packets.PresServerReference,
+					ReasonString:    "moved permanently",
+					ServerReference: "tcp://new-broker.example.com:1883",
+					UserProperties: []packets.UserProperty{
+						{Key: "route", Value: "primary"},
+						{Key: "route", Value: "secondary"},
+					},
+				},
+			}
+			_, err = connack.WriteTo(serverConn)
+			serverErr <- err
+		}()
+
+		redirected := make(chan string, 1)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		client, err := DialContext(ctx, "tcp://old-broker.example.com:1883",
+			WithProtocolVersion(ProtocolV50),
+			WithDialer(pipeDialer{conn: clientConn}),
+			WithOnServerRedirect(func(serverURI string) {
+				redirected <- serverURI
+			}),
+		)
+		if client != nil {
+			t.Fatalf("expected nil client on rejected CONNACK, got %v", client)
+		}
+		if sErr := <-serverErr; sErr != nil {
+			t.Fatalf("mock server error: %v", sErr)
+		}
+
+		var mErr *MqttError
+		if !errors.As(err, &mErr) {
+			t.Fatalf("expected *MqttError, got %T: %v", err, err)
+		}
+		if !errors.Is(err, ReasonCodeServerMoved) {
+			t.Errorf("errors.Is(err, ReasonCodeServerMoved) = false, err = %v", err)
+		}
+		if mErr.Message != "moved permanently" {
+			t.Errorf("Message = %q, want %q", mErr.Message, "moved permanently")
+		}
+		if mErr.ServerReference != "tcp://new-broker.example.com:1883" {
+			t.Errorf("ServerReference = %q, want %q", mErr.ServerReference, "tcp://new-broker.example.com:1883")
+		}
+		wantList := []UserProperty{
+			{Key: "route", Value: "primary"},
+			{Key: "route", Value: "secondary"},
+		}
+		if !slices.Equal(mErr.UserPropertyList, wantList) {
+			t.Errorf("UserPropertyList = %v, want %v", mErr.UserPropertyList, wantList)
+		}
+		if mErr.UserProperties["route"] != "secondary" {
+			t.Errorf("UserProperties[route] = %q, want %q", mErr.UserProperties["route"], "secondary")
+		}
+
+		select {
+		case gotURI := <-redirected:
+			if gotURI != "tcp://new-broker.example.com:1883" {
+				t.Errorf("OnServerRedirect got %q, want %q", gotURI, "tcp://new-broker.example.com:1883")
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for OnServerRedirect callback")
 		}
 	})
 }

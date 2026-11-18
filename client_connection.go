@@ -183,15 +183,34 @@ func (c *Client) validateConnack(conn net.Conn, connack *packets.ConnackPacket) 
 		return nil
 	}
 
-	conn.Close()
+	if conn != nil {
+		conn.Close()
+	}
 
 	if c.opts.ProtocolVersion >= ProtocolV50 {
 		err := &MqttError{
 			ReasonCode: ReasonCode(connack.ReturnCode),
 			Parent:     ErrConnectionRefused,
 		}
-		if connack.Properties != nil && connack.Properties.Presence&packets.PresReasonString != 0 {
-			err.Message = connack.Properties.ReasonString
+		if props := connack.Properties; props != nil {
+			if props.Presence&packets.PresReasonString != 0 {
+				err.Message = props.ReasonString
+			}
+			if props.Presence&packets.PresServerReference != 0 {
+				err.ServerReference = props.ServerReference
+				var next connectionState
+				if prev := c.connState.Load(); prev != nil {
+					next = *prev
+				} else {
+					next.caps = extractServerCapabilities(nil)
+				}
+				next.serverReference = props.ServerReference
+				c.connState.Store(&next)
+				c.notifyServerRedirect(props.ServerReference)
+			}
+			if len(props.UserProperties) > 0 {
+				err.UserPropertyList, err.UserProperties = fromPacketUserProperties(props.UserProperties)
+			}
 		}
 		return err
 	}

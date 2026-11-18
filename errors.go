@@ -54,11 +54,14 @@ var (
 )
 
 // MqttError represents an error returned by the MQTT server, including
-// the MQTT v5.0 reason code.
+// the MQTT v5.0 reason code and optional diagnostic/redirect properties.
 type MqttError struct {
-	ReasonCode ReasonCode
-	Message    string
-	Parent     error
+	ReasonCode       ReasonCode
+	Message          string
+	Parent           error
+	ServerReference  string            // Empty if not set (e.g. UseAnotherServer / ServerMoved)
+	UserProperties   map[string]string // Nil if not set; holds last value per key
+	UserPropertyList []UserProperty    // Nil if not set; wire order with duplicate keys
 }
 
 func (e *MqttError) Error() string {
