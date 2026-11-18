@@ -3,9 +3,20 @@ package packets
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"strings"
 	"unicode/utf8"
 )
+
+func writeByte(w io.Writer, b byte) error {
+	if bw, ok := w.(io.ByteWriter); ok {
+		return bw.WriteByte(b)
+	}
+	var buf [1]byte
+	buf[0] = b
+	_, err := w.Write(buf[:])
+	return err
+}
 
 // encodeString encodes a UTF-8 string with a 2-byte length prefix (MSB first).
 // This is the standard MQTT string encoding format.

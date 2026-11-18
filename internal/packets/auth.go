@@ -2,7 +2,6 @@
 package packets
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 )
@@ -65,7 +64,7 @@ func (p *AuthPacket) WriteTo(w io.Writer) (int64, error) {
 
 	// 3. Write Variable Header
 	// Reason Code
-	if err := binary.Write(w, binary.BigEndian, p.ReasonCode); err != nil {
+	if err := writeByte(w, p.ReasonCode); err != nil {
 		return total, err
 	}
 	total++

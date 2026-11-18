@@ -147,13 +147,13 @@ func (p *ConnectPacket) WriteTo(w io.Writer) (int64, error) {
 	}
 
 	// Protocol Level
-	if err := binary.Write(w, binary.BigEndian, p.ProtocolLevel); err != nil {
+	if err := writeByte(w, p.ProtocolLevel); err != nil {
 		return total, err
 	}
 	total++
 
 	// Flags
-	if err := binary.Write(w, binary.BigEndian, connectFlags); err != nil {
+	if err := writeByte(w, connectFlags); err != nil {
 		return total, err
 	}
 	total++

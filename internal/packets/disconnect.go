@@ -1,7 +1,6 @@
 package packets
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 )
@@ -62,7 +61,7 @@ func (p *DisconnectPacket) WriteTo(w io.Writer) (int64, error) {
 	// MQTT v5.0
 	if p.Version >= 5 {
 		if p.ReasonCode != 0 || p.Properties != nil {
-			if err := binary.Write(w, binary.BigEndian, p.ReasonCode); err != nil {
+			if err := writeByte(w, p.ReasonCode); err != nil {
 				return total, err
 			}
 			total++

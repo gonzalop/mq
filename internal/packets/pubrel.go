@@ -1,10 +1,6 @@
 package packets
 
-import (
-	"encoding/binary"
-	"fmt"
-	"io"
-)
+import "io"
 
 // PubrelPacket represents an MQTT PUBREL control packet (QoS 2, step 2).
 type PubrelPacket struct {
@@ -21,98 +17,22 @@ func (p *PubrelPacket) Type() uint8 {
 	return PUBREL
 }
 
-// Encode serializes the PUBREL packet to bytes.
-
 // WriteTo writes the PUBREL packet to the writer.
 func (p *PubrelPacket) WriteTo(w io.Writer) (int64, error) {
-	var total int64
-
-	// 1. Calculate Variable Header length
-	var packetIDBytes [2]byte
-	var propsBytes []byte
-	var propsLen int
-
-	// MQTT v5.0
-	if p.Version >= 5 {
-		if p.ReasonCode != 0 || p.Properties != nil {
-			propsBytes = encodeProperties(p.Properties)
-			propsLen = len(propsBytes)
-		}
-	}
-
-	variableHeaderLen := 2
-	if p.Version >= 5 {
-		if p.ReasonCode != 0 || p.Properties != nil {
-			variableHeaderLen += 1 + propsLen // ReasonCode + Props
-		}
-	}
-
-	// 2. Write Fixed Header
-	// PUBREL has fixed header flags = 0x02 (bit 1 set)
-	header := &FixedHeader{
-		PacketType:      PUBREL,
-		Flags:           0x02,
-		RemainingLength: variableHeaderLen,
-	}
-
-	hN, err := header.WriteTo(w)
-	total += hN
-	if err != nil {
-		return total, err
-	}
-	var n int
-
-	// 3. Write Variable Header
-	// Packet ID
-	binary.BigEndian.PutUint16(packetIDBytes[:], p.PacketID)
-	n, err = w.Write(packetIDBytes[:])
-	total += int64(n)
-	if err != nil {
-		return total, err
-	}
-
-	// MQTT v5.0
-	if p.Version >= 5 {
-		if p.ReasonCode != 0 || p.Properties != nil {
-			if err := binary.Write(w, binary.BigEndian, p.ReasonCode); err != nil {
-				return total, err
-			}
-			total++
-
-			n, err = w.Write(propsBytes)
-			total += int64(n)
-			if err != nil {
-				return total, err
-			}
-		}
-	}
-
-	return total, nil
+	// PUBREL has fixed header flags = 0x02 (bit 1 set).
+	return writeAckPacket(w, PUBREL, 0x02, p.PacketID, p.Version, p.ReasonCode, p.Properties)
 }
 
 // DecodePubrel decodes a PUBREL packet from the buffer.
 func DecodePubrel(buf []byte, version uint8) (*PubrelPacket, error) {
-	if len(buf) < 2 {
-		return nil, fmt.Errorf("buffer too short for PUBREL packet")
+	packetID, reasonCode, props, err := decodeAckPacket(buf, version, "PUBREL")
+	if err != nil {
+		return nil, err
 	}
-
-	pkt := &PubrelPacket{
-		Version: version,
-	}
-
-	pkt.PacketID = binary.BigEndian.Uint16(buf[0:2])
-
-	// v5.0 fields
-	if version >= 5 && len(buf) > 2 {
-		pkt.ReasonCode = buf[2]
-		if len(buf) > 3 {
-			props, _, err := decodeProperties(buf[3:])
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode properties: %w", err)
-			}
-			pkt.Properties = props
-		}
-	}
-
-	return pkt, nil
+	return &PubrelPacket{
+		PacketID:   packetID,
+		ReasonCode: reasonCode,
+		Properties: props,
+		Version:    version,
+	}, nil
 }

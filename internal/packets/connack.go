@@ -1,7 +1,6 @@
 package packets
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 )
@@ -62,13 +61,13 @@ func (p *ConnackPacket) WriteTo(w io.Writer) (int64, error) {
 	if p.SessionPresent {
 		ackFlags |= 0x01
 	}
-	if err := binary.Write(w, binary.BigEndian, ackFlags); err != nil {
+	if err := writeByte(w, ackFlags); err != nil {
 		return total, err
 	}
 	total++
 
 	// Return code
-	if err := binary.Write(w, binary.BigEndian, p.ReturnCode); err != nil {
+	if err := writeByte(w, p.ReturnCode); err != nil {
 		return total, err
 	}
 	total++

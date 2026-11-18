@@ -139,7 +139,7 @@ func (p *SubscribePacket) WriteTo(w io.Writer) (int64, error) {
 			}
 		}
 
-		if err := binary.Write(w, binary.BigEndian, optionsByte); err != nil {
+		if err := writeByte(w, optionsByte); err != nil {
 			return total, err
 		}
 		total++
