@@ -3,23 +3,14 @@
 The `mq` library is designed to be highly observable while remaining completely free of heavy external dependencies (such as direct OpenTelemetry or Prometheus imports).
 
 Observability—including **Logging**, **Metrics**, and **Distributed Tracing**—is fully supported through clean extension points:
-1. **The `Logger` interface** for structured logging.
+1. **Standard `log/slog`** via `mq.WithLogger(*slog.Logger)` for structured logging.
 2. **`HandlerInterceptor` (inbound)** and **`PublishInterceptor` (outbound)** for metrics collection and trace context propagation.
 
 ---
 
 ## 1. Structured Logging
 
-The client uses Go's standard structured logging conventions. You can inject any logger that implements the `mq.Logger` interface (which matches the standard `log/slog` methods).
-
-```go
-type Logger interface {
-	Debug(msg string, args ...any)
-	Info(msg string, args ...any)
-	Warn(msg string, args ...any)
-	Error(msg string, args ...any)
-}
-```
+The client uses Go's standard `log/slog` package for structured logging. You can pass any `*slog.Logger` via `mq.WithLogger`.
 
 ### Example: Using `log/slog`
 ```go

@@ -88,7 +88,7 @@ func main() {
 ## Performance
 
 The library is designed for high-concurrency environments:
-- **Throughput**: Up to **3x faster** than Paho v5 in high-concurrency scenarios, with peak rates exceeding **1.3M msg/s**.
+- **Throughput**: Up to **2.5x faster** than Paho v5 in high-concurrency acknowledged scenarios, with peak publish rates exceeding **1.01M msg/s** (against Mosquitto v2.1.2).
 - **Radix Tree Routing**: O(K) topic matching for high-subscription environments.
 - **Non-blocking I/O**: Core state machine uses a non-blocking logic loop to maximize throughput.
 - **Efficiency**: **10x lower memory allocation** and significantly reduced GC overhead compared to alternative libraries.

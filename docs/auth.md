@@ -71,8 +71,7 @@ MQTT 5.0 also allows a client to re-authenticate *after* the connection is estab
 
 ```go
 // Trigger a new authentication flow on an existing connection
-token := client.Reauthenticate(ctx)
-if err := token.Wait(ctx); err != nil {
+if err := client.Reauthenticate(ctx); err != nil {
     // Re-auth failed, the connection might be closed by the server
 }
 ```

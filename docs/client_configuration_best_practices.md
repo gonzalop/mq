@@ -547,12 +547,7 @@ client, err := mq.Dial(server,
 ```
 
 #### Security: Log Sanitization
-The library implements `slog.LogValuer` for its configuration objects. This ensures that sensitive fields like `Password` are automatically masked as `***` when the client options are logged, reducing the risk of accidental credential exposure.
-
-```go
-// Safe logging - the password will not appear in the output
-slog.Info("Client configured", "options", client.Options())
-```
+The library's internal configuration implements `slog.LogValuer` so sensitive fields like `Password` are masked as `***` whenever internal logs record client options, reducing the risk of accidental credential exposure.
 
 ### Metrics to Track
 At a minimum, we recommend tracking the following indicators:

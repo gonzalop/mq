@@ -74,6 +74,8 @@ client, err := mq.DialContext(ctx, server, options...)
 - `WithCleanSession(bool)` - Set clean session flag (default: true).
 - `WithClientID(id string)` - Set client identifier.
 - `WithConnectTimeout(duration time.Duration)` - Set connection timeout (default: 30s).
+- `WithConnectUserProperties(props map[string]string)` - Set user properties for the CONNECT packet (v5.0).
+- `WithConnectUserProperty(key, value string)` - Add an ordered/duplicate user property for the CONNECT packet (v5.0).
 - `WithCredentials(username, password string)` - Set authentication.
 - `WithDefaultPublishHandler(handler)` - Set fallback handler for unexpected messages.
 - `WithDialer(d ContextDialer)` - Set custom dialer (e.g. for WebSockets or proxy).
@@ -83,21 +85,22 @@ client, err := mq.DialContext(ctx, server, options...)
 - `WithPublishInterceptor(interceptor)` - Add an interceptor for outgoing messages. See **[Interceptors](interceptors.md)** for detailed usage.
 - `WithIncomingQueueSize(size int)` - Set internal incoming buffer size (default: 100).
 - `WithOutgoingQueueSize(size int)` - Set internal outgoing buffer size (default: 1000).
-- `WithLogger(logger)` - Set custom log/slog Logger.
+- `WithLogger(logger *slog.Logger)` - Set custom `log/slog` Logger.
+- `WithMaxAuthExchanges(limit uint16)` - Limit AUTH packet exchanges during enhanced authentication (default: 10).
 - `WithMaxHandlerConcurrency(concurrency int)` - Limit the number of simultaneous message handler goroutines (default: 100).
-- `WithMaxIncomingPacket(max int)` - Set maximum incoming packet size (default: 1MB).
-- `WithMaxPacketSize(bytes int)` - Set maximum packet size sent in CONNECT properties (v5.0) and enforce limit locally.
-- `WithMaxPayloadSize(bytes int)` - Set maximum outgoing payload size (default: 256MB).
-- `WithMaxTopicLength(bytes int)` - Set maximum topic length (default: 65535).
+- `WithMaxIncomingPacket(max int)` - Set maximum incoming packet size (default: 1MB) and advertise `MaximumPacketSize` in v5.0 CONNECT properties.
+- `WithMaxPayloadSize(bytes int)` - Set maximum outgoing payload size (default: 1MB).
+- `WithMaxTopicLength(bytes int)` - Set maximum topic length (default: 1024).
 - `WithMinStableConnectionDuration(duration time.Duration)` - Set minimum uptime before a connection is deemed stable (default: 5s). Drops earlier escalate backoff; pass negative duration to disable.
 - `WithOnConnect(func)` - Set callback for successful connection.
 - `WithOnConnectionLost(func)` - Set callback for connection loss.
+- `WithOnServerRedirect(func(serverURI string))` - Set callback when the server redirects via `ServerReference` (v5.0).
 - `WithProtocolVersion(version ProtocolVersion)` - Set MQTT protocol version (default: v5.0).
+  - `mq.ProtocolV311` (4) - MQTT v3.1.1
+  - `mq.ProtocolV50` (5) - MQTT v5.0
 - `WithQoS0LimitPolicy(policy)` - Set reliability policy for QoS 0 (default: Drop).
   - `mq.QoS0LimitPolicyDrop` - Drop messages if buffer is full (non-blocking).
   - `mq.QoS0LimitPolicyBlock` - Block until space is available (reliable).
-  - `mq.ProtocolV311` (4) - MQTT v3.1.1
-  - `mq.ProtocolV50` (5) - MQTT v5.0
 - `WithReceiveMaximum(max uint16, policy LimitPolicy)` - Set maximum concurrent unacknowledged messages (Flow Control) (v5.0).
   - `mq.LimitPolicyIgnore` (Default/Recommended) - Log warning on overflow.
   - `mq.LimitPolicyStrict` - Disconnect on overflow.
@@ -110,6 +113,8 @@ client, err := mq.DialContext(ctx, server, options...)
 - `WithTLS(config)` - Set TLS configuration.
 - `WithTopicAliasMaximum(max)` - Set max topic aliases to accept (v5.0).
 - `WithWill(topic, payload, qos, retained)` - Set Last Will and Testament.
+- `WithWillDelayInterval(seconds uint32)` - Set Will Delay Interval for LWT (v5.0).
+- `WithWriteTimeout(duration time.Duration)` - Set write deadline for outgoing packets (default: 30s).
 
 ### Example with Limits
 ```go
@@ -200,6 +205,7 @@ func(c *mq.Client, msg mq.Message) {
 
 ### Options
 - `WithPersistence(bool)` - Set persistence (default: true). If false, subscription is ephemeral.
+- `WithSubscriptionQoS(qos QoS)` - Set QoS when registering a subscription via `WithSubscription`.
 - `WithNoLocal(bool)` - Prevent receiving own messages (v5.0).
 - `WithRetainAsPublished(bool)` - Keep Retain flag when forwarding (v5.0).
 - `WithRetainHandling(handling RetainHandling)` - Control when to receive retained messages (`mq.RetainHandlingSend`, `mq.RetainHandlingSendIfNew`, `mq.RetainHandlingDoNotSend`) (v5.0).
@@ -258,9 +264,10 @@ err := client.Disconnect(ctx)
 // Basic disconnect
 err := client.Disconnect(ctx)
 
-// MQTT v5.0 Disconnect with Reason Code and Properties
+// MQTT v5.0 Disconnect with Reason Code, Session Expiry, and Properties
 err := client.Disconnect(ctx,
     mq.WithReason(mq.ReasonCodeNormalDisconnect),
+    mq.WithDisconnectSessionExpiry(3600),
     mq.WithDisconnectProperties(&mq.Properties{
         ReasonString: "Application shutting down",
     }),

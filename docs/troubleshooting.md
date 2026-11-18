@@ -15,7 +15,7 @@ This guide covers common pitfalls and edge cases when working with MQTT clients.
 **How to Detect**:
 - **MQTT 3.1.1**: Generic `io.EOF` or "connection reset" errors in logs, with increasing reconnect intervals.
 - **MQTT 5.0**: May receive `DISCONNECT` with Reason Code `0x8E` (Session Taken Over), but often the race condition results in an abrupt TCP reset before the packet arrives.
-  - If the `DISCONNECT` packet is received, your `OnConnectionLost` callback will receive an `*MqttError` with the reason code and optional reason string from the server.
+  - If the `DISCONNECT` packet is received, your `OnConnectionLost` callback will receive a `*DisconnectError` with the reason code and optional reason string from the server.
 
 **Fix**: Always generate a unique ClientID per instance:
 ```go
@@ -96,7 +96,7 @@ Subscription Identifiers are **connection-scoped** per the MQTT 5.0 spec:
 
 ### Will Message Delay (MQTT 5.0)
 
-If you use `WithWillDelay()`, the Will Message is **not published immediately** on disconnect:
+If you use `WithWillDelayInterval()`, the Will Message is **not published immediately** on disconnect:
 - If the client reconnects within the delay window, the Will is **cancelled**.
 - This can be confusing when testing Last Will and Testament with quick reconnects.
 - **Tip**: Use a delay of 0 (default) for testing, or wait longer than the delay before reconnecting.
@@ -141,4 +141,4 @@ If the server's `ReceiveMaximum` is lower than the number of pending QoS 1/2 mes
 
 ## Persistence-Specific Issues
 
-For issues specific to persistent sessions (e.g., Poison Pill loops, QoS 2 duplicates), see [docs/persistence.md](persistence.md#troubleshooting-the-poison-pill-loop).
+For issues specific to persistent sessions (e.g., zombie subscriptions, QoS 2 duplicates, process restarts), see [docs/persistence.md](persistence.md).
