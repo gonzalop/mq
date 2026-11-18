@@ -26,8 +26,17 @@ jobs:
       with:
         go-version: ${{ matrix.go-version }}
 
-    - name: Download dependencies
-      run: go mod download
+    - name: Check formatting
+      run: test -z "$(gofmt -l .)"
+
+    - name: Install lint and vuln tools
+      run: make install-tools
+
+    - name: Lint
+      run: make lint V=1
+
+    - name: Vulnerability check
+      run: make vuln
 
     - name: Download integration dependencies
       run: cd integration && go mod download
@@ -40,6 +49,12 @@ jobs:
 
     - name: Build
       run: go build -v ./...
+
+    - name: Build examples
+      run: make examples V=1
+
+    - name: Fuzz smoke test
+      run: make fuzz FUZZTIME=5s
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v7
