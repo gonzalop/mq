@@ -21,7 +21,7 @@ This release introduces anti-flapping backoff escalation to prevent tight reconn
 
 ## 🧪 Testing
 
-- **Reconnect Backoff & Flapping Tests**: Added comprehensive test coverage in [`reconnect_backoff_test.go`](file:///home/gonzalo/go/src/github.com/gonzalop/mq/reconnect_backoff_test.go) verifying backoff escalation on flapping connections, backoff reset on stable connections, disabling escalation behavior via negative durations, and `ConnectedAt`/`Uptime` tracking.
+- **Reconnect Backoff & Flapping Tests**: Added comprehensive test coverage in [`reconnect_backoff_test.go`](../reconnect_backoff_test.go) verifying backoff escalation on flapping connections, backoff reset on stable connections, disabling escalation behavior via negative durations, and `ConnectedAt`/`Uptime` tracking.
 
 ---
 
