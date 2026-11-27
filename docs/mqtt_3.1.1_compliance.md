@@ -23,7 +23,7 @@ This document outlines the support for MQTT 3.1.1 features in the `mq` library, 
 | **QoS 2 (Exactly once)** | 4.3.3 | ✅ Supported | Full 4-step handshake (PUBLISH -> PUBREC -> PUBREL -> PUBCOMP). |
 | **Retain Flag** | 3.3.1.3 | ✅ Supported | `WithRetain()`. |
 | **Duplicate Flag (DUP)** | 3.3.1.2 | ✅ Supported | Sets DUP=1 on retries. |
-| **Packet Ordering** | 4.6 | ✅ Supported | `logicLoop` processes packets sequentially. |
+| **Packet Ordering** | 4.6 | ✅ Supported | `logicLoop` processes packets sequentially; handlers for a topic run in arrival order on a per-topic queue, and their PUBACK/PUBREC follow that order. |
 
 ## 3. Subscription (SUBSCRIBE / SUBACK / UNSUBSCRIBE / UNSUBACK)
 

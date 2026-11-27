@@ -381,42 +381,74 @@ func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, h
 		return []packets.Packet{ack}
 	}
 
-	if p.QoS == 0 {
-		for _, h := range handlers {
-			go c.runHandler(h, msg)
-		}
-		return nil
-	}
-
 	// Capture the epoch at arrival so acks are dropped if the session resets before handlers finish.
 	epoch := c.sessionEpoch.Load()
-	if len(handlers) == 1 {
-		h := handlers[0]
-		go func() {
-			if c.runHandler(h, msg) {
-				c.sendAck(p, epoch)
+	c.enqueueDelivery(msg.Topic, func() {
+		ran := true
+		if len(handlers) == 1 {
+			ran = c.runHandler(handlers[0], msg)
+		} else {
+			// Overlapping subscriptions run in parallel; the next message on
+			// this topic waits for all of them.
+			var wg sync.WaitGroup
+			wg.Add(len(handlers))
+			for _, h := range handlers {
+				go func() {
+					defer wg.Done()
+					c.runHandler(h, msg)
+				}()
 			}
-		}()
-		return nil
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(len(handlers))
-	for _, h := range handlers {
-		go func() {
-			defer wg.Done()
-			c.runHandler(h, msg)
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		if !c.stopped() {
+			wg.Wait()
+			ran = !c.stopped()
+		}
+		if ran && p.QoS > 0 {
 			c.sendAck(p, epoch)
 		}
-	}()
-
+	})
 	return nil
+}
+
+// topicQueue is the FIFO of pending deliveries for one topic.
+type topicQueue struct {
+	jobs []func()
+}
+
+// enqueueDelivery appends job to the topic's queue without blocking, starting
+// a worker goroutine if the topic has none. Jobs on one topic run one at a
+// time in the order they were queued; different topics run concurrently.
+func (c *Client) enqueueDelivery(topic string, job func()) {
+	c.dispatchLock.Lock()
+	if q, ok := c.topicQueues[topic]; ok {
+		q.jobs = append(q.jobs, job)
+		c.dispatchLock.Unlock()
+		return
+	}
+	if c.topicQueues == nil {
+		c.topicQueues = make(map[string]*topicQueue)
+	}
+	q := &topicQueue{jobs: []func(){job}}
+	c.topicQueues[topic] = q
+	c.dispatchLock.Unlock()
+
+	go c.runTopicQueue(topic, q)
+}
+
+// runTopicQueue runs q's jobs until it is empty, then removes q.
+func (c *Client) runTopicQueue(topic string, q *topicQueue) {
+	for {
+		c.dispatchLock.Lock()
+		if len(q.jobs) == 0 {
+			delete(c.topicQueues, topic)
+			c.dispatchLock.Unlock()
+			return
+		}
+		job := q.jobs[0]
+		q.jobs[0] = nil
+		q.jobs = q.jobs[1:]
+		c.dispatchLock.Unlock()
+
+		job()
+	}
 }
 
 func (c *Client) buildAckPacket(p *packets.PublishPacket) packets.Packet {

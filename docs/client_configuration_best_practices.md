@@ -134,7 +134,7 @@ The library supports an interceptor pattern for both incoming (`HandlerIntercept
 4. **Validation/Transformation**: Globally validate or modify payloads (e.g., encryption).
 
 ### Performance Considerations
-- **Non-Blocking**: Handlers are called in their own goroutines, but interceptors still add execution time. Keep them lightweight.
+- **Non-Blocking**: Handlers run off the client loops, one message at a time per topic (in arrival order), so a slow handler delays later messages on its topic only. But interceptors still add execution time. Keep them lightweight.
 - **Ordering**: Interceptors are executed in the order they are added via `mq.With*Interceptor`.
 
 ```go

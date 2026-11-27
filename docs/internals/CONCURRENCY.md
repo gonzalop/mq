@@ -86,7 +86,7 @@ Subscription matching is performed using a high-performance **Radix Tree** (`top
 ## Deadlock Prevention
 
 -   **No Blocking I/O under Lock**: We never perform network or disk I/O while holding `sessionLock`. `SessionStore` writes are queued in order under `sessionLock` (`queueStoreLocked`) and run by `flushStore` after it is released, one at a time under `storeLock`. A publisher flushes before sending its PUBLISH, so it is stored before it can reach the network; `AsyncStore` is provided for slow or remote storage backends.
--   **Async Callbacks**: All user callbacks are invoked in separate goroutines.
+-   **Async Callbacks**: All user callbacks are invoked off the internal loops. Message handlers run on a per-topic worker goroutine (`enqueueDelivery`), so messages on one topic are delivered and acknowledged in arrival order while different topics run concurrently. `logicLoop` only appends to the queue and never blocks on a handler.
 -   **Lock Ordering**: The library maintains a strict hierarchy to prevent circular waits.
 
 ## Reliability and Fail-Fast

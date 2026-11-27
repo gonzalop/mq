@@ -104,6 +104,12 @@ type Client struct {
 	// Concurrency control for message handlers
 	handlerSem chan struct{}
 
+	// topicQueues holds a FIFO of pending deliveries per topic so handlers see
+	// messages on a topic in arrival order (MQTT 4.6). A queue and its worker
+	// goroutine exist only while it has work. Protected by dispatchLock.
+	dispatchLock sync.Mutex
+	topicQueues  map[string]*topicQueue
+
 	// authExchangeCount tracks the number of AUTH packet exchanges
 	// to prevent infinite authentication loops.
 	authExchangeCount atomic.Uint32
